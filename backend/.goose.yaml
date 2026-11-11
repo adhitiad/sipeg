@@ -1,0 +1,9 @@
+version: 1
+
+migrations:
+  dir: ./migrations
+
+env:
+  - name: DATABASE_URL
+    required: true
+    description: PostgreSQL connection string (Supabase). Jangan simpan nilai sebenarnya di berkas ini.

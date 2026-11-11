@@ -1,0 +1,52 @@
+name: Backend CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Download and verify dependencies
+        run: |
+          go mod download
+          go mod verify
+      - name: Check formatting
+        run: |
+          files="$(gofmt -l .)"
+          if [ -n "$files" ]; then
+            echo "$files"
+            exit 1
+          fi
+      - name: Run vet
+        run: go vet ./...
+      - name: Run staticcheck
+        run: |
+          go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 ./...
+      - name: Run tests
+        run: go test -race ./...
+      - name: Build
+        run: go build ./...
+      - name: Check for known vulnerabilities
+        run: |
+          go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+      - name: Check that no secret is committed
+        run: |
+          if grep -rInE '(postgres|postgresql)://[^[:space:]]+:[^@[:space:]]+@' \
+            --include='*.go' --include='*.yaml' --include='*.yml' --include='*.md' \
+            --exclude-dir=.git .. | grep -v '\.env\.example'; then
+            echo "A database connection string with a password was found in the repository."
+            exit 1
+          fi

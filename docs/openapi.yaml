@@ -1,0 +1,1750 @@
+﻿openapi: 3.1.0
+info:
+  title: SIMPEG API
+  version: 0.1.0
+  description: >-
+    Draft kontrak API MVP SIMPEG. Grant role statis dikonfigurasi di backend
+    sesuai docs/PRD.md §11; permission yang tidak diberi grant ditolak.
+    Versi API memakai prefix path /api/v1; perubahan yang merusak
+    kompatibilitas menaikkan versi path. Respons memuat header X-API-Version.
+    Path /api tanpa versi ditolak dengan 400 unversioned_path; versi yang
+    tidak dikenal menghasilkan 404.
+    Cakupan unit sudah ditegakkan pada endpoint pegawai, unit organisasi,
+    jejak audit, slip gaji, jadwal gajian, dan kalender hari libur.
+    Pembuatan profil tidak membuat sesi atau menetapkan role.
+    Penghapusan memakai arsip/nonaktif, bukan penghapusan permanen.
+servers:
+  - url: /
+    description: Relative to the API host
+security: []
+tags:
+  - name: System
+    description: Pemeriksaan proses dan kesiapan API.
+  - name: Account
+    description: Identitas akun dan principal sesi aktif.
+  - name: Employees
+    description: Data profil pegawai; grant dan gap cakupan aktual dijelaskan per operasi.
+  - name: Organizations
+    description: Pohon organisasi bertipe unit, fakultas, jurusan, biro, dan bagian.
+  - name: Attendance
+    description: Penyimpanan fakta tap ternormalisasi; adapter vendor dan autentikasi perangkat belum tersedia.
+  - name: Audit
+    description: Jejak perubahan data sensitif; isi profil tidak pernah disalin ke log.
+  - name: Categories
+    description: Kategori pegawai aktif yang dapat dirujuk profil.
+  - name: Payroll
+    description: Slip gaji, konfirmasi pembayaran, dan jadwal gajian per unit.
+  - name: Holidays
+    description: Kalender hari libur nasional Indonesia; diisi dari penyedia dan disimpan di tabel lokal.
+paths:
+  /health:
+    get:
+      tags: [System]
+      operationId: getHealth
+      x-implementation-status: implemented
+      summary: Liveness aplikasi
+      responses:
+        "200":
+          description: Proses aplikasi hidup.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+  /ready:
+    get:
+      tags: [System]
+      operationId: getReadiness
+      x-implementation-status: implemented
+      summary: Readiness aplikasi
+      description: >-
+        Memeriksa dependency wajib sebelum API menerima traffic. Berbeda dengan
+        liveness, endpoint ini gagal dengan 503 bila dependency tidak siap.
+        Detail kegagalan tidak dikembalikan agar tidak membocorkan host,
+        connection string, atau kredensial.
+      responses:
+        "200":
+          description: Aplikasi siap menerima traffic.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessStatus"
+        "503":
+          description: Aplikasi belum siap menerima traffic.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+  /api/v1/me:
+    get:
+      tags: [Account]
+      operationId: getCurrentAccount
+      x-implementation-status: implemented
+      summary: Membaca identitas pengguna dari sesi aktif
+      security:
+        - bearerSession: []
+      responses:
+        "200":
+          description: Identitas dan cakupan dasar principal terautentikasi.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentAccount"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/auth/logout:
+    post:
+      tags: [Account]
+      operationId: logoutCurrentSession
+      x-implementation-status: implemented
+      summary: Mencabut sesi aktif
+      description: >-
+        Menghapus baris sesi pada tabel session sehingga token tidak lagi
+        berlaku pada permintaan berikutnya. Operations idempoten: sesi yang
+        sudah tidak ada tetap mengembalikan 204. Endpoint ini hanya
+        mencabut sesi opaque di database; penrevokasian token JWT Better Auth
+        harus dilakukan oleh runtime autentikasi.
+      security:
+        - bearerSession: []
+      responses:
+        "204":
+          description: Sesi dicabut atau sudah tidak berlaku.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+  /api/v1/attendance/events:
+    post:
+      tags: [Attendance]
+      operationId: ingestAttendanceEvent
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: attendance:event:ingest
+      summary: Menyimpan satu fakta tap mesin
+      description: >-
+        Endpoint aplikasi untuk adapter tepercaya, bukan protokol langsung ke
+        Fingerspot. Memerlukan sesi API sementara dan permission eksplisit;
+        grant saat ini hanya diberikan kepada admin dan bukan autentikasi perangkat.
+        Retry dengan machineId dan idempotencyKey
+        yang sama serta fakta tap identik mengembalikan eventId yang sama dan
+        duplicate=true. Key yang sama dengan PIN atau waktu berbeda menghasilkan
+        409. occurredAt harus RFC 3339 dengan offset eksplisit; waktu dinormalisasi
+        ke UTC dengan presisi milidetik sebelum disimpan.
+        machinePin adalah kunci pemetaan eksternal, bukan relasi ke User/NIP.
+        Tidak menerima payload vendor, biometrik, GPS, foto, atau status harian.
+      security:
+        - bearerSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttendanceEventIngestRequest"
+      responses:
+        "201":
+          description: Fakta tap baru tersimpan.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttendanceEventIngestResponse"
+        "200":
+          description: Retry identik; event yang sudah tersimpan dikembalikan.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttendanceEventIngestResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Mesin yang dirujuk tidak terdaftar.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Idempotency key sudah digunakan untuk fakta tap berbeda.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/employees:
+    get:
+      tags: [Employees]
+      operationId: listEmployees
+      x-implementation-status: implemented-deny-by-default
+      summary: Membaca daftar pegawai dengan pencarian dan filter
+      description: >-
+        Membutuhkan salah satu dari employee:read:any (admin, seluruh
+        organisasi), employee:read:homebase (operator dan atasan, unit
+        penugasan beserta turunannya), atau employee:read:self (pegawai, hanya
+        record sendiri). Handler mempersempit hasil sesuai cakupan; filter
+        homebaseId pada query adalah filter pilihan, bukan kontrol akses.
+      security:
+        - bearerSession: []
+      parameters:
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/HomebaseFilter"
+        - $ref: "#/components/parameters/Sort"
+        - $ref: "#/components/parameters/Order"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Halaman pegawai dalam cakupan pemohon.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmployeePage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      tags: [Employees]
+      operationId: createEmployee
+      x-implementation-status: implemented-deny-by-default
+      summary: Membuat profil pegawai
+      description: >-
+        Membutuhkan employee:create (admin, seluruh organisasi) atau
+        employee:create:homebase (operator, unit penugasan beserta
+        turunannya). Pembuatan profil belum otomatis membuat sesi,
+        menetapkan role, atau mengirim undangan. Kebijakan provisioning
+        harus diputuskan sebelum endpoint dibuka kepada pengguna.
+      security:
+        - bearerSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmployeeCreate"
+      responses:
+        "201":
+          description: Profil pegawai berhasil dibuat.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Employee"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Email atau NIP sudah digunakan.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/employees/{employeeId}:
+    parameters:
+      - $ref: "#/components/parameters/EmployeeId"
+    get:
+      tags: [Employees]
+      operationId: getEmployee
+      x-implementation-status: implemented-deny-by-default
+      summary: Membaca profil pegawai
+      description: >-
+        Membutuhkan salah satu dari employee:read:any (admin, seluruh
+        organisasi), employee:read:homebase (operator dan atasan, unit
+        penugasan beserta turunannya), atau employee:read:self (pegawai, hanya
+        record sendiri). Endpoint menerapkan pembatasan cakupan: operator dan
+        atasan hanya membaca pegawai di unit penugasan beserta anak-anaknya,
+        pegawai hanya membaca recordnya sendiri; akses di luar cakupan
+        menghasilkan 403.
+      security:
+        - bearerSession: []
+      responses:
+        "200":
+          description: Profil pegawai.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Employee"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    patch:
+      tags: [Employees]
+      operationId: updateEmployee
+      x-implementation-status: implemented-deny-by-default
+      summary: Memperbarui field profil yang diizinkan
+      description: >-
+        Membutuhkan employee:update:any (admin, seluruh organisasi) atau
+        employee:update:homebase (operator, unit penugasan beserta
+        turunannya). Pegawai di luar cakupan menghasilkan 403.
+        Role, status akun, userId, dan email login tidak dapat diubah melalui endpoint ini.
+      security:
+        - bearerSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmployeeUpdate"
+      responses:
+        "200":
+          description: Profil setelah perubahan.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Employee"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: NIP sudah digunakan oleh pegawai lain.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    delete:
+      tags: [Employees]
+      operationId: archiveEmployee
+      x-implementation-status: implemented-deny-by-default
+      summary: Mengarsipkan pegawai
+      description: Membutuhkan employee:archive. Sesi pengguna langsung ditolak setelah akun diarsipkan.
+      security:
+        - bearerSession: []
+      responses:
+        "204":
+          description: Pegawai diarsipkan tanpa menghapus riwayat.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/employees/import-template.csv:
+    get:
+      tags: [Employees]
+      operationId: getEmployeeImportTemplate
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: employee:import
+      summary: Mengunduh template impor pegawai
+      description: >-
+        Membutuhkan employee:import. Template CSV menetapkan kolom nama, email,
+        nip, jabatanStruktural, jabatanFungsional dalam urutan tersebut.
+        Permission employee:import diberikan kepada admin; operator memakai
+        employee:import:homebase, dan pegawai hasil impor ditempatkan pada
+        unit penugasan operator karena template tidak memuat kolom unit.
+        Role lain ditolak dengan 403.
+      security:
+        - bearerSession: []
+      responses:
+        "200":
+          description: Template CSV dengan baris header saja.
+          content:
+            text/csv:
+              schema:
+                type: string
+              example: "nama,email,nip,jabatanStruktural,jabatanFungsional\r\n"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/employees/import:
+    post:
+      tags: [Employees]
+      operationId: importEmployees
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: employee:import
+      summary: Mengimpor pegawai secara massal
+      description: >-
+        Menerima satu berkas CSV, XLS, atau XLSX (maksimal 5 MiB dan 1000 baris
+        data). Header harus tepat dan berurutan: nama,email,nip,
+        jabatanStruktural,jabatanFungsional. nama dan email wajib; kolom lainnya
+        opsional. Operasi create-only: seluruh berkas divalidasi sebelum ditulis,
+        konflik email/NIP dan formula ditolak, lalu seluruh baris disimpan secara
+        atomik. Tidak menerima role, assignment akses, NIK, payroll, bank,
+        keluarga, atau field pajak. Excel harus satu sheet terlihat dan tanpa
+        formula/makro. Permission employee:import diberikan kepada admin;
+        operator memakai employee:import:homebase dan pegawai hasil impor
+        ditempatkan pada unit penugasan operator. Role lain ditolak dengan 403.
+      security:
+        - bearerSession: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              additionalProperties: false
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Semua baris baru berhasil dibuat.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmployeeImportResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Email atau NIP sudah digunakan pada data tersimpan.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmployeeImportIssueResponse"
+        "413":
+          description: Berkas atau request melampaui batas ukuran.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Header atau satu atau lebih baris gagal validasi; tidak ada data yang ditulis.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmployeeImportIssueResponse"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/organizations:
+    get:
+      tags: [Organizations]
+      operationId: listOrganizations
+      x-implementation-status: implemented-deny-by-default
+      summary: Membaca daftar organisasi
+      description: Membutuhkan organization:read. Jenis yang didukung UNIT, FAKULTAS, JURUSAN, BIRO, dan BAGIAN.
+      security:
+        - bearerSession: []
+      parameters:
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/Sort"
+        - $ref: "#/components/parameters/Order"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: jenis
+          in: query
+          schema:
+            $ref: "#/components/schemas/OrganizationType"
+        - name: parentId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Halaman organisasi aktif; scope unit per pemohon belum tersedia.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrganizationPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      tags: [Organizations]
+      operationId: createOrganization
+      x-implementation-status: implemented-deny-by-default
+      summary: Membuat unit organisasi
+      description: Membutuhkan permission organization:manage.
+      security:
+        - bearerSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrganizationCreate"
+      responses:
+        "201":
+          description: Organisasi berhasil dibuat.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Organization"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Nama unit sudah digunakan.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/organizations/{organizationID}:
+    parameters:
+      - name: organizationID
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Organizations]
+      operationId: getOrganization
+      x-implementation-status: implemented-deny-by-default
+      summary: Membaca satu organisasi
+      security:
+        - bearerSession: []
+      responses:
+        "200":
+          description: Data organisasi.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Organization"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    patch:
+      tags: [Organizations]
+      operationId: updateOrganization
+      x-implementation-status: implemented-deny-by-default
+      summary: Memperbarui unit organisasi
+      description: Membutuhkan permission organization:manage.
+      security:
+        - bearerSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrganizationUpdate"
+      responses:
+        "200":
+          description: Unit setelah perubahan.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Organization"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Nama unit sudah digunakan.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    delete:
+      tags: [Organizations]
+      operationId: archiveOrganization
+      x-implementation-status: implemented-deny-by-default
+      summary: Mengarsipkan organisasi
+      description: Gagal dengan 409 jika masih memiliki pegawai aktif atau anak aktif.
+      security:
+        - bearerSession: []
+      responses:
+        "204":
+          description: Organisasi diarsipkan.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Organisasi masih memiliki pegawai aktif atau anak aktif.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/audit-logs:
+    get:
+      tags: [Audit]
+      operationId: listAuditLogs
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: audit:read
+      summary: Membaca jejak perubahan data sensitif
+      description: >-
+        Membutuhkan permission audit:read (admin, seluruh jejak) atau
+        audit:read:homebase (operator, jejak unit penugasannya beserta
+        turunannya). Respons hanya memuat aktor, aksi, sasaran, keterangan
+        minimal, dan waktu — isi profil pegawai tidak pernah disalin ke audit.
+        Setiap pembacaan yang mengembalikan entri dicatat kembali sebagai aksi
+        audit.accessed.
+      security:
+        - bearerSession: []
+      parameters:
+        - $ref: "#/components/parameters/AuditAction"
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/Sort"
+        - $ref: "#/components/parameters/Order"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Halaman jejak audit dalam cakupan pemohon.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditLogPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/categories:
+    get:
+      tags: [Categories]
+      operationId: listCategories
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: category:read
+      summary: Membaca daftar kategori pegawai
+      security:
+        - bearerSession: []
+      parameters:
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/Sort"
+        - $ref: "#/components/parameters/Order"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Halaman kategori pegawai aktif.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CategoryPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/payroll/slips:
+    get:
+      tags: [Payroll]
+      operationId: listPayrollSlips
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: payroll:read
+      summary: Membaca daftar slip gaji
+      description: >-
+        Membutuhkan permission payroll:read:any (admin, seluruh slip),
+        payroll:read:homebase (operator, slip pegawai pada unit penugasannya
+        beserta turunannya), atau payroll:read:self (pegawai, slip miliknya
+        sendiri). Seluruh nominal dinyatakan dalam Rupiah Indonesia dan sudah
+        diformat dengan pemisah ribuan versi Indonesia.
+      security:
+        - bearerSession: []
+      parameters:
+        - $ref: "#/components/parameters/PayrollPeriod"
+        - $ref: "#/components/parameters/PayrollStatus"
+        - $ref: "#/components/parameters/Sort"
+        - $ref: "#/components/parameters/Order"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Halaman slip gaji dalam cakupan pemohon.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayrollPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/payroll/slips/{payrollId}:
+    get:
+      tags: [Payroll]
+      operationId: getPayrollSlip
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: payroll:read
+      summary: Membaca satu slip gaji
+      security:
+        - bearerSession: []
+      parameters:
+        - $ref: "#/components/parameters/PayrollId"
+      responses:
+        "200":
+          description: Slip gaji beserta nominal dalam Rupiah.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payroll"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/payroll/slips/{payrollId}/payment:
+    post:
+      tags: [Payroll]
+      operationId: confirmPayrollPayment
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: payroll:manage
+      summary: Mencatat konfirmasi pembayaran gaji
+      description: >-
+        Hanya admin yang dapat mencatat konfirmasi pembayaran. Slip hanya dapat
+        dibayar satu kali dan hanya bila statusnya sudah TERBIT. Konfirmasi
+        disimpan bersama slip, notifikasi gaji diantrekan pada antrean keluar
+        persisten, dan jejak audit ditulis dalam satu transaksi. Notifikasi gaji
+        tidak pernah memuat nominal.
+      security:
+        - bearerSession: []
+      parameters:
+        - $ref: "#/components/parameters/PayrollId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentConfirmation"
+      responses:
+        "200":
+          description: Slip gaji yang sudah berstatus TERBAYAR.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payroll"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/payroll/schedules:
+    get:
+      tags: [Payroll]
+      operationId: listPayrollSchedules
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: payroll:schedule
+      summary: Membaca daftar jadwal tanggal gajian per unit
+      description: >-
+        Membutuhkan permission payroll:schedule (admin, seluruh unit) atau
+        payroll:schedule:homebase (operator, unit pada cakupan penugasannya
+        beserta turunannya). Nilai tanggal gajian adalah tanggal tetap tiap
+        bulan (1-28).
+      security:
+        - bearerSession: []
+      responses:
+        "200":
+          description: Daftar jadwal tanggal gajian pada cakupan pemohon.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayrollScheduleList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/payroll/schedules/{unitId}:
+    put:
+      tags: [Payroll]
+      operationId: upsertPayrollSchedule
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: payroll:schedule
+      summary: Menyimpan jadwal tanggal gajian sebuah unit
+      description: >-
+        Membutuhkan permission payroll:schedule (admin, unit mana pun) atau
+        payroll:schedule:homebase (operator, hanya unit pada cakupan
+        penugasannya beserta turunannya). Nilai tanggalGajian antara 1 dan 28;
+        perubahan dicatat pada jejak audit.
+      security:
+        - bearerSession: []
+      parameters:
+        - $ref: "#/components/parameters/UnitId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PayrollScheduleUpdate"
+      responses:
+        "200":
+          description: Jadwal tanggal gajian yang tersimpan.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayrollSchedule"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/holidays:
+    get:
+      tags: [Holidays]
+      operationId: listHolidays
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: holiday:read
+      summary: Membaca kalender hari libur nasional satu tahun
+      description: >-
+        Membaca kalender yang tersimpan di tabel lokal; tidak bergantung pada
+        penyedia. Parameter year boleh dikosongkan untuk tahun berjalan
+        (Asia/Jakarta). Pembacaan di-cache bila Redis dikonfigurasi.
+      security:
+        - bearerSession: []
+      parameters:
+        - $ref: "#/components/parameters/HolidayYearQuery"
+      responses:
+        "200":
+          description: Kalender hari libur tahun yang diminta.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HolidayList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/holidays/{year}/refresh:
+    post:
+      tags: [Holidays]
+      operationId: refreshHolidays
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: holiday:manage
+      summary: Menyegarkan kalender hari libur sebuah tahun dari penyedia
+      description: >-
+        Hanya admin yang dapat memicu penyegaran. Tahun yang diminta diganti
+        seluruhnya dalam satu transaksi bersama jejak audit
+        holiday.refreshed. Entri penyedia disimpan untuk type Public Holiday,
+        National Holiday, dan Joint Holiday; Observance dilewati. Bila
+        penyedia tidak dikonfigurasi (HOLIDAY_API_URL/HOLIDAY_API_KEY kosong)
+        penyegaran menolak dengan 503.
+      security:
+        - bearerSession: []
+      parameters:
+        - $ref: "#/components/parameters/HolidayYearPath"
+      responses:
+        "200":
+          description: Jumlah entri yang tersimpan.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HolidayRefreshResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "502":
+          description: Penyedia hari libur mengembalikan error atau data tidak sah.
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/internal/qstash/payroll/notify:
+    post:
+      tags: [Internal]
+      operationId: qstashPayrollNotify
+      x-implementation-status: implemented-signature-authenticated
+      summary: Menjalankan pemberitahuan ketersediaan slip gaji H+1
+      description: >-
+        Endpoint callback yang dipanggil QStash sesuai jadwal harian (cron
+        5 19 * * * = 02:05 WIB). Autentikasi memakai signature QStash yang
+        diverifikasi terhadap raw body, bukan sesi bearer. Pemberitahuan
+        berisi nama, periode, dan tautan ke halaman penggajian — tidak pernah
+        memuat nominal gaji dan bukan bukti pembayaran. Pekerjaan idempoten
+        lewat kunci slip-available per slip sehingga percobaan ulang QStash
+        tidak menghasilkan pemberitahuan ganda.
+      security:
+        - qstashSignature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind]
+              properties:
+                kind:
+                  type: string
+                  enum: [payroll.notify]
+      responses:
+        "200":
+          description: Jumlah pemberitahuan yang diantrekan.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [queued]
+                properties:
+                  queued:
+                    type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/internal/qstash/audit/cleanup:
+    post:
+      tags: [Internal]
+      operationId: qstashAuditCleanup
+      x-implementation-status: implemented-signature-authenticated
+      summary: Menjalankan pembersihan jejak audit yang kedaluwarsa
+      description: >-
+        Endpoint callback yang dipanggil QStash sesuai jadwal harian.
+        Autentikasi memakai signature QStash yang diverifikasi terhadap raw body,
+        bukan sesi bearer. Pekerjaan ini idempoten sehingga percobaan ulang
+        QStash tidak mengubah hasil.
+      security:
+        - qstashSignature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind]
+              properties:
+                kind:
+                  type: string
+                  enum: [audit.cleanup]
+      responses:
+        "200":
+          description: Jumlah entri jejak audit yang dihapus.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deleted]
+                properties:
+                  deleted:
+                    type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+components:
+  headers:
+    APIVersion:
+      description: Versi API yang dipakai pada respons.
+      schema:
+        type: string
+        example: v1
+  securitySchemes:
+    bearerSession:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque session token
+      description: >-
+        Kontrak sementara yang saat ini digunakan backend. Belum ditetapkan
+        apakah frontend akan memakai bearer token atau provider lain.
+    qstashSignature:
+      type: apiKey
+      in: header
+      name: Upstash-Signature
+      description: >-
+        Signature HS256 QStash atas raw body permintaan. Callback QStash tidak
+        memakai sesi bearer; subjek signature harus cocok dengan URL tujuan
+        yang dikonfigurasi.
+  parameters:
+    Search:
+      name: search
+      in: query
+      description: Pencarian parsial tanpa membedakan kapital pada nama atau NIP.
+      schema:
+        type: string
+        maxLength: 100
+    HomebaseFilter:
+      name: homebaseId
+      in: query
+      schema:
+        type: string
+        format: uuid
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 10000
+        default: 1
+    PageSize:
+      name: pageSize
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    EmployeeId:
+      name: employeeId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Sort:
+      name: sort
+      in: query
+      description: >-
+        Kolom pengurutan. Nilai di luar allowlist resource ditolak dengan 400
+        invalid_query; kolom SQL ditentukan server, bukan dari input pengguna.
+      schema:
+        type: string
+        enum: [nama, nip, createdAt, updatedAt, name, jenis, aksi, kode, periode, tanggalGaji]
+    Order:
+      name: order
+      in: query
+      schema:
+        type: string
+        enum: [asc, desc]
+        default: asc
+    AuditAction:
+      name: aksi
+      in: query
+      schema:
+        type: string
+        maxLength: 100
+    PayrollId:
+      name: payrollId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    UnitId:
+      name: unitId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    HolidayYearQuery:
+      name: year
+      in: query
+      description: Tahun kalender; kosong berarti tahun berjalan (Asia/Jakarta).
+      schema:
+        type: integer
+        minimum: 2000
+        maximum: 2100
+    HolidayYearPath:
+      name: year
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 2000
+        maximum: 2100
+    PayrollPeriod:
+      name: periode
+      in: query
+      description: Periode bulanan penggajian dalam bentuk "YYYY-MM".
+      schema:
+        type: string
+        pattern: "^[0-9]{4}-[0-9]{2}$"
+    PayrollStatus:
+      name: status
+      in: query
+      schema:
+        type: string
+        enum: [DRAF, TERBIT, TERBAYAR]
+  responses:
+    BadRequest:
+      description: Parameter atau format request tidak valid.
+      headers:
+        X-API-Version:
+          $ref: "#/components/headers/APIVersion"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: Sesi tidak ada, tidak valid, atau kedaluwarsa.
+      headers:
+        X-API-Version:
+          $ref: "#/components/headers/APIVersion"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: Principal tidak memiliki permission yang diperlukan.
+      headers:
+        X-API-Version:
+          $ref: "#/components/headers/APIVersion"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ServiceUnavailable:
+      description: Resolver sesi tidak dapat memeriksa sesi karena dependency tidak tersedia.
+      headers:
+        X-API-Version:
+          $ref: "#/components/headers/APIVersion"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Resource tidak ditemukan atau berada di luar cakupan akses.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Conflict:
+      description: Resource bertentangan dengan data yang sudah ada.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    MethodNotAllowed:
+      description: HTTP method tidak didukung untuk endpoint ini.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ValidationError:
+      description: Field request gagal validasi.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ValidationErrorResponse"
+  schemas:
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, ready]
+    CurrentAccount:
+      type: object
+      required: [userId, email]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        roleName:
+          type: string
+        homebaseId:
+          type: string
+          format: uuid
+    ReadinessStatus:
+      type: object
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ready, not_ready]
+        checks:
+          type: object
+          additionalProperties:
+            type: object
+            required: [status]
+            properties:
+              status:
+                type: string
+                enum: [ok, unavailable]
+    AttendanceEventIngestRequest:
+      type: object
+      additionalProperties: false
+      required: [machineId, machinePin, occurredAt, idempotencyKey]
+      properties:
+        machineId:
+          type: string
+          format: uuid
+          description: ID mesin yang sudah terdaftar pada MesinAbsensi.
+        machinePin:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: PIN sebagai kunci pengguna eksternal; tidak dinormalisasi menjadi User.
+        occurredAt:
+          type: string
+          format: date-time
+          description: Waktu tap RFC 3339 dengan offset eksplisit; disimpan UTC dengan presisi milidetik.
+        idempotencyKey:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Kunci stabil dari adapter untuk retry; sumber/algoritma vendor belum ditetapkan.
+    AttendanceEventIngestResponse:
+      type: object
+      required: [eventId, duplicate]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        duplicate:
+          type: boolean
+    Employee:
+      type: object
+      required: [id, nama, email, aktif]
+      properties:
+        id:
+          type: string
+          format: uuid
+        nama:
+          type: string
+        email:
+          type: string
+          format: email
+          description: Identitas email; perubahan melalui endpoint profil tidak diizinkan.
+        nip:
+          type: [string, "null"]
+        kategoriPegawaiId:
+          type: [string, "null"]
+          format: uuid
+        homebaseId:
+          type: [string, "null"]
+          format: uuid
+        aktif:
+          type: boolean
+        jabatanStruktural:
+          type: [string, "null"]
+        jabatanFungsional:
+          type: [string, "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    EmployeeCreate:
+      type: object
+      additionalProperties: false
+      required: [nama, email]
+      properties:
+        nama:
+          type: string
+          minLength: 1
+          maxLength: 200
+        email:
+          type: string
+          format: email
+        nip:
+          type: [string, "null"]
+          maxLength: 50
+        kategoriPegawaiId:
+          type: [string, "null"]
+          format: uuid
+        homebaseId:
+          type: [string, "null"]
+          format: uuid
+        jabatanStruktural:
+          type: [string, "null"]
+          maxLength: 200
+        jabatanFungsional:
+          type: [string, "null"]
+          maxLength: 200
+    EmployeeUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        nama:
+          type: string
+          minLength: 1
+          maxLength: 200
+        nip:
+          type: [string, "null"]
+          maxLength: 50
+        kategoriPegawaiId:
+          type: [string, "null"]
+          format: uuid
+        homebaseId:
+          type: [string, "null"]
+          format: uuid
+        jabatanStruktural:
+          type: [string, "null"]
+          maxLength: 200
+        jabatanFungsional:
+          type: [string, "null"]
+          maxLength: 200
+    EmployeePage:
+      type: object
+      required: [items, page, pageSize, totalItems, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Employee"
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        totalItems:
+          type: integer
+        totalPages:
+          type: integer
+    EmployeeImportResult:
+      type: object
+      required: [imported]
+      properties:
+        imported:
+          type: integer
+          minimum: 1
+    AuditLog:
+      type: object
+      required: [id, aksi, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        aktorId:
+          type: [string, "null"]
+          format: uuid
+        aksi:
+          type: string
+        sasaranId:
+          type: [string, "null"]
+          format: uuid
+        keterangan:
+          type: [string, "null"]
+        ip:
+          type: [string, "null"]
+        createdAt:
+          type: string
+          format: date-time
+    AuditLogPage:
+      type: object
+      required: [items, page, pageSize, totalItems, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditLog"
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        totalItems:
+          type: integer
+        totalPages:
+          type: integer
+    Category:
+      type: object
+      required: [id, kode, nama, usiaPensiun, aktif]
+      properties:
+        id:
+          type: string
+          format: uuid
+        kode:
+          type: string
+        nama:
+          type: string
+        usiaPensiun:
+          type: integer
+        aktif:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CategoryPage:
+      type: object
+      required: [items, page, pageSize, totalItems, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Category"
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        totalItems:
+          type: integer
+        totalPages:
+          type: integer
+    EmployeeImportIssue:
+      type: object
+      required: [row, field, code, message]
+      properties:
+        row:
+          type: integer
+          minimum: 1
+        field:
+          type: string
+        code:
+          type: string
+        message:
+          type: string
+    EmployeeImportIssueResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, rows]
+          properties:
+            code:
+              type: string
+              enum: [validation_error, identity_conflict]
+            message:
+              type: string
+            rows:
+              type: array
+              items:
+                $ref: "#/components/schemas/EmployeeImportIssue"
+    OrganizationType:
+      type: string
+      enum: [UNIT, FAKULTAS, JURUSAN, BIRO, BAGIAN]
+    Organization:
+      type: object
+      required: [id, name, jenis, aktif]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: [string, "null"]
+        jenis:
+          $ref: "#/components/schemas/OrganizationType"
+        parentId:
+          type: [string, "null"]
+          format: uuid
+        aktif:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    OrganizationUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: [string, "null"]
+          maxLength: 2000
+        jenis:
+          $ref: "#/components/schemas/OrganizationType"
+        parentId:
+          type: [string, "null"]
+          format: uuid
+      minProperties: 1
+    OrganizationCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: [string, "null"]
+          maxLength: 2000
+        jenis:
+          $ref: "#/components/schemas/OrganizationType"
+          default: UNIT
+        parentId:
+          type: [string, "null"]
+          format: uuid
+    OrganizationPage:
+      type: object
+      required: [items, page, pageSize, totalItems, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Organization"
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        totalItems:
+          type: integer
+        totalPages:
+          type: integer
+    Payroll:
+      type: object
+      required: [id, nomorSlip, periode, status, gajiPokok, totalGaji]
+      properties:
+        id:
+          type: string
+          format: uuid
+        nomorSlip:
+          type: string
+        userId:
+          type: string
+          format: uuid
+        nama:
+          type: string
+          description: Nama pegawai pemilik slip.
+        periode:
+          type: string
+          description: Periode bulanan penggajian, misalnya "2026-11".
+          example: "2026-11"
+        periodeLabel:
+          type: string
+          description: Nama periode dalam Bahasa Indonesia, misalnya "November 2026".
+          example: "November 2026"
+        status:
+          type: string
+          enum: [DRAF, TERBIT, TERBAYAR]
+        statusLabel:
+          type: string
+          description: Label status dalam Bahasa Indonesia.
+          example: Terbayar
+        tanggalGaji:
+          type: string
+          description: Tanggal efektif pembayaran pada zona waktu Asia/Jakarta.
+          example: "28-11-2026"
+        gajiPokok:
+          type: string
+          description: Nominal gaji pokok dalam Rupiah, sudah diformat.
+          example: "Rp 3.500.000"
+        totalGaji:
+          type: string
+          description: Total gaji dalam Rupiah, sudah diformat.
+          example: "Rp 4.250.000"
+        potonganPph21:
+          type: string
+          description: Potongan PPh 21 dalam Rupiah, sudah diformat.
+          example: "Rp 175.000"
+        tanggalDibayar:
+          type: [string, "null"]
+          description: Tanggal pembayaran yang dikonfirmasi, atau null bila belum dibayar.
+          example: "28-11-2026"
+    PayrollPage:
+      type: object
+      required: [items, page, pageSize, totalItems, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Payroll"
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        totalItems:
+          type: integer
+        totalPages:
+          type: integer
+    PayrollSchedule:
+      type: object
+      required: [unitId, unitNama, tanggalGajian, updatedAt]
+      properties:
+        unitId:
+          type: string
+          format: uuid
+        unitNama:
+          type: string
+          description: Nama unit organisasi.
+        tanggalGajian:
+          type: integer
+          minimum: 1
+          maximum: 28
+          description: Tanggal tetap tiap bulan (1-28).
+        updatedAt:
+          type: string
+          format: date-time
+    PayrollScheduleList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PayrollSchedule"
+    PayrollScheduleUpdate:
+      type: object
+      required: [tanggalGajian]
+      properties:
+        tanggalGajian:
+          type: integer
+          minimum: 1
+          maximum: 28
+    Holiday:
+      type: object
+      required: [tanggal, nama]
+      properties:
+        tanggal:
+          type: string
+          description: Tanggal kalender (YYYY-MM-DD).
+          example: "2026-08-17"
+        nama:
+          type: string
+          example: "Hari Kemerdekaan Republik Indonesia"
+    HolidayList:
+      type: object
+      required: [year, items]
+      properties:
+        year:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Holiday"
+    HolidayRefreshResult:
+      type: object
+      required: [year, refreshed]
+      properties:
+        year:
+          type: integer
+        refreshed:
+          type: integer
+    PaymentConfirmation:
+      type: object
+      additionalProperties: false
+      required: [pelakuPengesahan, tanggalBayar]
+      properties:
+        referensiTransaksi:
+          type: [string, "null"]
+          maxLength: 200
+          description: Nomor referensi batch atau transaksi bank.
+        pelakuPengesahan:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Nama atau NIP pihak yang mengonfirmasi pembayaran.
+        tanggalBayar:
+          type: string
+          format: date
+          description: Tanggal efektif pembayaran pada zona waktu Asia/Jakarta.
+        keterangan:
+          type: [string, "null"]
+          maxLength: 2000
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            requestId:
+              type: string
+    ValidationErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, fields]
+          properties:
+            code:
+              type: string
+              enum: [validation_error]
+            message:
+              type: string
+            fields:
+              type: object
+              additionalProperties:
+                type: string

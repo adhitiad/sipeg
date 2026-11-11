@@ -1,0 +1,33 @@
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Go build and test outputs
+/backend/bin/
+/backend/*.exe
+/backend/*.test
+/backend/*.out
+*.test
+*.out
+
+# Node.js and frontend build outputs
+node_modules/
+dist/
+build/
+.output/
+.tanstack/
+coverage/
+
+# Logs and local OS files
+*.log
+.DS_Store
+Thumbs.db
+
+# IDE and editor specific files
+.vscode/
+.idea/
+.serena/
+agents/
+prisma/

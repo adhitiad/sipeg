@@ -176,3 +176,88 @@ func TestAttendanceEventUnknownMachineAndStoreErrorsAreSafe(t *testing.T) {
 		t.Fatalf("store error response was not safely mapped: %d %s", failedStore.Code, failedStore.Body.String())
 	}
 }
+
+// fakeDeviceAuthenticator mengimplementasikan attendance.DeviceAuthenticator untuk tes.
+type fakeDeviceAuthenticator struct {
+	machineID string
+	token     string
+	err       error
+}
+
+func (a *fakeDeviceAuthenticator) AuthenticateDevice(_ context.Context, deviceID, deviceToken string) (*models.MesinAbsensi, error) {
+	if a.err != nil {
+		return nil, a.err
+	}
+	if deviceToken != a.token {
+		return nil, attendance.ErrInvalidDeviceCredentials
+	}
+	return &models.MesinAbsensi{BaseModel: models.BaseModel{IDModel: models.IDModel{ID: a.machineID}}, Nama: "Mesin Uji", Aktif: true}, nil
+}
+
+func (a *fakeDeviceAuthenticator) RecordLastUsed(_ context.Context, _ string) error {
+	return a.err
+}
+
+func deviceAuthMux(store attendance.Store, deviceAuth attendance.DeviceAuthenticator) *http.ServeMux {
+	mux := http.NewServeMux()
+	RegisterAttendanceRoutes(mux, nil, nil, store, deviceAuth)
+	return mux
+}
+
+func deviceAuthRequest(body string, deviceID, deviceToken string) *http.Request {
+	request := httptest.NewRequest(http.MethodPost, APIPrefix+"/attendance/events", strings.NewReader(body))
+	request.Header.Set(deviceIDHeader, deviceID)
+	request.Header.Set("Authorization", "Bearer "+deviceToken)
+	request.Header.Set("Content-Type", "application/json")
+	return request
+}
+
+func TestAttendanceEventDeviceAuthSuccess(t *testing.T) {
+	store := &fakeAttendanceStore{}
+	authenticator := &fakeDeviceAuthenticator{machineID: "machine-1", token: "device-token-1"}
+	mux := deviceAuthMux(store, authenticator)
+
+	body := `{"machineId":"00000000-0000-4000-8000-000000000001","machinePin":"000042","occurredAt":"2026-11-10T09:00:00+07:00","idempotencyKey":"device-event-1"}`
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, deviceAuthRequest(body, "machine-1", "device-token-1"))
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d: %s", response.Code, http.StatusCreated, response.Body.String())
+	}
+	if len(store.events) != 1 {
+		t.Fatalf("stored event count = %d, want 1", len(store.events))
+	}
+}
+
+func TestAttendanceEventDeviceAuthInvalidCredentials(t *testing.T) {
+	store := &fakeAttendanceStore{}
+	authenticator := &fakeDeviceAuthenticator{machineID: "machine-1", token: "device-token-1"}
+	mux := deviceAuthMux(store, authenticator)
+
+	body := `{"machineId":"00000000-0000-4000-8000-000000000001","machinePin":"000042","occurredAt":"2026-11-10T09:00:00+07:00","idempotencyKey":"device-event-1"}`
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, deviceAuthRequest(body, "machine-1", "wrong-token"))
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusUnauthorized)
+	}
+	if len(store.events) != 0 {
+		t.Fatal("invalid device credentials must not persist event")
+	}
+}
+
+func TestAttendanceEventDeviceAuthMissingCredentialsFallsBackToSession(t *testing.T) {
+	store := &fakeAttendanceStore{}
+	authenticator := &fakeDeviceAuthenticator{machineID: "machine-1", token: "device-token-1"}
+	mux := deviceAuthMux(store, authenticator)
+
+	// Tanpa kredensial perangkat dan resolver/policy adalah nil, auth gagal
+	// dengan 503 (resolver tidak tersedia).
+	body := `{"machineId":"00000000-0000-4000-8000-000000000001","machinePin":"000042","occurredAt":"2026-11-10T09:00:00+07:00","idempotencyKey":"device-event-1"}`
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, attendanceRequest(body))
+
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d without resolver/policy", response.Code, http.StatusServiceUnavailable)
+	}
+}

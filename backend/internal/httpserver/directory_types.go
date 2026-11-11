@@ -32,6 +32,8 @@ type EmployeeDTO struct {
 	Nama              string    `json:"nama"`
 	Email             string    `json:"email"`
 	NIP               *string   `json:"nip"`
+	NIDN              *string   `json:"nidn"`
+	NIDK              *string   `json:"nidk"`
 	KategoriPegawaiID *string   `json:"kategoriPegawaiId"`
 	HomebaseID        *string   `json:"homebaseId"`
 	JabatanStruktural *string   `json:"jabatanStruktural"`
@@ -115,6 +117,7 @@ func validateEmail(value string) bool {
 func employeeDTO(user models.User) EmployeeDTO {
 	return EmployeeDTO{
 		ID: user.ID, Nama: user.Nama, Email: user.Email, NIP: user.Nip,
+		NIDN: user.Nidn, NIDK: user.Nidk,
 		KategoriPegawaiID: user.KategoriPegawaiId, HomebaseID: user.HomebaseId,
 		JabatanStruktural: user.JabatanStruktural, JabatanFungsional: user.JabatanFungsional,
 		Aktif:     user.Aktif,

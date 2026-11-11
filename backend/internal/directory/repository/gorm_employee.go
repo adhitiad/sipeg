@@ -96,6 +96,22 @@ func (s GormStore) CreateEmployees(ctx context.Context, actorID string, employee
 					return &domain.EmployeeConflictError{Index: i, Field: "nip"}
 				}
 			}
+			if employee.Nidn != nil {
+				if err := tx.Model(&models.User{}).Where("nidn = ?", *employee.Nidn).Count(&count).Error; err != nil {
+					return err
+				}
+				if count > 0 {
+					return &domain.EmployeeConflictError{Index: i, Field: "nidn"}
+				}
+			}
+			if employee.Nidk != nil {
+				if err := tx.Model(&models.User{}).Where("nidk = ?", *employee.Nidk).Count(&count).Error; err != nil {
+					return err
+				}
+				if count > 0 {
+					return &domain.EmployeeConflictError{Index: i, Field: "nidk"}
+				}
+			}
 		}
 		for i := range employees {
 			employees[i].EmailVerified = false
@@ -172,6 +188,43 @@ func (s GormStore) ArchiveEmployee(ctx context.Context, actorID, id string) erro
 	})
 }
 
+// AssignEmployeeRole mengubah role dan mencatat audit dalam satu transaksi.
+func (s GormStore) AssignEmployeeRole(ctx context.Context, actorID, id, roleName string) (models.User, error) {
+	var employee models.User
+	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND aktif = ?", id, true).First(&employee).Error; err != nil {
+			return classifyRecordError(err)
+		}
+		var role models.Role
+		if err := tx.Where("name = ?", roleName).First(&role).Error; err != nil {
+			return classifyRoleError(err)
+		}
+		if employee.RoleId != nil && *employee.RoleId == role.ID {
+			return nil
+		}
+		if err := tx.Model(&employee).Updates(map[string]any{"roleId": role.ID}).Error; err != nil {
+			return err
+		}
+		employee.RoleId = &role.ID
+		note := "role=" + roleName
+		return createAudit(ctx, tx, audit.Entry{
+			ActorID: actorID, Action: audit.ActionEmployeeRoleUpdated,
+			TargetID: optionalRef(id), UnitID: employee.HomebaseId, Note: &note,
+		})
+	})
+	if err != nil {
+		return models.User{}, err
+	}
+	return employee, err
+}
+
+func classifyRoleError(err error) error {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return domain.ErrInvalidRef
+	}
+	return err
+}
+
 // employeeColumns memetakan patch domain menjadi kolom database.
 //
 // Kolom memakai nama skema acuan; nilai yang dikosongkan pada permintaan
@@ -187,6 +240,22 @@ func employeeColumns(patch domain.EmployeePatch) map[string]any {
 			updates["nip"] = nil
 		} else {
 			updates["nip"] = nip
+		}
+	}
+	if patch.NIDN.Present {
+		nidn := strings.TrimSpace(patch.NIDN.Value)
+		if patch.NIDN.Null || nidn == "" {
+			updates["nidn"] = nil
+		} else {
+			updates["nidn"] = nidn
+		}
+	}
+	if patch.NIDK.Present {
+		nidk := strings.TrimSpace(patch.NIDK.Value)
+		if patch.NIDK.Null || nidk == "" {
+			updates["nidk"] = nil
+		} else {
+			updates["nidk"] = nidk
 		}
 	}
 	if patch.KategoriPegawaiID.Present {

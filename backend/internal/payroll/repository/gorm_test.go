@@ -25,7 +25,7 @@ func newPayrollDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock) {
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{
-		NamingStrategy:       database.PrismaNamingStrategy{},
+		NamingStrategy:       database.PostgresNamingStrategy{},
 		TranslateError:       true,
 		DisableAutomaticPing: true,
 		Logger:               logger.Default.LogMode(logger.Silent),

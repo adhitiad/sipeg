@@ -1,3 +1,4 @@
+-- +goose Up
 -- Draft only: select and approve a versioned migration runner before applying.
 -- Row Level Security policies per tabel aplikasi, berdasarkan matriks peran yang disetujui:
 --   admin   : semua baris
@@ -14,6 +15,7 @@
 -- di sini dan dipakai oleh semua policy.
 
 -- Fungsi helper: apakah role saat ini adalah admin.
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION app.is_admin() RETURNS boolean
 LANGUAGE plpgsql
 AS $$
@@ -21,9 +23,11 @@ BEGIN
     RETURN current_setting('app.current_role', true) = 'admin';
 END;
 $$;
+-- +goose StatementEnd
 
 -- Fungsi helper: apakah homebaseId berada dalam cakupan pengguna (sendiri atau turunan).
 -- Menggunakan recursive CTE untuk mencari semua turunan dari homebase pengguna.
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION app.user_homebase_ids() RETURNS TABLE(homebase_id uuid)
 LANGUAGE plpgsql
 AS $$
@@ -44,8 +48,10 @@ BEGIN
     SELECT id FROM subtree;
 END;
 $$;
+-- +goose StatementEnd
 
 -- Fungsi helper: apakah role saat ini adalah atasan (atasan dapat melihat bawahan).
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION app.is_supervisor() RETURNS boolean
 LANGUAGE plpgsql
 AS $$
@@ -53,6 +59,7 @@ BEGIN
     RETURN current_setting('app.current_role', true) IN ('operator', 'atasan');
 END;
 $$;
+-- +goose StatementEnd
 
 -- ============================================================
 -- Tabel: user
@@ -170,7 +177,7 @@ CREATE POLICY rl_outbox_supervisor_scope ON "outboxMessage"
         app.is_supervisor()
         AND "id" = ANY(
             SELECT o."id" FROM "outboxMessage" o
-            JOIN "user" u ON u."id" = o."payload"::jsonb->>'userId'
+            JOIN "user" u ON u."id"::text = o."payload"::jsonb->>'userId'
             WHERE u."homebaseId" = ANY(SELECT homebase_id FROM app.user_homebase_ids())
         )
     );

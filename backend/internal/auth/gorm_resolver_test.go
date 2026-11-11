@@ -25,7 +25,7 @@ func newResolverDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock) {
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{
-		NamingStrategy:       database.PrismaNamingStrategy{},
+		NamingStrategy:       database.PostgresNamingStrategy{},
 		TranslateError:       true,
 		DisableAutomaticPing: true,
 		Logger:               logger.Default.LogMode(logger.Silent),
@@ -201,7 +201,7 @@ func TestResolverRejectsSessionWithoutUser(t *testing.T) {
 }
 
 func TestSessionModelMatchesReferenceSchema(t *testing.T) {
-	parsed, err := schema.Parse(&models.Session{}, &sync.Map{}, database.PrismaNamingStrategy{})
+	parsed, err := schema.Parse(&models.Session{}, &sync.Map{}, database.PostgresNamingStrategy{})
 	if err != nil {
 		t.Fatal(err)
 	}

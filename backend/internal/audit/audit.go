@@ -14,10 +14,11 @@ import (
 
 // Nama aksi yang dicatat backend.
 const (
-	ActionEmployeeCreated  = "employee.created"
-	ActionEmployeeUpdated  = "employee.updated"
-	ActionEmployeeArchived = "employee.archived"
-	ActionEmployeeImported = "employee.imported"
+	ActionEmployeeCreated     = "employee.created"
+	ActionEmployeeUpdated     = "employee.updated"
+	ActionEmployeeArchived    = "employee.archived"
+	ActionEmployeeImported    = "employee.imported"
+	ActionEmployeeRoleUpdated = "employee.role.updated"
 
 	ActionOrganizationCreated  = "organization.created"
 	ActionOrganizationUpdated  = "organization.updated"

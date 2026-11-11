@@ -127,13 +127,9 @@ func TestMigrationCoversAuditLogUnitColumn(t *testing.T) {
 	}
 }
 
-// TestRowLevelSecurityMigrationCoversEveryTable memastikan migrasi RLS
-// mengaktifkan Row Level Security pada seluruh tabel aplikasi, sehingga tabel
-// yang belum memiliki policy tetap ditolak bagi role non-pemilik.
-// TestRowLevelSecurityMigrationCoversEveryTable memastikan Row Level Security
-// diaktifkan pada seluruh tabel aplikasi, sehingga tabel yang belum memiliki
-// policy tetap ditolak bagi role non-pemilik. Cakupan diperiksa pada seluruh
-// migrasi, bukan hanya satu berkas.
+// TestRowLevelSecurityMigrationCoversEveryTable memastikan setiap tabel
+// mendapat ENABLE ROW LEVEL SECURITY dari daftar migrasi dasar atau migrasi
+// yang membuat tabel tersebut.
 func TestRowLevelSecurityMigrationCoversEveryTable(t *testing.T) {
 	dir := migrationsDir()
 	entries, err := os.ReadDir(dir)
@@ -153,29 +149,38 @@ func TestRowLevelSecurityMigrationCoversEveryTable(t *testing.T) {
 		combined.WriteString("\n")
 	}
 	migration := combined.String()
-
-	schemaPath, err := referenceSchemaPath()
+	baseRLS, err := os.ReadFile(filepath.Join(dir, "000004_row_level_security.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	reference, err := loadPrismaSchema(schemaPath)
+	listPattern := regexp.MustCompile(`(?s)FOREACH target IN ARRAY ARRAY\[(.*?)\] LOOP`)
+	listMatch := listPattern.FindStringSubmatch(string(baseRLS))
+	if listMatch == nil {
+		t.Fatal("RLS migration has no table list")
+	}
+	listedTables := map[string]bool{}
+	for _, match := range regexp.MustCompile(`'([^']+)'`).FindAllStringSubmatch(listMatch[1], -1) {
+		listedTables[match[1]] = true
+	}
+	enabledTables := map[string]bool{}
+	for _, match := range regexp.MustCompile(`(?i)ALTER\s+TABLE\s+"([^"]+)"\s+ENABLE\s+ROW LEVEL SECURITY`).FindAllStringSubmatch(migration, -1) {
+		enabledTables[match[1]] = true
+	}
+
+	schemaState, err := loadMigrationSchema()
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	missing := []string{}
-	for _, model := range reference {
-		// Nama tabel dapat muncul dengan kutip tunggal (daftar RLS) maupun
-		// kutip ganda (perintah ALTER TABLE).
-		covered := strings.Contains(migration, "'"+model.Table+"'") ||
-			strings.Contains(migration, `"`+model.Table+`"`)
-		if !covered {
-			missing = append(missing, model.Table)
+	for table := range schemaState.Tables {
+		if !listedTables[table] && !enabledTables[table] {
+			missing = append(missing, table)
 		}
 	}
 	sort.Strings(missing)
 	if len(missing) > 0 {
-		t.Errorf("tabel pada skema acuan belum tercakup migrasi RLS: %s", strings.Join(missing, ", "))
+		t.Errorf("tabel belum mendapat ENABLE ROW LEVEL SECURITY: %s", strings.Join(missing, ", "))
 	}
 
 	if !strings.Contains(migration, "ENABLE ROW LEVEL SECURITY") {

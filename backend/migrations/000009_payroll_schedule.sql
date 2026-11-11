@@ -1,3 +1,4 @@
+-- +goose Up
 -- Draft only: select and approve a versioned migration runner before applying.
 -- Jadwal tanggal gajian per unit organisasi (keputusan 11 November 2026):
 -- admin menginput unit mana pun, operator hanya unit dalam cakupannya.
@@ -12,15 +13,9 @@ CREATE TABLE IF NOT EXISTS "jadwalGaji" (
     "updatedAt" timestamp(3) NOT NULL DEFAULT now()
 );
 
-DO $$
-BEGIN
-    ALTER TABLE "jadwalGaji"
-        ADD CONSTRAINT "jadwalGaji_unitId_fkey"
-        FOREIGN KEY ("unitId") REFERENCES "Homebase" ("id");
-EXCEPTION
-    WHEN duplicate_object THEN NULL;
-END
-$$;
+ALTER TABLE "jadwalGaji"
+    ADD CONSTRAINT "jadwalGaji_unitId_fkey"
+    FOREIGN KEY ("unitId") REFERENCES "Homebase" ("id");
 
 -- Pengaturan penggajian global tidak lagi dipakai.
 DROP TABLE IF EXISTS "pengaturanGaji";

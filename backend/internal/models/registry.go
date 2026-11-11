@@ -1,10 +1,9 @@
 package models
 
-// All mengembalikan seluruh model GORM yang memetakan tabel pada skema acuan.
+// All mengembalikan seluruh model GORM yang memetakan tabel aplikasi.
 //
 // IDModel dan BaseModel sengaja tidak disertakan: keduanya adalah struct dasar
-// yang di-embed, bukan tabel. Registry ini dipakai audit paritas skema untuk
-// memastikan setiap model GORM punya pasangan pada prisma/schema.prisma.
+// yang di-embed, bukan tabel. Registry ini dipakai pemeriksaan mapping database.
 func All() []any {
 	return []any{
 		&User{}, &Homebase{}, &Kategori{}, &Delegasi{}, &RiwayatLogin{},
@@ -17,6 +16,7 @@ func All() []any {
 		&Pesangon{}, &UjiKapabilitas{}, &MutasiJabatan{}, &Dokumen{}, &Peringatan{},
 		&Pemberhentian{}, &Paklaring{}, &PesanKeluar{}, &AuditLog{},
 		&Session{}, &Account{}, &Verification{}, &TwoFactor{},
-		&OutboxMessage{}, &Pembayaran{},
+		&OutboxMessage{}, &Pembayaran{}, &MachineCredential{},
+		&SKPPeriode{}, &SKPTargetKinerja{}, &LogAktivitasHarian{}, &PenilaianKinerjaAkhir{},
 	}
 }

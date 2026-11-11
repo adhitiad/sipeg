@@ -1,3 +1,4 @@
+-- +goose Up
 -- Draft only: select and approve a versioned migration runner before applying.
 -- Kalender hari libur nasional Indonesia (keputusan 11 November 2026, DEC-028):
 -- tabel referensi yang diisi dari penyedia api.co.id oleh admin

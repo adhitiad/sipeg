@@ -1,3 +1,4 @@
+-- +goose Up
 -- Draft only: select and approve a versioned migration runner before applying.
 -- No vendor protocol, device credential, or attendance status is implied here.
 CREATE TABLE "AttendanceEvent" (

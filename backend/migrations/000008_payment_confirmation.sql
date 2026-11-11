@@ -1,3 +1,4 @@
+-- +goose Up
 -- Draft only: select and approve a versioned migration runner before applying.
 -- Tambahkan representasi pembayaran gaji pada slip gaji.
 -- Status slip gaji diperluas dengan TERBAYAR (sudah dibayar dan dikonfirmasi).

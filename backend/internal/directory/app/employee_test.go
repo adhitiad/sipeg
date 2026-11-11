@@ -48,6 +48,10 @@ func (r *fakeEmployeeRepository) UpdateEmployee(_ context.Context, _ string, _ s
 	return models.User{}, nil
 }
 
+func (r *fakeEmployeeRepository) AssignEmployeeRole(_ context.Context, _, _, _ string) (models.User, error) {
+	return models.User{}, nil
+}
+
 func (r *fakeEmployeeRepository) ArchiveEmployee(_ context.Context, _ string, id string) error {
 	r.archived = append(r.archived, id)
 	return nil

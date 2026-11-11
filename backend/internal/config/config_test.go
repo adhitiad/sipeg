@@ -41,6 +41,9 @@ func TestLoadAppliesSafeDefaults(t *testing.T) {
 	if len(cfg.TrustedOrigins) != 0 {
 		t.Fatalf("expected no trusted origins, got %v", cfg.TrustedOrigins)
 	}
+	if cfg.SessionLifetime != defaultSessionLifetime {
+		t.Fatalf("session lifetime = %v, want %v", cfg.SessionLifetime, defaultSessionLifetime)
+	}
 }
 
 func TestLoadParsesTrustedOrigins(t *testing.T) {
@@ -225,5 +228,53 @@ func TestIntegrationSecretsMustBeComplete(t *testing.T) {
 	t.Setenv("UPSTASH_REDIS_REST_URL", "https://redis.example.test")
 	if _, err := Load(); err == nil {
 		t.Fatal("expected error when redis token is missing")
+	}
+}
+
+func TestAllowedEmailDomainsRequiresGoogleOAuth(t *testing.T) {
+	setBaseEnv(t)
+	t.Setenv("ALLOWED_EMAIL_DOMAINS", "unisubang.ac.id")
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "GOOGLE_CLIENT_ID") {
+		t.Fatalf("expected Google OAuth required error, got: %v", err)
+	}
+}
+
+func TestInviteOnlyRequiresGoogleOAuth(t *testing.T) {
+	setBaseEnv(t)
+	t.Setenv("INVITE_ONLY", "true")
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "GOOGLE_CLIENT_ID") {
+		t.Fatalf("expected Google OAuth required error for invite only, got: %v", err)
+	}
+}
+
+func TestGoogleOAuthConfigIsLoaded(t *testing.T) {
+	setBaseEnv(t)
+	t.Setenv("GOOGLE_CLIENT_ID", "id-123")
+	t.Setenv("GOOGLE_CLIENT_SECRET", "secret-xyz")
+	t.Setenv("ALLOWED_EMAIL_DOMAINS", "unisubang.ac.id")
+	t.Setenv("INVITE_ONLY", "false")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.GoogleClientID != "id-123" || cfg.GoogleClientSecret != "secret-xyz" {
+		t.Fatalf("Google OAuth not loaded correctly: %+v", cfg)
+	}
+	if len(cfg.AllowedEmailDomains) != 1 || cfg.AllowedEmailDomains[0] != "unisubang.ac.id" {
+		t.Fatalf("allowed domains not loaded: %v", cfg.AllowedEmailDomains)
+	}
+}
+
+func TestSessionLifetimeDefaultIs23Hours(t *testing.T) {
+	setBaseEnv(t)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.SessionLifetime != 23*time.Hour {
+		t.Fatalf("expected session lifetime 23h, got %v", cfg.SessionLifetime)
 	}
 }

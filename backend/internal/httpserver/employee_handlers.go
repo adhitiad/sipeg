@@ -58,6 +58,8 @@ type employeeCreateRequest struct {
 	Nama              string  `json:"nama"`
 	Email             string  `json:"email"`
 	NIP               *string `json:"nip"`
+	NIDN              *string `json:"nidn"`
+	NIDK              *string `json:"nidk"`
 	KategoriPegawaiID *string `json:"kategoriPegawaiId"`
 	HomebaseID        *string `json:"homebaseId"`
 	JabatanStruktural *string `json:"jabatanStruktural"`
@@ -75,6 +77,8 @@ func (api directoryAPI) createEmployee(w http.ResponseWriter, r *http.Request) {
 		Nama:              strings.TrimSpace(request.Nama),
 		Email:             strings.ToLower(strings.TrimSpace(request.Email)),
 		NIP:               request.NIP,
+		NIDN:              request.NIDN,
+		NIDK:              request.NIDK,
 		KategoriPegawaiID: request.KategoriPegawaiID,
 		HomebaseID:        request.HomebaseID,
 		JabatanStruktural: request.JabatanStruktural,
@@ -110,6 +114,40 @@ func (api directoryAPI) updateEmployee(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, employeeDTO(updated))
+}
+
+type employeeRoleRequest struct {
+	RoleName string `json:"roleName"`
+}
+
+type employeeRoleResponse struct {
+	EmployeeID string `json:"employeeId"`
+	RoleName   string `json:"roleName"`
+}
+
+func (api directoryAPI) assignEmployeeRole(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("employeeId")
+	if !validUUID(id) {
+		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidID)
+		return
+	}
+	var request employeeRoleRequest
+	if err := decodeJSON(w, r, &request); err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidJSON)
+		return
+	}
+	principal, _ := auth.PrincipalFromContext(r.Context())
+	updated, err := api.employees.AssignRole(r.Context(), principal, id, request.RoleName)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	roleName, err := domain.NormalizeRoleName(request.RoleName)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, employeeRoleResponse{EmployeeID: updated.ID, RoleName: roleName})
 }
 
 func (api directoryAPI) archiveEmployee(w http.ResponseWriter, r *http.Request) {

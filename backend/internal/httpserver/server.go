@@ -16,10 +16,14 @@ import (
 
 // MuxOptions mengumpulkan dependensi yang dibutuhkan untuk menyusun API mux.
 type MuxOptions struct {
-	Resolver   auth.SessionResolver
-	Policy     auth.Policy
-	Directory  DirectoryServices
-	Attendance attendance.Store
+	Resolver       auth.SessionResolver
+	Policy         auth.Policy
+	Directory      DirectoryServices
+	Attendance     attendance.Store
+	AttendanceRead *attendance.ReadService
+	// DeviceAuth mengaktifkan autentikasi perangkat pada endpoint ingestion
+	// presensi (X-Device-ID + Bearer token), terpisah dari sesi pengguna.
+	DeviceAuth attendance.DeviceAuthenticator
 	// Payroll menjalankan use case penggajian. Bila nil, endpoint penggajian
 	// tidak didaftarkan.
 	Payroll *app.Service
@@ -31,6 +35,10 @@ type MuxOptions struct {
 	QStash *QStashOptions
 	// SessionRevoker mengaktifkan POST /api/v1/auth/logout bila tidak nil.
 	SessionRevoker auth.SessionRevoker
+	// SessionIssuer mengaktifkan POST /api/v1/auth/session (penerbitan sesi
+	// bootstrap) bila tidak nil. Endpoint ini akan digantikan oleh runtime
+	// Better Auth saat tersedia.
+	SessionIssuer auth.SessionIssuer
 	// ReadinessCheckers diperiksa pada GET /ready.
 	ReadinessCheckers []DependencyChecker
 	// ReadinessTimeout membatasi waktu pemeriksaan tiap dependency.
@@ -84,7 +92,10 @@ func NewMuxWithOptions(options MuxOptions) *http.ServeMux {
 		RegisterDirectoryRoutes(mux, options.Resolver, options.Policy, options.Directory)
 	}
 	if options.Attendance != nil {
-		RegisterAttendanceRoutes(mux, options.Resolver, options.Policy, options.Attendance)
+		RegisterAttendanceRoutes(mux, options.Resolver, options.Policy, options.Attendance, options.DeviceAuth)
+	}
+	if options.AttendanceRead != nil {
+		RegisterAttendanceReadRoutes(mux, options.Resolver, options.Policy, options.AttendanceRead)
 	}
 	if options.Payroll != nil {
 		RegisterPayrollRoutes(mux, options.Resolver, options.Policy, options.Payroll)
@@ -96,6 +107,9 @@ func NewMuxWithOptions(options MuxOptions) *http.ServeMux {
 		RegisterQStashRoutes(mux, options.QStash)
 	}
 	RegisterLogoutRoute(mux, options.Resolver, options.SessionRevoker)
+	if options.SessionIssuer != nil {
+		RegisterSessionIssueRoute(mux, options.Resolver, options.Policy, options.SessionIssuer)
+	}
 	return mux
 }
 

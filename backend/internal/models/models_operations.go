@@ -118,6 +118,17 @@ type AttendanceEvent struct {
 	CreatedAt      time.Time `gorm:"column:createdAt;type:timestamptz(3);not null"`
 }
 
+// MachineCredential menyimpan kredensial autentikasi perangkat mesin absensi.
+// Nilai kredensial disimpan sebagai hash (credentialHash), bukan plaintext.
+type MachineCredential struct {
+	BaseModel
+	MachineId      string     `gorm:"column:machineId;type:uuid;not null;index:machine_credential_machine_idx"`
+	CredentialType string     `gorm:"column:credentialType;size:50;not null"`
+	CredentialHash string     `gorm:"column:credentialHash;type:text;not null"`
+	Active         bool       `gorm:"column:active;default:true"`
+	LastUsedAt     *time.Time `gorm:"column:lastUsedAt;type:timestamp(3)"`
+}
+
 type TemplateSidikJari struct {
 	BaseModel
 	UserId         string `gorm:"type:uuid;uniqueIndex:template_user_jari_key;index:template_user_idx"`

@@ -11,8 +11,8 @@ import (
 	"gorm.io/gorm/schema"
 )
 
-func TestPrismaNamingStrategy(t *testing.T) {
-	strategy := PrismaNamingStrategy{}
+func TestPostgresNamingStrategy(t *testing.T) {
+	strategy := PostgresNamingStrategy{}
 	tests := []struct {
 		name     string
 		got      string
@@ -21,7 +21,7 @@ func TestPrismaNamingStrategy(t *testing.T) {
 		{name: "mapped table", got: strategy.TableName("User"), expected: "user"},
 		{name: "mapped camel table", got: strategy.TableName("GajiTunjangan"), expected: "gajiTunjangan"},
 		{name: "attendance event table", got: strategy.TableName("AttendanceEvent"), expected: "AttendanceEvent"},
-		{name: "default Prisma table", got: strategy.TableName("Homebase"), expected: "Homebase"},
+		{name: "default PostgreSQL table", got: strategy.TableName("Homebase"), expected: "Homebase"},
 		{name: "camel column", got: strategy.ColumnName("", "UserId"), expected: "userId"},
 		{name: "ID column", got: strategy.ColumnName("", "ID"), expected: "id"},
 	}
@@ -35,8 +35,8 @@ func TestPrismaNamingStrategy(t *testing.T) {
 	}
 }
 
-func TestGORMUsesPrismaTableAndColumnNames(t *testing.T) {
-	parsed, err := schema.Parse(&models.User{}, &sync.Map{}, PrismaNamingStrategy{})
+func TestGORMUsesPostgresTableAndColumnNames(t *testing.T) {
+	parsed, err := schema.Parse(&models.User{}, &sync.Map{}, PostgresNamingStrategy{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,8 +59,8 @@ func TestGORMUsesPrismaTableAndColumnNames(t *testing.T) {
 	}
 }
 
-func TestGORMOrganizationFieldsMatchReferenceNames(t *testing.T) {
-	parsed, err := schema.Parse(&models.Homebase{}, &sync.Map{}, PrismaNamingStrategy{})
+func TestGORMOrganizationFieldsUsePostgresNames(t *testing.T) {
+	parsed, err := schema.Parse(&models.Homebase{}, &sync.Map{}, PostgresNamingStrategy{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestEmbeddedModelHookGeneratesUUID(t *testing.T) {
 }
 
 func TestAttendanceEventMappingMatchesReferenceAndIndexes(t *testing.T) {
-	parsed, err := schema.Parse(&models.AttendanceEvent{}, &sync.Map{}, PrismaNamingStrategy{})
+	parsed, err := schema.Parse(&models.AttendanceEvent{}, &sync.Map{}, PostgresNamingStrategy{})
 	if err != nil {
 		t.Fatal(err)
 	}

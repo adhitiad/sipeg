@@ -36,6 +36,7 @@ func RegisterDirectoryRoutes(mux *http.ServeMux, resolver auth.SessionResolver, 
 	mux.Handle("POST "+APIPrefix+"/employees/import", protectedAny([]auth.Permission{"employee:import", "employee:import:homebase"}, http.HandlerFunc(api.importEmployees)))
 	mux.Handle("GET "+APIPrefix+"/employees/{employeeId}", protectedAny([]auth.Permission{"employee:read:any", "employee:read:homebase", "employee:read:self"}, http.HandlerFunc(api.getEmployee)))
 	mux.Handle("PATCH "+APIPrefix+"/employees/{employeeId}", protectedAny([]auth.Permission{"employee:update:any", "employee:update:homebase"}, http.HandlerFunc(api.updateEmployee)))
+	mux.Handle("PUT "+APIPrefix+"/employees/{employeeId}/role", protected("employee:role:manage", http.HandlerFunc(api.assignEmployeeRole)))
 	mux.Handle("DELETE "+APIPrefix+"/employees/{employeeId}", protectedAny([]auth.Permission{"employee:archive", "employee:archive:homebase"}, http.HandlerFunc(api.archiveEmployee)))
 
 	mux.Handle("GET "+APIPrefix+"/organizations", protectedAny([]auth.Permission{"organization:read", "organization:read:homebase"}, http.HandlerFunc(api.listOrganizations)))

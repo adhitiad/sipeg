@@ -1,8 +1,8 @@
 ﻿# Backend
 
-Backend SIMPEG menggunakan Go, GORM, dan PostgreSQL. `internal/models` berisi model GORM untuk tabel-tabel yang didefinisikan oleh `../prisma/schema.prisma`; schema Prisma dipertahankan sebagai referensi, bukan runtime ORM backend.
+Backend SIMPEG menggunakan Go, GORM, dan PostgreSQL. `internal/models` memetakan tabel aplikasi yang dibuat oleh migrasi Goose di `migrations/`; migrasi SQL adalah sumber skema yang ditinjau dan diterapkan.
 
-Gunakan `internal/database.OpenPostgres` agar nama tabel dan kolom mengikuti konvensi schema acuan. Model menyimpan foreign key sebagai kolom UUID; relasi untuk kebutuhan query dapat ditambahkan bersama fitur yang memakainya.
+Gunakan `internal/database.OpenPostgres` agar nama tabel dan kolom mengikuti konvensi PostgreSQL yang dipakai migrasi. Model menyimpan foreign key sebagai kolom UUID; relasi untuk kebutuhan query dapat ditambahkan bersama fitur yang memakainya.
 
 Kontrak HTTP/JSON MVP ditulis dalam OpenAPI 3.1 di `../docs/openapi.yaml`. Seluruh endpoint data berada di bawah prefix versi `/api/v1`; endpoint operasional (`/health`, `/ready`) tidak berversi. Grant runtime ada di `cmd/server/main.go`; status implementasi cakupan akses tidak boleh disimpulkan hanya dari kontrak endpoint.
 
@@ -17,7 +17,7 @@ Versi API memakai prefix path: `/api/v1/employees`, `/api/v1/organizations`, dan
 
 Endpoint operasional `/health` dan `/ready` berada di luar prefix versi.
 
-Atur `DATABASE_URL` pada aplikasi yang memanggil backend dan berikan nilainya ke `OpenPostgres`. Migration runner yang dipilih adalah Goose dengan konfigurasi di `.goose.yaml`; workflow deployment belum dibuat dan migration belum diuji terhadap database nyata. Tinjau dan terapkan melalui proses migrasi yang disetujui sebelum memakai CRUD. Jangan menjalankan `AutoMigrate`.
+Atur `DATABASE_URL` pada aplikasi yang memanggil backend dan berikan nilainya ke `OpenPostgres`. Migration runner yang dipilih adalah Goose dengan konfigurasi di `.goose.yaml`; workflow deployment tersedia di `.github/workflows/deploy-migrations.yml` (dipicu secara manual via `workflow_dispatch`, `DATABASE_URL` sebagai secret GitHub). Migration belum pernah diterapkan pada database nyata. Tinjau dan terapkan melalui proses migrasi yang disetujui sebelum memakai CRUD. Jangan menjalankan `AutoMigrate`.
 
 ## Struktur lapisan
 

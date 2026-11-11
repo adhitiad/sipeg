@@ -32,6 +32,8 @@ type User struct {
 	Nama              string
 	Nik               *string       `gorm:"uniqueIndex"`
 	Nip               *string       `gorm:"uniqueIndex"`
+	Nidn              *string       `gorm:"uniqueIndex"`
+	Nidk              *string       `gorm:"uniqueIndex"`
 	JenisKelamin      *JenisKelamin `gorm:"column:jenis_kelamin"`
 	TanggalLahir      *time.Time    `gorm:"column:tanggal_lahir;type:timestamp(3)"`
 	NoHp              *string       `gorm:"column:no_hp"`

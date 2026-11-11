@@ -12,11 +12,11 @@ import (
 	"gorm.io/gorm/schema"
 )
 
-type PrismaNamingStrategy struct {
+type PostgresNamingStrategy struct {
 	schema.NamingStrategy
 }
 
-var prismaTableNames = map[string]string{
+var postgresTableNames = map[string]string{
 	"User":              "user",
 	"Homebase":          "Homebase",
 	"Kategori":          "kategoriPegawai",
@@ -62,18 +62,19 @@ var prismaTableNames = map[string]string{
 	"Account":           "account",
 	"Verification":      "verification",
 	"TwoFactor":         "twoFactor",
+	"MachineCredential": "machineCredential",
 	"OutboxMessage":     "outboxMessage",
 	"Pembayaran":        "pembayaran",
 }
 
-func (PrismaNamingStrategy) TableName(name string) string {
-	if tableName, ok := prismaTableNames[name]; ok {
+func (PostgresNamingStrategy) TableName(name string) string {
+	if tableName, ok := postgresTableNames[name]; ok {
 		return tableName
 	}
 	return name
 }
 
-func (PrismaNamingStrategy) ColumnName(_ string, name string) string {
+func (PostgresNamingStrategy) ColumnName(_ string, name string) string {
 	if name == "ID" {
 		return "id"
 	}
@@ -95,7 +96,7 @@ func OpenPostgres(dsn string) (*gorm.DB, error) {
 	}
 
 	return gorm.Open(postgres.Open(withSessionTimeZone(dsn)), &gorm.Config{
-		NamingStrategy: PrismaNamingStrategy{},
+		NamingStrategy: PostgresNamingStrategy{},
 		TranslateError: true,
 		NowFunc:        timeutil.NowUTC,
 	})

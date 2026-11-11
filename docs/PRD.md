@@ -7,9 +7,9 @@
 
 ## 1. Ringkasan
 
-SIMPEG direncanakan sebagai aplikasi untuk mengelola data pegawai dan proses kepegawaian dalam satu sumber informasi yang dapat dicari, diperbarui, dan diaudit oleh pengguna yang berwenang. Backend dan frontend dibangun sebagai aplikasi terpisah dan berkomunikasi melalui API. Referensi model database PostgreSQL berada di `prisma/schema.prisma`; backend mengakses database dengan model GORM di `backend/internal/models`.
+SIMPEG direncanakan sebagai aplikasi untuk mengelola data pegawai dan proses kepegawaian dalam satu sumber informasi yang dapat dicari, diperbarui, dan diaudit oleh pengguna yang berwenang. Backend dan frontend dibangun sebagai aplikasi terpisah dan berkomunikasi melalui API. Skema PostgreSQL aplikasi dibentuk oleh migrasi Goose di `backend/migrations/`; backend mengakses database dengan model GORM di `backend/internal/models`.
 
-Schema acuan sudah memodelkan domain yang lebih luas dari MVP awal, termasuk presensi, cuti, penggajian, mutasi, dokumen, kinerja, dan autentikasi. Keberadaan model di schema tidak dengan sendirinya menetapkan prioritas rilis atau aturan bisnis final. Kebijakan organisasi, yurisdiksi, dan urutan peluncuran perlu dikonfirmasi.
+Migrasi yang tersedia memuat domain lebih luas dari MVP awal, termasuk presensi, cuti, penggajian, mutasi, dokumen, kinerja, dan autentikasi. Keberadaan tabel tidak dengan sendirinya menetapkan prioritas rilis atau aturan bisnis final. Kebijakan organisasi, yurisdiksi, dan urutan peluncuran perlu dikonfirmasi.
 
 ## 2. Masalah dan tujuan
 
@@ -145,11 +145,11 @@ Perubahan pada data penting mencatat pelaku, waktu, jenis perubahan, dan referen
 
 - Bahasa: Go.
 - ORM: GORM.
-- Database relasional: Supabase PostgreSQL, sesuai `prisma/schema.prisma`.
-- `prisma/schema.prisma` adalah referensi model database, bukan ORM runtime backend. Model Go/GORM di `backend/internal/models` menjadi pemetaan yang dipakai backend.
-- Backend tidak menggunakan Prisma Client. Naming strategy GORM harus mempertahankan nama tabel dan kolom PostgreSQL dari referensi Prisma.
+- Database relasional: Supabase PostgreSQL, dengan schema yang dibentuk oleh migrasi Goose di `backend/migrations/`.
+- Model Go/GORM di `backend/internal/models` memetakan tabel dan kolom PostgreSQL yang didefinisikan oleh migrasi.
+- Naming strategy GORM mempertahankan nama tabel dan kolom yang digunakan migrasi.
 - Backend memiliki API HTTP/JSON dan bertanggung jawab atas aturan bisnis, validasi, otorisasi, serta akses data.
-- Migrasi produksi harus eksplisit, berversi, dan konsisten dengan schema acuan. Tool migrasi dan proses deployment masih perlu diputuskan; jangan mengandalkan GORM AutoMigrate.
+- Migrasi produksi harus eksplisit, berversi, dan menjadi sumber DDL; jangan mengandalkan GORM AutoMigrate. Status migrasi aktual harus diverifikasi pada database target.
 
 ### Layanan pendukung
 
@@ -203,7 +203,7 @@ Tetapkan definisi, baseline, target, serta cara pengukuran sebelum menggunakan m
 - Apakah pegawai boleh memperbarui profil sendiri? Apakah perubahan perlu persetujuan?
 - Bagaimana struktur peran, unit organisasi, dan cakupan akses dibentuk?
 - Apakah MVP memerlukan impor/ekspor data, dan format serta proses persetujuannya seperti apa?
-- Dari domain yang sudah dimodelkan di `prisma/schema.prisma`, modul mana yang masuk MVP dan mana yang dirilis pada fase berikutnya?
+- Dari domain yang sudah dimodelkan oleh migrasi dan backend, modul mana yang masuk MVP dan mana yang dirilis pada fase berikutnya?
 - Apa sumber identitas/login, kebijakan MFA, dan proses keluar-masuk pengguna?
 - Tool migrasi, deployment, backup/restore, retensi audit, target kinerja, dan target ketersediaan apa yang diwajibkan?
 - Sistem eksternal apa yang perlu diintegrasikan dan siapa pemilik datanya?
@@ -243,12 +243,14 @@ Batas MVP awal tahap 1 telah disetujui. Dependensi antartahap dan kebijakan inst
 
 | Peran | Permission yang diizinkan | Cakupan dan batas |
 |---|---|---|
-| admin | `employee:read:any`, `employee:create`, `employee:update:any`, `employee:archive`, `employee:import`, `organization:read`, `organization:manage`, `attendance:event:ingest`, `audit:read`, `category:read`, `payroll:read:any`, `payroll:manage`, `payroll:schedule`, `holiday:read`, `holiday:manage` | Seluruh organisasi. Akses ke data payroll atau sensitif tambahan masih memerlukan grant eksplisit dan diaudit. |
-| operator | `employee:read:homebase`, `employee:create:homebase`, `employee:update:homebase`, `employee:import:homebase`, `organization:read:homebase`, `organization:manage:homebase`, `audit:read:homebase`, `category:read`, `payroll:read:homebase`, `payroll:schedule:homebase`, `holiday:read` | Unit yang ditugaskan beserta seluruh turunannya pada pohon `Homebase`. Tidak mengelola role; pencatatan konfirmasi pembayaran memerlukan grant terpisah. |
-| atasan | `employee:read:homebase`, `organization:read:homebase`, `category:read`, `holiday:read` | Unit tempat ditugasi beserta anak-anaknya. Tidak dapat mengakses unit lain atau mengubah data pegawai. |
-| pegawai | `employee:read:self`, `payroll:read:self` | Hanya profil sendiri dan slip gaji miliknya sendiri. |
+| admin | `employee:read:any`, `employee:create`, `employee:update:any`, `employee:archive`, `employee:role:manage`, `employee:import`, `organization:read`, `organization:manage`, `attendance:event:ingest`, `attendance:read:any`, `audit:read`, `category:read`, `payroll:read:any`, `payroll:manage`, `payroll:schedule`, `holiday:read`, `holiday:manage` | Seluruh organisasi. Akses ke data payroll atau sensitif tambahan masih memerlukan grant eksplisit dan diaudit. |
+| operator | `employee:read:homebase`, `employee:create:homebase`, `employee:update:homebase`, `employee:import:homebase`, `organization:read:homebase`, `organization:manage:homebase`, `audit:read:homebase`, `category:read`, `attendance:read:homebase`, `payroll:read:homebase`, `payroll:schedule:homebase`, `holiday:read` | Unit yang ditugaskan beserta seluruh turunannya pada pohon `Homebase`. Tidak mengelola role; pencatatan konfirmasi pembayaran memerlukan grant terpisah. |
+| atasan | `employee:read:homebase`, `organization:read:homebase`, `category:read`, `attendance:read:homebase`, `holiday:read` | Unit tempat ditugasi beserta anak-anaknya. Tidak dapat mengakses unit lain atau mengubah data pegawai. |
+| pegawai | `employee:read:self`, `attendance:read:self`, `payroll:read:self` | Hanya profil, riwayat presensi, dan slip gaji miliknya sendiri. |
 
 Permission berakhiran `:any` berarti akses lintas seluruh organisasi dan hanya diberikan kepada `admin`. Permission berakhiran `:homebase` berarti akses dibatasi pada unit penugasan principal beserta turunannya, dan diberikan kepada `operator` serta `atasan`. Permission `audit:read:homebase` memberi operator akses ke jejak perubahan pada unitnya beserta turunannya — bukan jejak global. Permission `category:read` memberi akses baca ke daftar kategori pegawai; hanya kategori aktif yang dikembalikan.
+
+Pembacaan presensi memakai `attendance:read:self` untuk pegawai, `attendance:read:homebase` untuk operator/atasan, dan `attendance:read:any` untuk admin. `GET /api/v1/attendance/my-records` membaca record yang sudah ada pada tabel `Presensi`; `GET /api/v1/attendance/unit-summary` menghitung jumlah record per tanggal/status sesuai cakupan. Keduanya tidak menurunkan status dari `AttendanceEvent`; PIN mesin belum dipetakan ke pegawai dan aturan status harian belum disetujui.
 
 **Cakupan operator ditetapkan 11 November 2026:** cakupan operator adalah unit penugasannya **beserta seluruh turunan** pada pohon `Homebase` (sama dengan atasan). Operator yang ditempatkan di FAKULTAS karena itu dapat mengelola pegawai JURUSAN di bawahnya. Operator membuat unit baru hanya di bawah induk yang sudah berada dalam cakupan; unit akar berada di luar setiap cakupan unit dan hanya dapat dibuat oleh `admin`. Template impor pegawai tidak memuat kolom unit, sehingga pegawai hasil impor oleh operator ditempatkan pada unit penugasan operator.
 
@@ -260,15 +262,15 @@ Backend memeriksa permission pada setiap request. Cakupan organisasi ditegakkan 
 
 ### Keputusan autentikasi dan kontrak sesi (disetujui 2026-11-10)
 
-**Provider/runtime:** Better Auth. Schema `prisma/schema.prisma` sudah menyediakan tabel bergaya Better Auth (`session`, `account`, `verification`, `twofactor`); konfigurasi Google OAuth sudah tersedia di `.env.example`.
+**Provider/runtime:** Better Auth. Migrasi `000001_directory_crud.sql` menyediakan tabel bergaya Better Auth (`session`, `account`, `verification`, `twoFactor`); konfigurasi Google OAuth sudah tersedia di `.env.example`.
 
 **Kontrak:** sesi server dikelola dengan cookie `HttpOnly`, `Secure` di production, `SameSite` yang sesuai, trusted-origin, dan CSRF protection. Go API memverifikasi sesi terhadap sumber server-side yang disepakati, memeriksa akun aktif serta permission/cakupan. Jangan percaya role atau identity header dari browser. Bila frontend dan API memakai host berbeda, topology cookie/proxy harus ditetapkan dan diuji. Jangan mengekspos token sesi ke penyimpanan browser atau menyamakan route guard dengan otorisasi.
 
 Sebelum produksi, pemilik harus mengonfirmasi: Google Workspace institusi sebagai provider login yang diizinkan, metode allowlist/invitasi/provisioning, masa sesi, pencabutan, dan MFA (disarankan wajib bagi admin serta pemegang permission payroll). Sesi, logout, revokasi, akun nonaktif, dan CSRF harus diuji end-to-end.
 
-### Status implementasi tabel autentikasi di schema acuan
+### Status implementasi tabel autentikasi
 
-Empat tabel di `prisma/schema.prisma` dipetakan ke model GORM di `backend/internal/models` dan dipakai sebagai berikut. Status di bawah menyatakan kondisi kode saat ini, bukan kelengkapan alur login.
+Empat tabel pada migrasi awal dipetakan ke model GORM di `backend/internal/models` dan dipakai sebagai berikut. Status di bawah menyatakan kondisi kode saat ini, bukan kelengkapan alur login.
 
 | Tabel acuan | Kolom kunci | Model GORM | Status implementasi |
 |---|---|---|---|
@@ -319,9 +321,10 @@ Mekanisme integrasi diimplementasikan lebih dulu; penggunaan nyata mengikuti fit
 
 - **Aksi yang dicatat:** pembuatan, perubahan, dan pengarsipan profil pegawai; pembuatan, perubahan, dan pengarsipan unit organisasi; impor massal pegawai; ingestion event presensi; pencabutan sesi; dan pembacaan jejak audit itu sendiri. Jejak hanya memuat aktor, aksi, sasaran, keterangan minimal, unit cakupan, alamat IP, dan waktu — isi profil pegawai tidak pernah disalin.
 - **Jejak bersifat append-only.** Backend tidak memiliki jalur hapus atau ubah pada tabel `auditLog` dari kode aplikasi (dijamin oleh tes pemindaian source). Penghapusan hanya dilakukan melalui `audit.Cleaner` yang menjalankan `DELETE` pada entri yang lebih lama dari `AUDIT_RETENTION_DAYS` hari. Default retensi adalah 90 hari. Jika `AUDIT_RETENTION_DAYS` diatur ke 0, tidak ada pemotongan otomatis.
-- **Akses dibatasi per unit.** Setiap entri menyimpan `unitId` — unit cakupan saat aksi terjadi. `admin` membaca seluruh jejak; `operator` hanya membaca jejak unit penugasannya beserta turunannya. Kolom `unitId` menuntut perubahan skema pada `prisma/schema.prisma`, model GORM, dan migrasi `backend/migrations/000003_audit_log_unit.sql`.
+- **Akses dibatasi per unit.** Setiap entri menyimpan `unitId` — unit cakupan saat aksi terjadi. `admin` membaca seluruh jejak; `operator` hanya membaca jejak unit penugasannya beserta turunannya. Kolom `unitId` diselaraskan pada model GORM dan migrasi `backend/migrations/000003_audit_log_unit.sql`.
 - **Pembacaan jejak diaudit.** Setiap pembacaan yang mengembalikan entri mencatat aksi `audit.accessed`. Pembacaan yang tidak mengembalikan entri tidak dicatat agar tabel tidak membengkak oleh request kosong.
-- **Jejak pembayaran sudah ada.** Pencatatan konfirmasi pembayaran menulis aksi `payroll.payment.confirmed`. Jejak untuk perubahan role belum ada karena endpoint perubahan role belum dibuat.
+- **Jejak role sudah diterapkan.** `PUT /api/v1/employees/{id}/role` memerlukan `employee:role:manage` (admin), hanya menerima role `admin`, `operator`, `atasan`, atau `pegawai`, serta menulis perubahan `user.roleId` dan aksi `employee.role.updated` dalam satu transaksi.
+- **Jejak pembayaran sudah ada.** Pencatatan konfirmasi pembayaran menulis aksi `payroll.payment.confirmed`.
 - **Arsip dan ekspor jejak belum ada.** Kewajiban arsip ke media lain, pihak yang berhak melakukan ekspor, dan prosedur pemangkasan selain retensi otomatis belum ditetapkan. Retensi otomatis (90 hari) dan pekerjaan terjadwalnya sudah disetujui.
 
 ### Keputusan versi API (11 November 2026)
@@ -341,7 +344,7 @@ Mekanisme integrasi diimplementasikan lebih dulu; penggunaan nyata mengikuti fit
 
 ### Draf migrasi, backup, audit, dan ketersediaan
 
-- **Migrasi:** Goose (tool migrasi SQL berversi yang dikelola aplikasi Go), dengan file SQL versioned di `backend/migrations/`, review perubahan, dan verifikasi kesetaraan terhadap `prisma/schema.prisma`. Jangan gunakan GORM `AutoMigrate` untuk production. Tool dan prosedur deployment telah dipilih; perlu diimplementasikan workflow penerapannya.
+- **Migrasi:** Goose (tool migrasi SQL berversi yang dikelola aplikasi Go), dengan file SQL di `backend/migrations/` sebagai sumber DDL. Jangan gunakan GORM `AutoMigrate` untuk production. Penerapan migrasi dan pemeriksaan kesesuaian terhadap database target tetap wajib diverifikasi.
 - **Backup/restore:** gunakan kemampuan backup/PITR Supabase sesuai tier yang dipilih, dokumentasikan siapa yang dapat memulihkan, dan uji restore berkala di lingkungan terpisah. Tier, frekuensi/retensi backup, RPO, dan RTO harus ditentukan berdasarkan dampak layanan dan anggaran. **Target telah ditetapkan:** `RPO_HOURS` (default 24 jam), `RTO_HOURS` (default 4 jam), `SLO_TARGET` (default 99.9%) dikonfigurasikan melalui environment variable dan dibaca oleh `config.Load()`.
 - **Audit:** batasi isi log pada aktor, aksi, sasaran, waktu, dan metadata minimum; jangan salin rahasia atau isi data pribadi sensitif. Akses audit dibatasi dan diaudit. Retensi serta kewajiban arsip harus mengikuti kebijakan institusi yang dikonfirmasi, bukan angka asumsi.
 - **Ketersediaan:** jangan menjanjikan SLO/angka uptime sebelum deployment, tier layanan, jam operasional, RPO/RTO, dan jalur eskalasi dipilih.
@@ -356,19 +359,19 @@ Mekanisme integrasi diimplementasikan lebih dulu; penggunaan nyata mengikuti fit
 ### Keputusan mata uang, zona waktu, dan struktur backend (11 November 2026)
 
 - **Mata uang:** sistem memakai satu mata uang, Rupiah Indonesia (IDR). Tidak ada konversi antar-mata uang dan tidak ada nilai tukar yang disimpan. Nominal pada database adalah angka desimal dalam Rupiah penuh; representasi teksnya dibentuk hanya oleh `internal/money` dengan konvensi Indonesia (pemisah ribuan titik, desimal koma, awalan `Rp`), misalnya `Rp 1.500.000`. Simbol atau kode mata uang lain tidak boleh muncul di API maupun dokumen.
-- **Zona waktu:** zona waktu operasional adalah **Asia/Jakarta (UTC+7, WIB)**. Penyimpanan timestamp memakai UTC — kolom `timestamp without time zone` pada skema acuan menyimpan jam dinding UTC, dan `database.OpenPostgres` memaksa parameter runtime `timezone=UTC` agar default `now()` dan nilai yang ditulis GORM memakai basis yang sama. Tampilan ke pengguna dan aturan kalender (periode penggajian, tanggal pembayaran, tanggal cuti) memakai Asia/Jakarta lewat `internal/timeutil`. Kolom tanggal (`date`) menyimpan kalender tanpa jam dan ditulis sebagai tengah malam UTC agar tanggal yang dibaca kembali tetap sama setelah dikonversi.
+- **Zona waktu:** zona waktu operasional adalah **Asia/Jakarta (UTC+7, WIB)**. Penyimpanan timestamp memakai UTC — kolom `timestamp without time zone` yang dibuat migrasi menyimpan jam dinding UTC, dan `database.OpenPostgres` memaksa parameter runtime `timezone=UTC` agar default `now()` dan nilai yang ditulis GORM memakai basis yang sama. Tampilan ke pengguna dan aturan kalender (periode penggajian, tanggal pembayaran, tanggal cuti) memakai Asia/Jakarta lewat `internal/timeutil`. Kolom tanggal (`date`) menyimpan kalender tanpa jam dan ditulis sebagai tengah malam UTC agar tanggal yang dibaca kembali tetap sama setelah dikonversi.
 - **Struktur backend:** backend dibagi per area bisnis dengan empat lapis yang dapat dibedakan: `domain` (aturan dan nilai tanpa I/O), `app` (use case yang memeriksa permission dan cakupan unit), `repository` (port persistensi plus adapter GORM), dan `httpserver` (transport, DTO, middleware). Area direktori memakai `internal/directory/{domain,app,repository}`; area penggajian memakai `internal/payroll/{domain,app,repository}`. Kontrak daftar bersama (pagination, pencarian, penyaring cakupan, pengurutan) ada di `internal/listing`. Handler tidak boleh memuat aturan bisnis.
 
 ### Keputusan jadwal gajian, pemberitahuan slip H+1, dan kalender hari libur (11 November 2026)
 
-- **Jadwal gajian per unit:** tanggal gajian bersifat tetap per bulan, antara 1 dan 28, diinput per unit organisasi — bukan per periode. Nilai disimpan di tabel `jadwalGaji` (satu baris per unit, `unitId` unik, foreign key ke `Homebase`). `GET /api/v1/payroll/schedules` memakai permission `payroll:schedule` (admin, seluruh unit) atau `payroll:schedule:homebase` (operator, unit dalam cakupan penugasannya beserta seluruh turunannya). `PUT /api/v1/payroll/schedules/{unitId}` menyimpan nilai `tanggalGajian` (1–28); operator hanya boleh mengatur unit dalam cakupannya. Perubahan jadwal ditulis bersama jejak audit `payroll.schedule.updated` dalam satu transaksi. Perubahan ini memerlukan pembaruan bersama pada `prisma/schema.prisma`, model GORM, dan migrasi `backend/migrations/000009_payroll_schedule.sql`.
+- **Jadwal gajian per unit:** tanggal gajian bersifat tetap per bulan, antara 1 dan 28, diinput per unit organisasi — bukan per periode. Nilai disimpan di tabel `jadwalGaji` (satu baris per unit, `unitId` unik, foreign key ke `Homebase`). `GET /api/v1/payroll/schedules` memakai permission `payroll:schedule` (admin, seluruh unit) atau `payroll:schedule:homebase` (operator, unit dalam cakupan penugasannya beserta seluruh turunannya). `PUT /api/v1/payroll/schedules/{unitId}` menyimpan nilai `tanggalGajian` (1–28); operator hanya boleh mengatur unit dalam cakupannya. Perubahan jadwal ditulis bersama jejak audit `payroll.schedule.updated` dalam satu transaksi. Skema tabel ada pada migrasi `backend/migrations/000009_payroll_schedule.sql` dan dipetakan oleh model GORM.
 - **Pemberitahuan slip gaji H+1:** slip berstatus `TERBIT` atau `TERBAYAR` pada unit yang punya jadwal gajian diberi pemberitahuan **satu hari kalender setelah tanggal gajian**. Tanggal pemberitahuan dipakai tetap — tidak digeser karena jatuh pada Sabtu, Minggu, atau hari libur nasional, dan tidak maju bila periode berjalan belum lewat jadwalnya. Pemberitahuan adalah pemberitahuan **ketersediaan slip**, bukan bukti pembayaran: isi pesan hanya nama, periode, dan tautan ke halaman penggajian — tidak pernah memuat nominal gaji dan tidak pernah menyebut gaji sudah dibayar. Jenis pesan `email.slip-tersedia` disimpan di outbox dengan kunci idempotensi `slip-available:{slipId}` sehingga setiap slip hanya diberi satu pemberitahuan meski pekerjaan dijalankan berulang. Pengiriman dijalankan sebagai job QStash `payroll.notify` (`POST /api/v1/internal/qstash/payroll/notify`, cron `5 19 * * *` = 02:05 WIB, 3 percobaan ulang) yang menulis jejak `payroll.notified`. Notifikasi gaji ("gaji sudah masuk") tetap terpisah dan hanya boleh terkirim setelah konfirmasi pembayaran tersimpan.
 - **Kalender hari libur nasional:** backend mengintegrasikan penyedia **api.co.id** (endpoint `GET /holidays/indonesia`, autentikasi header `x-api-co-id`) untuk mengisi tabel `HariLibur`. Sinkronisasi hanya berjalan bila `HOLIDAY_API_URL` dan `HOLIDAY_API_KEY` terisi, dipicu admin lewat `POST /api/v1/holidays/{year}/refresh` (permission `holiday:manage`); pembacaan kalender (`GET /api/v1/holidays?year=`, permission `holiday:read`, default tahun berjalan WIB) selalu dari tabel lokal dan tidak pernah bergantung pada penyedia. Entri penyedia disimpan bila `type`-nya `Public Holiday`, `National Holiday`, atau `Joint Holiday`; entri `Observance` dilewati, tanggal di luar tahun yang diminta dan tanggal ganda dibuang, dan entri tanpa nama atau dengan tanggal tidak sah menolak seluruh penyegaran. Penyimpanan tahun berjalan dilakukan dengan mengganti seluruh entri tahun itu dalam satu transaksi bersama jejak audit `holiday.refreshed`. Pembacaan kalender di-cache di Redis (`holiday:{year}`, TTL 24 jam) bila Redis dikonfigurasi. Kalender hari libur **tidak** mengubah tanggal gajian maupun pemberitahuan H+1. Kunci API disimpan di `.env`/`.env.example` (`HOLIDAY_API_KEY`) dan tidak pernah dicatat pada jejak audit maupun log. Tabel `HariLibur` dibawa migrasi `backend/migrations/000010_holiday.sql`.
 - **Permission baru:** admin memperoleh `payroll:schedule`, `holiday:read`, `holiday:manage`; operator memperoleh `payroll:schedule:homebase`, `holiday:read`; atasan memperoleh `holiday:read`. Matriks ini sudah diterapkan di `backend/cmd/server/main.go`.
 
 ### Keputusan modul penggajian dan konfirmasi pembayaran (11 November 2026)
 
-- **Representasi pembayaran terkonfirmasi:** skema acuan kini memodelkan status slip `DRAF`, `TERBIT`, dan `TERBAYAR`, ditambah tabel `pembayaran` yang menyimpan referensi transaksi, waktu konfirmasi, pelaku pengesahan, dan keterangan. Konfirmasi dibaca dari baris `pembayaran` yang menempel pada slip, sehingga bukti pembayaran selalu dapat ditelusuri. Perubahan ini memerlukan pembaruan bersama pada `prisma/schema.prisma`, model GORM, dan migrasi `backend/migrations/000008_payment_confirmation.sql`.
+- **Representasi pembayaran terkonfirmasi:** migrasi `backend/migrations/000008_payment_confirmation.sql` menambahkan status slip `TERBAYAR` dan tabel `pembayaran` yang menyimpan referensi transaksi, waktu konfirmasi, pelaku pengesahan, dan keterangan. Konfirmasi dibaca dari baris `pembayaran` yang menempel pada slip, sehingga bukti pembayaran selalu dapat ditelusuri; pemetaan GORM berada di `backend/internal/models`.
 - **Pencatatan pembayaran:** `POST /api/v1/payroll/slips/{payrollId}/payment` (permission `payroll:manage`, hanya `admin`). Slip hanya dapat dibayar satu kali dan hanya dari status `TERBIT`. Pencatatan baris `pembayaran`, perubahan status slip, antrean notifikasi gaji, dan jejak audit `payroll.payment.confirmed` ditulis dalam satu transaksi — sehingga notifikasi gaji tidak pernah ada tanpa bukti pembayaran yang tersimpan.
 - **Konfirmasi manual pada MVP, adapter bank disiapkan:** integrasi langsung ke bank sulit dilakukan sekarang, sehingga pencatatan pembayaran pada MVP dilakukan manual oleh pemegang `payroll:manage`: admin mengisi referensi transaksi/rekapan bank, waktu, dan pengesah secara telusuri. Integrasi otomatis ke bank (REST dan websocket) disiapkan sebagai adapter lanjutan yang menulis bukti pembayaran lewat jalur transaksional yang sama (tabel `pembayaran`) dengan idempotensi; implementasinya menunggu kontrak API vendor dan tidak dibuat sebelum benar-benar dipakai.
 - **Pembacaan slip gaji:** `GET /api/v1/payroll/slips` memakai permission `payroll:read:any` (admin), `payroll:read:homebase` (operator, slip pegawai pada unitnya beserta turunannya), atau `payroll:read:self` (pegawai, slipnya sendiri). Seluruh nominal dikembalikan sebagai Rupiah yang sudah diformat; periode ditulis sebagai `YYYY-MM` beserta label Bahasa Indonesia.

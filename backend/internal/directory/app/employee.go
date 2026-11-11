@@ -102,6 +102,8 @@ func (s *EmployeeService) Create(ctx context.Context, principal auth.Principal, 
 		EmailVerified:     false,
 		Aktif:             true,
 		Nip:               domain.CleanOptional(input.NIP),
+		Nidn:              domain.CleanOptional(input.NIDN),
+		Nidk:              domain.CleanOptional(input.NIDK),
 		KategoriPegawaiId: input.KategoriPegawaiID,
 		HomebaseId:        input.HomebaseID,
 		JabatanStruktural: domain.CleanOptional(input.JabatanStruktural),
@@ -133,6 +135,21 @@ func (s *EmployeeService) Update(ctx context.Context, principal auth.Principal, 
 		return models.User{}, domain.ErrForbidden
 	}
 	return s.repo.UpdateEmployee(ctx, principal.UserID, id, patch)
+}
+
+// AssignRole mengubah role pegawai hanya untuk principal yang memegang grant admin.
+func (s *EmployeeService) AssignRole(ctx context.Context, principal auth.Principal, id, roleName string) (models.User, error) {
+	if !allows(s.policy, principal, "employee:role:manage") {
+		return models.User{}, domain.ErrForbidden
+	}
+	if !domain.ValidUUID(id) {
+		return models.User{}, domain.ErrValidation
+	}
+	name, err := domain.NormalizeRoleName(roleName)
+	if err != nil {
+		return models.User{}, err
+	}
+	return s.repo.AssignEmployeeRole(ctx, principal.UserID, id, name)
 }
 
 // Archive menonaktifkan pegawai bila principal berwenang.

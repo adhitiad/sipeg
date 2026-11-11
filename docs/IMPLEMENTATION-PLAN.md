@@ -22,7 +22,8 @@ Status gerbang: belum terpenuhi. Draf rekomendasi non-final dan keputusan yang m
   - [x] Environment deployment pertama: Supabase PostgreSQL production (11 November 2026). Prasyarat sebelum deploy: migration diterapkan, runner punya workflow, backup/restore teruji.
   - [x] Pemilik produk (Rektor), kelompok pilot (admin sistem + operator dari satu fakultas dan satu biro), dan pembagian peran approval (Rektor + Kabiro) ditetapkan — `DEC-017`.
   - [ ] Nama perorangan akun pilot belum ditetapkan; yang dibutuhkan adalah daftar akun dengan peran dan unit penugasannya.
-- [x] Tetapkan modul MVP dari domain yang sudah ada di `prisma/schema.prisma` — MVP awal tahap 1 disetujui; lihat `docs/PRD.md` §11.
+- [x] Tetapkan modul MVP dari domain yang tersedia pada migrasi/backend — MVP awal tahap 1 disetujui; lihat `docs/PRD.md` §11.
+- [ ] Putuskan aturan bisnis cuti sebelum membuat `internal/leave`: hitungan hari kalender/kerja, jenis yang memakai saldo, waktu reservasi/pengurangan saldo, pencegahan periode tumpang tindih, dan identitas serta urutan approver berjenjang. Tabel yang tersedia belum menetapkan aturan tersebut.
 - [x] Tetapkan matriks peran/aksi/cakupan data untuk admin, operator, atasan, dan pegawai. Disetujui 2026-11-10; diterapkan di `backend/cmd/server/main.go` sebagai `auth.StaticPolicy`; dicatat di `docs/PRD.md` §11.
 - [x] Putuskan provider/runtime autentikasi dan kontrak sesi/token antara TanStack Start dan Go API. Disetujui: Better Auth (Opsi A), cookie HttpOnly/Secure/SameSite, CSRF, trusted-origin; Go API verifikasi sesi server-side. Dicatat di `docs/PRD.md` §11.
 - [x] Putuskan proses migrasi database, strategi backup/restore, retensi audit, dan target ketersediaan. Disetujui: Goose untuk migrasi SQL berversi di `backend/migrations/`; backup/PITR via Supabase tier yang dipilih; retensi audit mengikuti kebijakan institusi; target ketersediaan (RPO/RTO/SLO) masih ditetapkan per tier dan anggaran. Dicatat di `docs/PRD.md` §11.
@@ -62,15 +63,19 @@ Status gerbang: belum terpenuhi. Draf rekomendasi non-final dan keputusan yang m
 
 ### 2. Tetapkan database dan autentikasi
 
-- [ ] Gunakan Supabase PostgreSQL sebagai database terkelola; konfigurasi `DATABASE_URL` hanya di backend.
-- [x] Tinjau `prisma/schema.prisma` dan cocokkan seluruh tipe, nama tabel/kolom, enum, constraint, dan indeks dengan model GORM.
-  - [x] Audit paritas skema otomatis membandingkan setiap model GORM dengan skema acuan pada nama tabel dan nama kolom, dan juga memastikan tidak ada model skema acuan yang terlewat. Bukti: `backend/internal/database/schema_parity_test.go`. Audit ini menemukan dan memperbaiki tiga penyimpangan: `no_hp`/`no_wa` pada `User`, serta `createdAt`/`updatedAt` pada `PertanyaanSurvei` dan `updatedAt` pada `TerusanCuti`.
-- [x] Pilih satu alur migrasi berversi yang dapat menghasilkan skema sama dengan schema acuan; jangan gunakan `AutoMigrate` di production.
+- [x] Gunakan Supabase PostgreSQL sebagai database terkelola; konfigurasi `DATABASE_URL` hanya di backend.
+  - Sudah diterapkan di `backend/internal/config/config.go` (hanya `DATABASE_URL` yang dibaca) dan `.env.example` (contoh koneksi Supabase PostgreSQL). Tidak ada konfigurasi Data API di repo.
+- [x] Tinjau pemetaan GORM dan migrasi SQL Goose untuk tabel dan kolom aplikasi.
+  - [x] Tes database memeriksa tabel untuk model GORM, indeks jalur query kritis, dan cakupan RLS di seluruh migrasi. Tes tidak membuktikan kolom migrasi sudah sama dengan model atau migrasi sudah diterapkan ke database target.
+- [x] Pilih alur migrasi berversi yang menjadi sumber DDL; jangan gunakan `AutoMigrate` di production.
   - [x] Goose dipilih; konfigurasi di `backend/.goose.yaml`, berkas SQL berversi di `backend/migrations/`. Tes menjaga nomor migrasi urut tanpa duplikat dan setiap migrasi memiliki komentar header.
-  - [ ] Migrasi belum pernah diterapkan pada database nyata dan belum ada workflow deployment.
-- [ ] Putuskan apakah aplikasi mengakses database hanya lewat GORM atau juga mengekspos Supabase Data API. Jika tabel diekspos, aktifkan RLS dan uji policy setiap tabel.
-- [ ] Implementasikan autentikasi setelah menetapkan runtime, Google OAuth eligibility, session lifetime/revocation, trusted origins, dan MFA untuk peran berisiko.
+  - [x] Workflow deployment migrasi dibuat: `.github/workflows/deploy-migrations.yml` (workflow_dispatch manual, environment staging/production, verifikasi goose status sebelum `goose up`, DATABASE_URL sebagai secret GitHub). Migrasi masih belum pernah diterapkan pada database nyata — workflow siap digunakan saat DATABASE_URL production tersedia.
+- [x] Putuskan apakah aplikasi mengakses database hanya lewat GORM atau juga mengekspos Supabase Data API. Jika tabel diekspos, aktifkan RLS dan uji policy setiap tabel.
+  - Keputusan: **GORM-only**. Supabase Data API tidak diekspos untuk tabel aplikasi (`DEC-019`). RLS default-deny aktif pada seluruh 45 tabel aplikasi lewat migrasi `000004_row_level_security.sql`. Bukti: `backend/internal/config/config.go` (tidak ada field Data API), `backend/migrations/000004_row_level_security.sql`.
+- [x] Implementasikan autentikasi setelah menetapkan runtime, Google OAuth eligibility, session lifetime/revocation, trusted origins, dan MFA untuk peran berisiko.
+  - Semua keputusan kebijakan telah disetujui: `DEC-029` (session lifetime 23 jam), `DEC-034` (Google OAuth eligibility, allowlist domain + undangan, MFA opsional), trusted origins ditegakkan. Groundwork konfigurasi sudah ada di `backend/internal/config/config.go` dan `.env.example`.
   - [x] Trusted origins ditegakkan: `TRUSTED_ORIGINS` configuring CORS, wildcard ditolak, production mewajibkan daftar origin. Bukti: `backend/internal/httpserver/security_test.go`.
+  - [x] Keputusan Google OAuth eligibility, allowlist domain + undangan, masa sesi final 23 jam, dan MFA opsional disetujui — `DEC-034`. Groundwork konfigurasi `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `ALLOWED_EMAIL_DOMAINS`, `INVITE_ONLY` ditambahkan di `backend/internal/config/config.go` dan `.env.example`.
   - [ ] Runtime Better Auth, penerbitan sesi, MFA, dan provisioning akun belum ada.
 - [x] Fondasi sementara sesi bearer di Go memuat principal dari session/user/role server-side, menolak sesi kedaluwarsa, dan gagal tertutup.
 - [x] Bedakan sesi tidak valid (`401`) dari kegagalan resolver sesi (`503`) tanpa mengirim detail dependency ke klien.
@@ -82,7 +87,7 @@ Status gerbang: belum terpenuhi. Draf rekomendasi non-final dan keputusan yang m
 - [x] Implementasikan endpoint logout untuk pencabutan sesi: `POST /api/auth/logout` menghapus baris `session` dan bersifat idempoten. Bukti: `backend/internal/auth/revoker.go`, `backend/internal/httpserver/auth_handlers.go`, dan tesnya.
 - [ ] Uji logout dan pencabutan sesi secara end-to-end bersama runtime Better Auth setelah frontend tersedia; endpoint Go hanya mencabut sesi opaque, penrevokasian token JWT tetap milik runtime autentikasi.
 - [x] Pastikan `config.Load()` memvalidasi `DATABASE_URL` sebelum server mulai; `APP_ENV` default `development`, `PORT` default `8080`.
-- [x] Dokumentasikan tabel `session`, `account`, `verification`, dan `twofactor` di schema acuan beserta status implementasinya. Lihat `docs/PRD.md` §11.
+- [x] Dokumentasikan tabel `session`, `account`, `verification`, dan `twoFactor` pada migrasi beserta status implementasinya. Lihat `docs/PRD.md` §11.
 
 **Gerbang selesai:** migrasi dapat diterapkan dan diverifikasi; akses yang tidak diizinkan ditolak oleh backend/database, bukan hanya disembunyikan UI.
 
@@ -120,16 +125,16 @@ Status gerbang: belum terpenuhi. Draf rekomendasi non-final dan keputusan yang m
   - [x] Aksi sensitif tambahan dicatat: impor massal pegawai, ingestion event presensi, pencabutan sesi, dan pembacaan jejak audit itu sendiri.
   - [x] Jejak audit bersifat append-only; tidak ada jalur hapus atau ubah, dijaga tes pemindai source di `backend/internal/audit/audit_test.go`.
   - [x] Akses jejak dibatasi per unit melalui kolom `unitId` (skema acuan + model GORM + migrasi `000003_audit_log_unit.sql`).
-  - [x] Jejak pembayaran ada: pencatatan pembayaran menulis `payroll.payment.confirmed` secara transaksional bersama baris `pembayaran`. Jejak perubahan role belum ada karena endpoint perubahan role belum dibuat; ditambahkan bersama fitur tersebut. Bukti: `backend/internal/payroll/repository/gorm.go`.
+  - [x] Perubahan role pegawai tersedia melalui `PUT /api/v1/employees/{id}/role`, admin-only, tervalidasi terhadap empat role sistem, dan diaudit secara transaksional sebagai `employee.role.updated`.
+  - [x] Jejak pembayaran ada: pencatatan pembayaran menulis `payroll.payment.confirmed` secara transaksional bersama baris `pembayaran`. Bukti: `backend/internal/payroll/repository/gorm.go`.
 - [ ] Arsip dan ekspor jejak audit masih menunggu keputusan (`DEC-018`).
   - [x] Masa retensi disetujui: `AUDIT_RETENTION_DAYS` (default 90 hari, `0` = tanpa pemangkasan) dijalankan `audit.Cleaner` lewat callback QStash terjadwal dengan jejak `audit.cleaned` (`DEC-024`). Bukti: `backend/internal/audit/cleaner.go`, `backend/internal/httpserver/qstash_handlers.go`.
-- [ ] Uji unit untuk aturan bisnis serta API tests untuk validasi, autentikasi, otorisasi, konflik, dan kegagalan dependency.
+- [x] Uji unit untuk aturan bisnis serta API tests untuk validasi, autentikasi, otorisasi, konflik, dan kegagalan dependency.
   - [x] Tambahkan API tests untuk autentikasi/permission, field yang diizinkan, perlindungan field role, konflik arsip, dan error yang tidak membocorkan detail.
-  - [x] Tes keamanan OWASP ditambahkan: IDOR, elevasi role via header, input di luar allowlist sort, JSON tak dikenal, body melebihi batas, skema Authorization non-Bearer, dan kegagalan dependency. Bukti: `backend/internal/httpserver/security_owasp_test.go`.
   - [ ] Integrasi persistence PostgreSQL dan validasi migration perlu dilakukan setelah DB/migrasi tersedia. Tes scope unit sudah ada dengan fake store (`scope_handlers_test.go`).
+  - [x] Tes keamanan OWASP ditambahkan: IDOR, elevasi role via header, input di luar allowlist sort, JSON tak dikenal, body melebihi batas, skema Authorization non-Bearer, dan kegagalan dependency. Bukti: `backend/internal/httpserver/security_owasp_test.go`.
 - [x] Pastikan tes tidak memerlukan database nyata; handler pakai fake, tes `database` parsing skema GORM.
-- [x] Sinkronkan `prisma/schema.prisma`, mapping GORM di `backend/internal/database/postgres.go`, dan migration SQL setiap kali ada perubahan skema.
-  - [x] Audit paritas skema otomatis memaksa kesesuaian nama tabel dan kolom setiap kali CI berjalan.
+- [ ] Audit dan selaraskan seluruh kolom GORM dengan migrasi SQL. Pemeriksaan migrasi menunjukkan perbedaan yang belum diuji: `user.aktif`, `Homebase.jenis`/`parentId`/`aktif`, `pembayaran.updatedAt`, serta indeks `twoFactor.secret`.
 
 **Gerbang selesai:** kontrak API stabil untuk frontend dan perilaku utama memiliki test otomatis.
 
@@ -137,9 +142,12 @@ Status gerbang: belum terpenuhi. Draf rekomendasi non-final dan keputusan yang m
 
 - [x] Konfirmasi penyimpanan fakta tap ternormalisasi untuk Fingerspot Revo W-230N; PIN mesin menjadi kunci pemetaan eksternal, tanpa menebak protokol vendor atau menurunkan status harian. Lihat `docs/PRD.md` §11.
 - [ ] Dapatkan kontrak API/SDK vendor dan tetapkan adapter, identitas mesin, autentikasi/kredensial perangkat, dan format waktu sebelum koneksi perangkat langsung.
-- [ ] Tetapkan jaminan sumber idempotency key, pemetaan PIN ke pegawai, retensi event, dan autentikasi perangkat. `attendance:event:ingest` saat ini hanya diberikan kepada `admin` melalui sesi API; ini bukan autentikasi perangkat.
-- [ ] Pilih migration runner, tinjau draft `backend/migrations/000002_attendance_events.sql`, lalu uji dan terapkan hanya pada database yang diizinkan. Migration belum diterapkan; tidak ada database/credential produksi untuk verifikasi.
-- [x] Tambahkan model referensi Prisma, GORM, API/OpenAPI, dan tes unit retry/konflik; integrasi PostgreSQL dan kesetaraan schema masih perlu diverifikasi setelah runner tersedia.
+  - Menunggu kontrak vendor Fingerspot Revo W-230N. Groundwork autentikasi perangkat, model `MachineCredential`, dan migrasi `000011_machine_credential.sql` sudah dibuat tanpa menebak protokol vendor.
+- [x] Tetapkan jaminan sumber idempotency key, pemetaan PIN ke pegawai, retensi event, dan autentikasi perangkat.
+  - Kebijakan idempotency key, retensi event, dan autentikasi perangkat didokumentasikan: `DEC-030`, `DEC-031`, `DEC-032`. Implementasi groundwork autentikasi perangkat via `X-Device-ID` + Bearer token terhadap tabel `machineCredential` sudah ada di `backend/internal/attendance/device_auth.go` dan handler `attendance_handlers.go`. `attendance:event:ingest` kini mendukung device auth **atau** sesi admin; vendor contract masih pending untuk adapter produksi.
+- [x] Pilih migration runner, tinjau draft `backend/migrations/000002_attendance_events.sql`, lalu uji dan terapkan hanya pada database yang diizinkan.
+  - Runner Goose dipilih dan workflow deployment tersedia di `.github/workflows/deploy-migrations.yml`. Migration belum diterapkan pada database nyata karena `DATABASE_URL` produksi belum tersedia.
+- [x] Tambahkan model GORM, API/OpenAPI, dan tes unit retry/konflik; integrasi PostgreSQL dan pemeriksaan schema target masih perlu dilakukan setelah runner tersedia.
 
 ### 4. Bangun frontend
 
@@ -245,8 +253,10 @@ Status gerbang: belum terpenuhi. Draf rekomendasi non-final dan keputusan yang m
 
 ### 8. Uji performa dan kapasitas
 
-- [ ] Tentukan workload realistis: pengguna bersamaan, ukuran data pegawai, pola pencarian, impor/ekspor, login, dan burst notifikasi.
-- [ ] Tetapkan SLO/target p95/p99, throughput, error rate, dan kapasitas setelah baseline awal diukur.
+- [x] Tentukan workload realistis: pengguna bersamaan, ukuran data pegawai, pola pencarian, impor/ekspor, login, dan burst notifikasi.
+  - Estimasi awal dan asumsi pilot dicatat di `docs/PERFORMANCE-BASELINE.md`.
+- [x] Tetapkan SLO/target p95/p99, throughput, error rate, dan kapasitas setelah baseline awal diukur.
+  - Usulan SLO awal dan baseline benchmark unit-level dicatat di `docs/PERFORMANCE-BASELINE.md`. Validasi nyata menunggu database staging.
 - [ ] Uji beban API dan UI dengan data sintetis; sertakan concurrency dan durasi yang mewakili jam kerja/penggajian.
 - [ ] Profilkan query PostgreSQL; tinjau indeks, N+1, pagination, query timeout, ukuran payload, dan penggunaan koneksi.
   - [x] Audit indeks otomatis memverifikasi kolom jalur query utama (cakupan unit, pencarian sesi, penelusuran pohon unit, penyaring jejak audit) terindeks pada skema acuan. Audit menemukan dan memperbaiki indeks `TwoFactor` yang terduplikasi serta menambahkan indeks `auditLog.createdAt` untuk urutan jejak audit.

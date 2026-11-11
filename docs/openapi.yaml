@@ -50,8 +50,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
-        '405':
-          $ref: '#/components/responses/MethodNotAllowed'
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
   /ready:
     get:
       tags: [System]
@@ -76,8 +76,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-        '405':
-          $ref: '#/components/responses/MethodNotAllowed'
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
   /api/v1/me:
     get:
       tags: [Account]
@@ -118,8 +118,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
-        '405':
-          $ref: '#/components/responses/MethodNotAllowed'
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
   /api/v1/attendance/events:
     post:
       tags: [Attendance]
@@ -177,6 +177,98 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/attendance/my-records:
+    get:
+      tags: [Attendance]
+      operationId: listMyAttendanceRecords
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: attendance:read:self
+      summary: Membaca riwayat presensi sendiri
+      description: >-
+        Membaca record harian yang sudah tersimpan pada tabel Presensi.
+        Endpoint ini tidak menghitung status dari AttendanceEvent. Rentang
+        tanggal wajib, inklusif, maksimum 366 hari, dan mengikuti kalender
+        operasional Asia/Jakarta.
+      security:
+        - bearerSession: []
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Halaman record presensi principal.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttendanceRecordsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/attendance/unit-summary:
+    get:
+      tags: [Attendance]
+      operationId: getUnitAttendanceSummary
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: attendance:read:any, attendance:read:homebase
+      summary: Membaca rekap presensi unit per hari
+      description: >-
+        Menghitung jumlah record Presensi per status dan tanggal. Admin
+        mendapat cakupan global; operator dan atasan hanya mendapat unit
+        penugasan beserta turunannya. Hari tanpa record tidak diimputasi
+        sebagai absen. Data AttendanceEvent mentah tidak digunakan.
+      security:
+        - bearerSession: []
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Rekap harian dalam cakupan pemohon.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AttendanceDailySummary"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/ValidationError"
         "503":
@@ -352,6 +444,46 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/employees/{employeeId}/role:
+    parameters:
+      - $ref: "#/components/parameters/EmployeeId"
+    put:
+      tags: [Employees]
+      operationId: assignEmployeeRole
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: employee:role:manage
+      summary: Menetapkan role pegawai
+      description: >-
+        Hanya admin yang dapat menetapkan role admin, operator, atasan, atau
+        pegawai. Perubahan user.roleId dan jejak employee.role.updated ditulis
+        dalam satu transaksi; role berlaku pada permintaan berikutnya.
+      security:
+        - bearerSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmployeeRoleAssignmentRequest"
+      responses:
+        "200":
+          description: Role pegawai setelah perubahan.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmployeeRoleAssignment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/employees/import-template.csv:
@@ -1088,7 +1220,19 @@ components:
         invalid_query; kolom SQL ditentukan server, bukan dari input pengguna.
       schema:
         type: string
-        enum: [nama, nip, createdAt, updatedAt, name, jenis, aksi, kode, periode, tanggalGaji]
+        enum:
+          [
+            nama,
+            nip,
+            createdAt,
+            updatedAt,
+            name,
+            jenis,
+            aksi,
+            kode,
+            periode,
+            tanggalGaji,
+          ]
     Order:
       name: order
       in: query
@@ -1199,7 +1343,7 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: "#/components/schemas/ErrorResponse"
     ValidationError:
       description: Field request gagal validasi.
       content:
@@ -1277,6 +1421,50 @@ components:
           format: uuid
         duplicate:
           type: boolean
+    AttendanceRecord:
+      type: object
+      required: [id, date, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [H, I, S, A, C, LD]
+        note:
+          type: string
+        source:
+          type: string
+    AttendanceRecordsResponse:
+      type: object
+      required: [items, page, pageSize, totalItems, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AttendanceRecord"
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        totalItems:
+          type: integer
+        totalPages:
+          type: integer
+    AttendanceDailySummary:
+      type: object
+      required: [date, counts]
+      properties:
+        date:
+          type: string
+          format: date
+        counts:
+          type: object
+          additionalProperties:
+            type: integer
     Employee:
       type: object
       required: [id, nama, email, aktif]
@@ -1304,6 +1492,7 @@ components:
           type: [string, "null"]
         jabatanFungsional:
           type: [string, "null"]
+          maxLength: 200
         createdAt:
           type: string
           format: date-time
@@ -1361,6 +1550,24 @@ components:
         jabatanFungsional:
           type: [string, "null"]
           maxLength: 200
+    EmployeeRoleAssignmentRequest:
+      type: object
+      additionalProperties: false
+      required: [roleName]
+      properties:
+        roleName:
+          type: string
+          enum: [admin, operator, atasan, pegawai]
+    EmployeeRoleAssignment:
+      type: object
+      required: [employeeId, roleName]
+      properties:
+        employeeId:
+          type: string
+          format: uuid
+        roleName:
+          type: string
+          enum: [admin, operator, atasan, pegawai]
     EmployeePage:
       type: object
       required: [items, page, pageSize, totalItems, totalPages]

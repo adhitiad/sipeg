@@ -7,6 +7,8 @@ type CreateEmployee struct {
 	Nama              string
 	Email             string
 	NIP               *string
+	NIDN              *string
+	NIDK              *string
 	KategoriPegawaiID *string
 	HomebaseID        *string
 	JabatanStruktural *string
@@ -21,10 +23,12 @@ func (input CreateEmployee) Validate() error {
 	if !ValidEmail(strings.TrimSpace(input.Email)) {
 		return ErrValidation
 	}
-	if input.NIP != nil {
-		nip := strings.TrimSpace(*input.NIP)
-		if nip == "" || TextLength(nip) > MaxNIPLength {
-			return ErrValidation
+	for _, ident := range []*string{input.NIP, input.NIDN, input.NIDK} {
+		if ident != nil {
+			val := strings.TrimSpace(*ident)
+			if val == "" || TextLength(val) > MaxNIPLength {
+				return ErrValidation
+			}
 		}
 	}
 	for _, id := range []*string{input.KategoriPegawaiID, input.HomebaseID} {
@@ -42,7 +46,7 @@ func (input CreateEmployee) Validate() error {
 
 // EmployeePatchFields adalah daftar field profil pegawai yang boleh diubah.
 var EmployeePatchFields = map[string]bool{
-	"nama": true, "nip": true, "kategoriPegawaiId": true,
+	"nama": true, "nip": true, "nidn": true, "nidk": true, "kategoriPegawaiId": true,
 	"homebaseId": true, "jabatanStruktural": true, "jabatanFungsional": true,
 }
 
@@ -50,6 +54,8 @@ var EmployeePatchFields = map[string]bool{
 type EmployeePatch struct {
 	Nama              Field
 	NIP               Field
+	NIDN              Field
+	NIDK              Field
 	KategoriPegawaiID Field
 	HomebaseID        Field
 	JabatanStruktural Field
@@ -61,6 +67,8 @@ func NewEmployeePatch(fields map[string]Field) EmployeePatch {
 	return EmployeePatch{
 		Nama:              fields["nama"],
 		NIP:               fields["nip"],
+		NIDN:              fields["nidn"],
+		NIDK:              fields["nidk"],
 		KategoriPegawaiID: fields["kategoriPegawaiId"],
 		HomebaseID:        fields["homebaseId"],
 		JabatanStruktural: fields["jabatanStruktural"],
@@ -70,8 +78,9 @@ func NewEmployeePatch(fields map[string]Field) EmployeePatch {
 
 // Validate memeriksa aturan perubahan profil pegawai.
 //
-// Nama tidak boleh kosong dan tidak boleh lebih panjang dari batas. NIP yang
-// dikosongkan berarti menghapus NIP. Referensi harus berupa UUID.
+// Nama tidak boleh kosong dan tidak boleh lebih panjang dari batas. NIP,
+// NIDN, NIDK yang dikosongkan berarti menghapus nilai identifikasi tersebut.
+// Referensi harus berupa UUID.
 func (patch EmployeePatch) Validate() error {
 	if patch.Nama.Present {
 		if patch.Nama.Null || TextLength(strings.TrimSpace(patch.Nama.Value)) == 0 ||
@@ -79,9 +88,11 @@ func (patch EmployeePatch) Validate() error {
 			return ErrValidation
 		}
 	}
-	if patch.NIP.Present && !patch.NIP.Null {
-		if TextLength(patch.NIP.Value) > MaxNIPLength {
-			return ErrValidation
+	for _, field := range []Field{patch.NIP, patch.NIDN, patch.NIDK} {
+		if field.Present && !field.Null {
+			if TextLength(field.Value) > MaxNIPLength {
+				return ErrValidation
+			}
 		}
 	}
 	for _, field := range []Field{patch.KategoriPegawaiID, patch.HomebaseID} {
@@ -99,6 +110,6 @@ func (patch EmployeePatch) Validate() error {
 
 // HasChanges melaporkan apakah patch memuat setidaknya satu perubahan.
 func (patch EmployeePatch) HasChanges() bool {
-	return patch.Nama.Present || patch.NIP.Present || patch.KategoriPegawaiID.Present ||
-		patch.HomebaseID.Present || patch.JabatanStruktural.Present || patch.JabatanFungsional.Present
+	return patch.Nama.Present || patch.NIP.Present || patch.NIDN.Present || patch.NIDK.Present ||
+		patch.KategoriPegawaiID.Present || patch.HomebaseID.Present || patch.JabatanStruktural.Present || patch.JabatanFungsional.Present
 }

@@ -22,6 +22,7 @@ const (
 	defaultRPOHours           = 24   // 1 hari
 	defaultRTOHours           = 4    // 4 jam
 	defaultSLOTarget          = 99.9 // 99.9%
+	defaultSessionLifetime    = 23 * time.Hour
 )
 
 // minSecretLength adalah panjang minimum shared secret produksi.
@@ -47,8 +48,24 @@ type Config struct {
 	// autentikasi yang lebih sensitif.
 	RateLimitAuthRequests int
 	RateLimitAuthWindow   time.Duration
+
+	// SessionLifetime adalah masa berlaku sesi yang diterbitkan backend
+	// (opaque session).
+	SessionLifetime time.Duration
 	// AppBaseURL adalah origin aplikasi untuk tautan pada pemberitahuan.
 	AppBaseURL string
+
+	// Google OAuth configuration for Better Auth runtime.
+	GoogleClientID     string
+	GoogleClientSecret string
+
+	// AllowedEmailDomains dibatasi pada domain email yang diizinkan untuk akses.
+	// Kosong berarti tidak ada pembatasan domain.
+	AllowedEmailDomains []string
+
+	// InviteOnly mengaktifkan kebijakan undangan. Jika true, akses hanya
+	// diizinkan bagi pengguna yang menerima undangan (selain domain allowlist).
+	InviteOnly bool
 
 	// Konfigurasi SMTP untuk pengiriman email.
 	SMTPHost     string
@@ -127,7 +144,12 @@ func Load() (Config, error) {
 		RateLimitWindow:         envDuration("RATE_LIMIT_WINDOW", defaultRateLimitWindow),
 		RateLimitAuthRequests:   envInt("RATE_LIMIT_AUTH_REQUESTS", defaultRateLimitAuth),
 		RateLimitAuthWindow:     envDuration("RATE_LIMIT_AUTH_WINDOW", defaultRateLimitWindow),
+		SessionLifetime:         envDuration("SESSION_LIFETIME", defaultSessionLifetime),
 		AppBaseURL:              strings.TrimSpace(os.Getenv("APP_BASE_URL")),
+		GoogleClientID:          strings.TrimSpace(os.Getenv("GOOGLE_CLIENT_ID")),
+		GoogleClientSecret:      strings.TrimSpace(os.Getenv("GOOGLE_CLIENT_SECRET")),
+		AllowedEmailDomains:     splitList(os.Getenv("ALLOWED_EMAIL_DOMAINS")),
+		InviteOnly:              envBool("INVITE_ONLY", false),
 		SMTPHost:                strings.TrimSpace(os.Getenv("SMTP_HOST")),
 		SMTPPort:                envInt("SMTP_PORT", 587),
 		SMTPUser:                strings.TrimSpace(os.Getenv("SMTP_USER")),
@@ -190,6 +212,9 @@ func (c Config) validate() error {
 	if c.RateLimitAuthWindow <= 0 {
 		return fmt.Errorf("RATE_LIMIT_AUTH_WINDOW must be positive")
 	}
+	if c.SessionLifetime <= 0 {
+		return fmt.Errorf("SESSION_LIFETIME must be positive")
+	}
 	if c.SMTPHost != "" && c.SMTPFrom == "" {
 		return fmt.Errorf("SMTP_FROM is required when SMTP_HOST is configured")
 	}
@@ -223,6 +248,14 @@ func (c Config) validate() error {
 	for _, origin := range c.TrustedOrigins {
 		if origin == "*" {
 			return fmt.Errorf("TRUSTED_ORIGINS must not contain a wildcard origin")
+		}
+	}
+
+	// If email domain allowlist or invite-only mode is enabled, Google OAuth
+	// must be configured. This ensures eligibility checks have a provider.
+	if len(c.AllowedEmailDomains) > 0 || c.InviteOnly {
+		if c.GoogleClientID == "" || c.GoogleClientSecret == "" {
+			return fmt.Errorf("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required when ALLOWED_EMAIL_DOMAINS is set or INVITE_ONLY is true")
 		}
 	}
 

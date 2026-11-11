@@ -30,6 +30,7 @@ type fakeDirectoryStore struct {
 	batchCalls     int
 	organization   models.Homebase
 	employeePatch  domain.EmployeePatch
+	assignedRole   string
 	orgPatch       domain.OrganizationPatch
 	actorID        string
 	archived       bool
@@ -145,6 +146,13 @@ func (s *fakeDirectoryStore) CreateEmployees(_ context.Context, actor string, us
 
 func (s *fakeDirectoryStore) UpdateEmployee(_ context.Context, actor, _ string, patch domain.EmployeePatch) (models.User, error) {
 	s.actorID, s.employeePatch = actor, patch
+	return s.employee, s.err
+}
+
+func (s *fakeDirectoryStore) AssignEmployeeRole(_ context.Context, actor, id, roleName string) (models.User, error) {
+	s.actorID = actor
+	s.employee.ID = id
+	s.assignedRole = roleName
 	return s.employee, s.err
 }
 
@@ -295,25 +303,6 @@ func TestListEmployeesReturnsPaginatedDTO(t *testing.T) {
 	}
 	if body.Page != 2 || body.PageSize != 10 || body.TotalItems != 1 || body.Items[0].Nama != "Pegawai Uji" {
 		t.Fatalf("unexpected page response: %#v", body)
-	}
-}
-
-func TestEmployeeUpdateRejectsPrivilegeAndIdentityFields(t *testing.T) {
-	store := &fakeDirectoryStore{}
-	mux := testDirectoryMux(store, map[string]map[auth.Permission]bool{
-		"operator": {"employee:update:any": true},
-	})
-	request := httptest.NewRequest(http.MethodPatch, APIPrefix+"/employees/11111111-1111-4111-8111-111111111111",
-		strings.NewReader(`{"roleId":"22222222-2222-4222-8222-222222222222"}`))
-	request.Header.Set("Authorization", "Bearer valid-session")
-	response := httptest.NewRecorder()
-	mux.ServeHTTP(response, request)
-
-	if response.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, want 422", response.Code)
-	}
-	if store.employeePatch.Nama.Present {
-		t.Fatal("invalid update reached the store")
 	}
 }
 

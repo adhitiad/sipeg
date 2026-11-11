@@ -1,3 +1,4 @@
+-- +goose Up
 -- Draft only: select and approve a versioned migration runner before applying.
 -- Row Level Security diaktifkan pada seluruh tabel aplikasi dengan default deny.
 -- Backend Go terhubung memakai role pemilik tabel. Tanpa FORCE pada level tabel,
@@ -6,7 +7,8 @@
 -- yang mencerminkan cakupan organisasi pengguna. Policy tersebut belum disetujui
 -- dan sengaja tidak disertakan pada migrasi ini.
 
-DO 
+-- +goose StatementBegin
+DO $$
 DECLARE
     target text;
 BEGIN
@@ -55,12 +57,14 @@ BEGIN
         'twoFactor',
         'UjiKapabilitas',
         'user',
-        'verification',
+        'verification'
     ] LOOP
-        EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', target);
+        IF to_regclass(format('%I', target)) IS NOT NULL THEN
+            EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', target);
+        END IF;
     END LOOP;
-END
-;
+END $$;
+-- +goose StatementEnd
 
 -- Policy eksplisit per tabel ditambahkan terpisah setelah disetujui pemilik
 -- kebijakan. Tanpa policy, role anon dan authenticated mendapat penolakan

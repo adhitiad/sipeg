@@ -1,3 +1,4 @@
+-- +goose Up
 -- Draft only: select and approve a versioned migration runner before applying.
 -- Persistent outbox queue. Business transactions write a row here in the same
 -- transaction, so work is never lost when an external queue fails.

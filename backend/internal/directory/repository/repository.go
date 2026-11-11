@@ -22,6 +22,7 @@ type EmployeeRepository interface {
 	CreateEmployee(context.Context, string, models.User) (models.User, error)
 	CreateEmployees(context.Context, string, []models.User) ([]models.User, error)
 	UpdateEmployee(context.Context, string, string, domain.EmployeePatch) (models.User, error)
+	AssignEmployeeRole(context.Context, string, string, string) (models.User, error)
 	ArchiveEmployee(context.Context, string, string) error
 }
 

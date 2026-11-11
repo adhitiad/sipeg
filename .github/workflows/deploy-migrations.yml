@@ -1,0 +1,75 @@
+name: Deploy Database Migrations
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment (staging or production)"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-migrations:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    environment: ${{ github.event.inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Download and verify dependencies
+        run: |
+          go mod download
+          go mod verify
+
+      - name: Check formatting
+        run: |
+          files="$(gofmt -l .)"
+          if [ -n "$files" ]; then
+            echo "$files"
+            exit 1
+          fi
+
+      - name: Run vet
+        run: go vet ./...
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Install Goose migration CLI
+        run: |
+          go install github.com/pressly/goose/v3/cmd/goose@latest
+
+      - name: Verify migration files are sequential with headers
+        run: |
+          go test ./internal/database/ -run 'TestMigrationFilesAreSequentiallyNumbered|TestMigrationFilesHaveHeader' -v
+
+      - name: Verify migration coverage
+        run: |
+          go test ./internal/database/ -run 'TestMigrationFilesAreSequentiallyNumbered|TestMigrationFilesHaveHeader|TestGormModelsHaveMigrationTables|TestCriticalQueryPathsHaveMigrationIndexes|TestRowLevelSecurityMigrationCoversEveryTable' -v
+
+      - name: Check migration status (dry-run)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          goose -dir ./migrations postgres "${DATABASE_URL}" status
+
+      - name: Apply pending migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          goose -dir ./migrations postgres "${DATABASE_URL}" up

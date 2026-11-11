@@ -156,10 +156,11 @@ Integrasi tersebut belum diimplementasikan. Bila integrasi sudah aktif:
 Gejala: query gagal dengan `column "..." does not exist`, atau tes paritas skema
 gagal.
 
-**Diagnosis:** jalankan `go test ./internal/database/ -run TestGormModels`. Tes ini
-membandingkan setiap model GORM dengan `prisma/schema.prisma` pada nama tabel dan
-nama kolom.
+**Diagnosis:** periksa status dan urutan Goose migrations, lalu jalankan
+`go test ./internal/database/...` untuk memeriksa keberadaan tabel model,
+indeks jalur query kritis, dan cakupan migrasi RLS. Tes ini tidak membuktikan
+bahwa migrasi sudah diterapkan atau seluruh kolom GORM cocok dengan database.
 
-**Tindakan:** perbaiki model GORM agar sesuai skema acuan (skema acuan adalah
-sumber kebenaran), lalu perbarui migrasi bila skema berubah. Jangan mengedit
-`prisma/schema.prisma` untuk accommodate mapping GORM yang keliru.
+**Tindakan:** verifikasi skema database target terhadap migrasi Goose dan
+perbaiki migrasi/model melalui perubahan berversi yang ditinjau. Jangan memakai
+`AutoMigrate` untuk memperbaiki skema production.

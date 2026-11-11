@@ -64,8 +64,10 @@ func main() {
 
 	jwtVerifier := auth.NewJWTVerifier(cfg.BetterAuthSecret)
 	resolver := auth.NewCombinedSessionResolver(jwtVerifier, db)
+	sessionIssuer := auth.NewGormSessionIssuer(db, cfg.SessionLifetime)
 	store := repository.GormStore{DB: db}
 	attendanceStore := attendance.GormStore{DB: db}
+	deviceAuth := attendance.NewGormDeviceAuthenticator(db)
 	// Role/permission grant matrix (Opsi A, disetujui 2026-11-10).
 	// Deny-by-default: role yang tidak tercantum atau izin yang tidak disebutkan ditolak.
 	policy := auth.StaticPolicy{
@@ -74,10 +76,12 @@ func main() {
 			"employee:create":         true,
 			"employee:update:any":     true,
 			"employee:archive":        true,
+			"employee:role:manage":    true,
 			"employee:import":         true,
 			"organization:read":       true,
 			"organization:manage":     true,
 			"attendance:event:ingest": true,
+			"attendance:read:any":     true,
 			"audit:read":              true,
 			"category:read":           true,
 			"payroll:read:any":        true,
@@ -85,6 +89,7 @@ func main() {
 			"payroll:schedule":        true,
 			"holiday:read":            true,
 			"holiday:manage":          true,
+			"auth:session:issue":      true,
 		},
 		"operator": {
 			// Cakupan unit: unit penugasan beserta seluruh turunannya.
@@ -99,16 +104,19 @@ func main() {
 			"payroll:read:homebase":        true,
 			"payroll:schedule:homebase":    true,
 			"holiday:read":                 true,
+			"attendance:read:homebase":     true,
 		},
 		"atasan": {
 			"employee:read:homebase":     true,
 			"organization:read:homebase": true,
 			"category:read":              true,
 			"holiday:read":               true,
+			"attendance:read:homebase":   true,
 		},
 		"pegawai": {
-			"employee:read:self": true,
-			"payroll:read:self":  true,
+			"employee:read:self":   true,
+			"payroll:read:self":    true,
+			"attendance:read:self": true,
 		},
 	}
 	// Cache daftar kategori pegawai memakai Redis bila dikonfigurasi. Tanpa
@@ -182,10 +190,13 @@ func main() {
 		Policy:            policy,
 		Directory:         directoryServices,
 		Attendance:        attendanceStore,
+		AttendanceRead:    attendance.NewReadService(attendanceStore, store, policy),
+		DeviceAuth:        deviceAuth,
 		Payroll:           payrollService,
 		Holiday:           holidayService,
 		QStash:            qstashOptions,
 		SessionRevoker:    auth.GormSessionRevoker{DB: db},
+		SessionIssuer:     sessionIssuer,
 		ReadinessCheckers: []httpserver.DependencyChecker{database.PingChecker{DB: db}},
 	})
 

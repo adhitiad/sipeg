@@ -7,14 +7,14 @@ SIMPEG (Sistem Informasi Kepegawaian) adalah proyek sistem informasi untuk penge
 Repo ini masih berupa fondasi proyek, belum aplikasi yang siap dijalankan end-to-end.
 
 - Backend Go/GORM dan pemetaan model tersedia di `backend/`.
-- `prisma/schema.prisma` menjadi referensi skema PostgreSQL; backend menggunakan GORM, bukan Prisma Client.
+- Skema database ditentukan oleh migrasi SQL Goose di `backend/migrations/`; backend menggunakan GORM.
 - Database target adalah Supabase PostgreSQL, tetapi koneksi belum dapat digunakan sampai `DATABASE_URL` disediakan.
 - Frontend TanStack Start belum dibuat.
 - API HTTP menyediakan health check, identitas sesi sementara, CRUD direktori, endpoint impor pegawai, serta daftar audit log dan kategori. Seluruh endpoint data berada di bawah prefix versi `/api/v1`; path tanpa versi ditolak dengan 400. Grant role statis sudah dikonfigurasi sesuai matriks di `docs/PRD.md` §11; operator dan atasan sudah punya cakupan baca per unit beserta turunannya pada data pegawai, unit organisasi, dan jejak audit. Login/OAuth belum tersedia. Baca `AGENTS.md`, `docs/PRD.md` §11, serta status implementasi di `backend/README.md` sebelum mengubah atau membuka akses.
 - Jejak audit bersifat append-only dan aksesnya dibatasi per unit. Jejak untuk perubahan role dan pembayaran belum ada karena endpoint/modulnya belum dibuat; masa retensi dan prosedur arsip belum ditetapkan.
 - `/health` (liveness) dan `/ready` (readiness, memeriksa dependency dengan timeout) sudah dipisahkan. Log ditulis sebagai JSON terstruktur dengan correlation ID `X-Request-ID`; kredensial, body, dan nilai query string tidak pernah dicatat.
-- Migration SQL direktori tersedia dan migration runner dipilih (Goose, konfigurasi `backend/.goose.yaml`), tetapi proses penerapan migrasi belum diuji pada database nyata.
-- Environment deployment pertama ditetapkan sebagai Supabase PostgreSQL production. Prasyarat sebelum deploy (migration diterapkan, runner punya workflow, backup/restore teruji) belum terpenuhi.
+- Migration SQL direktori tersedia dan migration runner dipilih (Goose, konfigurasi `backend/.goose.yaml`); workflow deployment tersedia di `.github/workflows/deploy-migrations.yml` tetapi proses penerapan migrasi belum diuji pada database nyata.
+- Environment deployment pertama ditetapkan sebagai Supabase PostgreSQL production. Prasyarat sebelum deploy (migration diterapkan, runner punya workflow, backup/restore teruji) sebagian telah terpenuhi (workflow tersedia), tetapi migration belum pernah dijalankan terhadap database nyata dan backup/restore belum diuji.
 - Integrasi email/cache/queue belum tersedia sebagai alur aplikasi lengkap.
 - Tujuan produk, ruang lingkup MVP, dan keputusan yang masih terbuka ada di `docs/PRD.md`.
 
@@ -59,6 +59,9 @@ Simpan nilai lokal di `.env` atau gunakan secret manager pada deployment. File `
 | `QSTASH_URL`, `QSTASH_TOKEN`, `QSTASH_CURRENT_SIGNING_KEY`, `QSTASH_NEXT_SIGNING_KEY` | Mengirim pekerjaan ke QStash dan memverifikasi callback di backend. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_SECURE`, `SMTP_FROM` | Pengiriman email dari backend. Gunakan TLS/STARTTLS sesuai port dan kebijakan provider. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | OAuth Google bila alur autentikasi sudah diimplementasikan. |
+| `ALLOWED_EMAIL_DOMAINS` | Domain email yang diizinkan untuk akses SIMPEG (pisahkan dengan koma). |
+| `INVITE_ONLY` | Mode undangan: true = akses hanya diizinkan bagi pengguna yang diundang selain domain allowlist. |
+| `SESSION_LIFETIME` | Masa berlaku sesi yang diterbitkan backend, default 23 jam. |
 | `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` | Penyimpanan objek kompatibel S3 bila integrasinya sudah diimplementasikan. |
 
 Nama variabel di atas mendokumentasikan konfigurasi yang dibutuhkan atau tersedia; bukan jaminan semua integrasi sudah aktif. Notifikasi gaji hanya boleh dikirim setelah backend menyimpan konfirmasi pembayaran, bukan saat slip baru diterbitkan.

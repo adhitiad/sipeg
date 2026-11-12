@@ -7,6 +7,7 @@ import (
 
 	"simpeg/backend/internal/database"
 	"simpeg/backend/internal/listing"
+	"simpeg/backend/internal/models"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"gorm.io/driver/postgres"
@@ -156,6 +157,33 @@ func TestListUnitScopeIDsQuotesParentIdColumn(t *testing.T) {
 	_, err := (GormStore{DB: db}).ListUnitScopeIDs(context.Background(), "unit-a")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAuditLogStreamStreamsAllBatches(t *testing.T) {
+	db, mock := newListStore(t)
+
+	mock.ExpectQuery(regexp.QuoteMeta(`ORDER BY "createdAt" ASC, "id" ASC`)).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "aksi"}).
+			AddRow("log-1", "employee.updated").
+			AddRow("log-2", "session.issued"))
+	// Batch berikutnya kosong menandai akhir stream.
+	mock.ExpectQuery(regexp.QuoteMeta(`ORDER BY "createdAt" ASC, "id" ASC`)).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "aksi"}))
+
+	var streamed []string
+	err := (GormStore{DB: db}).StreamAuditLogs(context.Background(), listing.Options{}, func(entry models.AuditLog) error {
+		streamed = append(streamed, entry.Aksi)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(streamed) != 2 || streamed[0] != "employee.updated" || streamed[1] != "session.issued" {
+		t.Fatalf("unexpected streamed actions: %v", streamed)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

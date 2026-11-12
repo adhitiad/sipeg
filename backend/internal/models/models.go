@@ -169,9 +169,9 @@ type Verification struct {
 
 type TwoFactor struct {
 	IDModel
-	Secret                  string `gorm:"index"`
+	Secret                  string
 	BackupCodes             string
-	UserId                  string `gorm:"type:uuid;uniqueIndex:twoFactor_user_id;index:twoFactor_user_idx"`
+	UserId                  string `gorm:"type:uuid;uniqueIndex:twoFactor_user_id"`
 	Verified                *bool
 	FailedVerificationCount *int
 	LockedUntil             *time.Time `gorm:"type:timestamp(3)"`

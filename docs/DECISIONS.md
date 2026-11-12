@@ -294,12 +294,12 @@ produk (belum ditetapkan)".
 
 ### DEC-018 — Arsip dan ekspor jejak audit
 
-- **Tanggal:** —
-- **Pemilik:** Pemilik kebijakan (belum ditetapkan)
-- **Status:** Menunggu
+- **Tanggal:** 12 November 2026
+- **Pemilik:** Pemilik kebijakan (Rektor Universitas Subang, belum ditetapkan perorangan)
+- **Status:** Disetujui
 - **Rincian:** `docs/PRD.md` §11 "Kebijakan jejak audit"
-- **Catatan:** masa retensi otomatis (90 hari, `AUDIT_RETENTION_DAYS`) beserta pekerjaan pembersihan terjadwalnya sudah disetujui terpisah — lihat `DEC-024`. Yang masih menunggu adalah kewajiban arsip ke media lain, pihak yang berhak mengekspor jejak, dan prosedur pemangkasan lain di luar retensi otomatis.
-- **Bukti:** `backend/internal/audit/audit_test.go` (penjaga append-only)
+- **Catatan:** Ekspor CSV disediakan melalui `GET /api/v1/audit-logs/export` dengan permission `audit:read` (admin, seluruh jejak) atau `audit:read:homebase` (operator, jejak unit penugasannya beserta turunannya). Filter sama dengan endpoint daftar (hanya `aksi` dan `search`); sort dan pagination diabaikan, urutan kronologis naik (`createdAt` ASC, `id` ASC), tanpa batas jumlah baris (streaming per batch via keyset pagination). Berkas dikirim dengan `text/csv; charset=utf-8` dan BOM UTF-8; setiap ekspor yang berhasil dicatat sebagai aksi `audit.exported` dengan jumlah baris. Kewajiban arsip ke media lain dan prosedur pemangkasan di luar retensi otomatis tetap belum ditetapkan. Masa retensi otomatis (90 hari, `AUDIT_RETENTION_DAYS`) dan pekerjaan pembersihan terjadwalnya sudah disetujui terpisah — lihat `DEC-024`.
+- **Bukti:** `backend/internal/audit/audit_test.go` (penjaga append-only), `backend/internal/httpserver/audit_handlers.go` (`exportAuditLogs`), `docs/openapi.yaml`
 
 ### DEC-019 — Paparan Supabase Data API dan kebijakan RLS
 
@@ -339,4 +339,123 @@ produk (belum ditetapkan)".
   3. MFA bersifat opsional dan tidak diwajibkan untuk semua peran. Aktivasi MFA hanya untuk pengguna yang menginginkan keamanan ekstra; tidak ada kewajiban peran berisiko.
 - **Catatan:** Implementasi backend menyediakan konfigurasi `GoogleClientID`, `GoogleClientSecret`, `AllowedEmailDomains`, dan `InviteOnly` via environment. Validasi konfigurasi menolak kombinasi allowlist/undangan tanpa Google OAuth terkonfigurasi. Runtime Better Auth pada frontend/layer autentikasi yang akan menegakkan allowlist dan undangan. Backend tidak mengimplementasikan alur OAuth secara langsung; backend hanya memverifikasi JWT/sesi Better Auth.
 - **Bukti:** `backend/internal/config/config.go` (field Google/allowlist/invite), `.env.example` (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `ALLOWED_EMAIL_DOMAINS`, `INVITE_ONLY`, `SESSION_LIFETIME=23h`), `docs/PRD.md` §4 FR-01, `docs/DECISIONS.md` DEC-029
+
+### DEC-035 — Versi Go minimum dan versi alat CI yang dikunci
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `backend/go.mod` mengunci versi Go minimum modul (`go 1.26.11`), dan `.github/workflows/backend.yml` menjalankan `staticcheck@v0.8.2` serta `govulncheck@latest`. CI memakai `go-version-file: backend/go.mod`, sehingga versi Go yang diuji CI sama persis dengan versi minimum yang dinyatakan modul.
+- **Catatan:** Versi Go dikunci pada rilis patch yang sudah menambal advisori `GO-2026-6859` (CVE-2026-97054,FP race pada `net/http.MaxBytesReader` yang dapat membuat HTTP/1 server panic). Rilis `go 1.26.0` yang sebelumnya dipakai masih rentan, dan `govulncheck` di CI akan gagal pada versi itu. `staticcheck@2025.1.1` yang sebelumnya dipin tidak lagi membaca export data Go 1.26 ("export data version 5 is greater than maximum supported version 2"), sehingga CI tidak dapat menyelesaikan pemeriksaan statis; `v0.8.2` membaca export data Go 1.26 dengan benar dan melaporkan nol temuan pada kode saat ini. `golang.org/x/crypto` dinaikkan ke `v0.58.1-0.20261009181718-2f1f834330b2` untuk menutup advisori `GO-2026-5932` pada paket `openpgp` yang tidak lagi dipelihara. Kenaikan versi Go tidak mengubah kode sumber dan tidak mengubah kontrak API.
+- **Bukti:** `backend/go.mod`, `backend/go.sum`, `.github/workflows/backend.yml`, `docs/PERFORMANCE-BASELINE.md` §1 (angka benchmark diukur memakai Go 1.26.11), `docs/IMPLEMENTATION-PLAN.md` §8
+
+### DEC-036 — Perkakas pengukuran performa dan database pengukuran terpisah
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** Perkakas pengukuran performa dibuat sebagai `backend/cmd/perfbench` dengan subcommand `seed`, `schema`, `explain`, `latency`, `e2e`, dan `deps`. Perkakas measuring menjalankan binari `cmd/server` asli sebagai proses anak, sehingga pengukuran memakai rantai handler produksi tanpa duplikasi. SQL yang dianalisis direkam pada level connection pool GORM, sehingga `EXPLAIN` dijalankan atas statement yang benar-benar diterima PostgreSQL.
+- **Catatan:** Database pengukuran dibuat sebagai database terpisah (`simpeg_perf`) pada proyek Supabase yang sama. Database `postgres` yang dipakai production tidak dipakai untuk seeding, dan datanya tetap nol baris. Pemeriksaan keselarasan skema (`perfbench schema`) membandingkan kolom yang dinyatakan model GORM dengan kolom yang benar-benar ada pada database target, karena keberadaan migrasi tidak membuktikan migrasi sudah diterapkan maupun model sudah selaras dengan tabel. Perkakas hanya membaca kredensial dari environment; tidak ada nilai rahasia yang ditulis di dalam repo.
+- **Bukti:** `backend/cmd/perfbench/`, `backend/migrations/000016_payment_updated_at.sql`, `docs/PERFORMANCE-BASELINE.md` §2–§4, `docs/RUNBOOK.md` §8
+
+### DEC-037 — Perbaikan jalur konfirmasi pembayaran gaji pada skema nyata
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** Model `models.Pembayaran` memakai `BaseModel`, sehingga GORM menulis kolom `updatedAt` pada setiap `INSERT`. Tabel `pembayaran` yang dibuat migrasi `000008_payment_confirmation.sql` hanya memiliki `createdAt`. Akibatnya setiap konfirmasi pembayaran gaji pada `POST /api/v1/payroll/slips/{payrollId}/payment` gagal dengan `SQLSTATE 42703`.
+- **Catatan:** Perbaikan dibuat sebagai migrasi `000016_payment_updated_at.sql`, bukan dengan mengubah migrasi lama, agar jejak versi tetap utuh. Migrasi menambahkan kolom yang sudah dinyatakan model sehingga tidak ada perubahan perilaku aplikasi. Keselarasan model dan skema diverifikasi ulang oleh `perfbench schema` terhadap seluruh 67 model. Temuan ini sekaligus membatalkananggapan bahwa migrasi belum pernah diterapkan pada database nyata: `goose_db_version` pada database `postgres` sudah memuat 16 versi sejak 2026-11-11.
+- **Bukti:** `backend/migrations/000016_payment_updated_at.sql`, `backend/internal/models/models_payroll.go`, `backend/internal/payroll/repository/gorm.go`, `docs/RUNBOOK.md` §8
+
+### DEC-038 — Perbaikan endpoint QStash dan jadwal regional
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `qstash.Publisher` menempelkan URL tujuan langsung ke `BaseURL`. Nilai `QSTASH_URL` pada environment adalah root API regional (`https://qstash-us-east-1.upstash.io`), bukan endpoint lengkap, sehingga URL tujuan menjadi `https://qstash-us-east-1.upstash.io/<tujuan>` dan QStash menjawab `404`. Endpoint jadwal juga jatuh ke region global karena `QSTASH_SCHEDULES_URL` kosong.
+- **Catatan:** Publisher kini menambah jalur `/v2/publish` bila `BaseURL` belum memuatnya, dan endpoint jadwal diturunkan dari `BaseURL` yang sama sehingga token, publikasi, dan jadwal berada pada satu region. Nilai `QSTASH_SCHEDULES_URL` yang diisi eksplisit tetap dipakai apa adanya. Pemeriksaan nyata menunjukkan format URL tujuan harus berupa URL mentah pada jalur, bukan ter-encode: QStash menolak bentuk ter-encode dengan "endpoint has invalid scheme".
+- **Bukti:** `backend/internal/qstash/publisher.go`, `backend/internal/qstash/schedule.go`, `backend/internal/qstash/publisher_endpoint_test.go`, `docs/PERFORMANCE-BASELINE.md` §5
+
+### DEC-039 — Dukungan STARTTLS pada transport SMTP
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `notify.smtpTransport` hanya knewa dua mode: TLS langsung (`UseTLS`) dan koneksi polos tanpa peningkatan. Server submission pada porta 587 menerima koneksi polos lalu menawarkan `STARTTLS`. Dengan `SMTP_HOST=smtp.gmail.com` dan `SMTP_PORT=587`, mode TLS langsung gagal dengan `tls: first record does not look like a TLS handshake`, sehingga tidak ada email yang pernah terkirim.
+- **Catatan:** Transport kini menaikkan koneksi ke TLS otomatis bila server menawarkan `STARTTLS`, dan peningkatan dilakukan sebelum autentikasi karena kredensial tidak boleh dikirim lewat koneksi polos. Penentuan mode dipindah ke `config.SMTPConfig`: `SMTP_SECURE=true` berarti TLS langsung, `SMTP_SECURE=false` berarti koneksi polos yang dinaikkan lewat STARTTLS, dan bila `SMTP_SECURE` tidak disetel, mode ditebak dari porta (465 memakai TLS langsung, porta lain memakai STARTTLS). Nilai bawaan lama `SMTP_SECURE=true` tidak lagi berlaku karena tidak sesuai dengan porta submission.
+- **Bukti:** `backend/internal/notify/smtp.go`, `backend/internal/config/smtp.go`, `backend/internal/notify/smtp_starttls_test.go`, `docs/PERFORMANCE-BASELINE.md` §5
+
+### DEC-040 — Penyimpanan metrik SLO di PostgreSQL dan alert lewat antrean keluar
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik platform dan pemilik operasi (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** Alert SLO dijalankan sebagai pekerjaan terjadwal QStash (`slo.evaluate`, cron `*/5 * * * *`) yang memanggil `POST /api/v1/internal/qstash/slo/evaluate`. Callback memakai autentikasi signature QStash, sama seperti callback lain. Metrik dikumpulkan pengoleki di dalam proses backend dan disimpan ke tabel `sloMetric` di PostgreSQL.
+- **Catatan:** Metrik disimpan di PostgreSQL, bukan Redis, karena Redis pada repo ini diperuntukkan hanya untuk cache data referensi dan ditolak untuk data historis maupun status. Alert tidak dikirim langsung melainkan diantrekan ke antrean keluar persisten dengan kunci idempotensi yang memuat awal jendela, sehingga percobaan ulang callback QStash tidak menghasilkan email ganda. Persentil dihitung dari histogram bucket; keputusan pelanggaran memakai batas atas bucket sehingga tidak pernah lolos karena perkiraan yang terlalu kecil, dan ambang 800 ms sengaja ada sebagai batas bucket karena angka itu target SLO bawaan.
+- **Bukti:** `backend/internal/slo/`, `backend/internal/httpserver/slo_handlers.go`, `backend/migrations/000017_slo_metric.sql`, `backend/internal/jobs/jobs.go`, `docs/RUNBOOK.md` §8
+
+### DEC-041 — Bentuk alamat email pengirim dan pemisahan pengirim amplop
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** Bentuk baku RFC 5322 `"Nama Tampilan" <alamat@domain>` ditolak oleh validasi `SMTP_FROM` yang hanya menerima alamat polos. Konsekuensinya backend menolak start dengan `config: SMTP_FROM must be a valid email address`, sehingga layanan tidak dapat dijalankan sama sekali dengan konfigurasi email yang lazim.
+- **Catatan:** Pemisahan alamat kini berada di `notify.SplitAddress`: bentuk polos dikembalikan apa adanya, bentuk nama tampilan menghasilkan alamat polos di dalam kurung sudut. Header `From` memakai nilai yang dikonfigurasi apa adanya, sedangkan perintah SMTP `MAIL FROM` memakai alamat polos karena perintah itu tidak menerima bentuk nama tampilan. Validasi dipindah ke `notify.ValidateAddress` dan menerima kedua bentuk. Bentuk polos tetap menjadi default pada `.env.example`.
+- **Bukti:** `backend/internal/notify/address.go`, `backend/internal/notify/smtp.go`, `backend/internal/config/config.go`, `backend/internal/notify/address_test.go`, `docs/PERFORMANCE-BASELINE.md` §8
+
+### DEC-042 — RabbitMQ menggantikan QStash sebagai pengangkut pekerjaan terjadwal pada deployment self-hosted
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui (arah pengguna), rincian ditetapkan pada pengerjaan ini
+- **Rincian:** Deployment docker/podman memakai RabbitMQ self-hosted untuk pekerjaan terjadwal. Penjadwal `cmd/jobsched` (container terpisah) menerbitkan pesan `{"kind": ...}` ke exchange `simpeg.jobs` sesuai cron UTC yang sama dengan jadwal QStash; server mengonsumsi antrean `simpeg.jobs` dan menjalankan logika yang sama dengan callback QStash, lalu mengakui pesan hanya setelah sukses. Pesan gagal pindah ke `simpeg.jobs.dead` untuk diperiksa operator; tick cron berikutnya memicu eksekusi baru.
+- **Catatan:** Bentuk payload dan kind identik dengan callback QStash, sehingga kedua transport setara dan pekerjaan tetap idempoten. Mode QStash tetap tersedia sebagai alternatif cloud (bila `RABBITMQ_URL` kosong dan kredensial QStash terisi); bila `RABBITMQ_URL` diisi, pendaftaran jadwal QStash dilewati. Pemeriksaan SLO hanya diterbitkan bila pengoleki metrik aktif (`SLO_EVALUATE_ENABLED` penjadwal = `SLO_ENABLED` backend) agar pesan tidak menumpuk di dead-letter pada deployment tanpa SLO.
+- **Bukti:** `backend/internal/mq/`, `backend/cmd/jobsched/`, `backend/cmd/server/workers.go`, `docker-compose.yml`, `rabbitmq/docker-compose.yml`, `rabbitmq/README.md`, dan verifikasi end-to-end pada Docker lokal (publish `audit.cleanup` → `mq_job_done`; publish kind tanpa handler → antrean `simpeg.jobs.dead` berisi 1 pesan). Broker dipisah menjadi stack tersendiri pada `rabbitmq/docker-compose.yml` atas arah pengguna agar pengembangan broker tidak terikat siklus hidup stack backend; stack backend bergabung ke jaringan `simpeg-broker` sebagai external network.
+
+### DEC-043 — Kenaikan versi Go modul ke 1.27.3
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Direktif `go` pada `backend/go.mod` naik dari `1.26.11` ke `1.27.3`, mengikuti toolchain yang tersedia pada mesin pengembang. Versi 1.27.3 lebih baru daripada 1.26.11 sehingga tetap memuat tambalan advisori `GO-2026-6859` yang menjadi alasan penguncian sebelumnya (DEC-039). CI memakai `go-version-file: backend/go.mod` sehingga otomatis menguji 1.27.3; `staticcheck@v0.8.2` di CI terbukti tetap dapat membaca export data Go 1.27.3. Image builder `backend/Dockerfile` memakai `golang:1.27.3-alpine` dengan `GOTOOLCHAIN=local`.
+- **Bukti:** `backend/go.mod`, `backend/Dockerfile`, dan verifikasi lokal pada Go 1.27.3: `gofmt -l` bersih, `go vet`, `go test`, `go build`, `go mod verify`, dan `go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...` tanpa temuan.
+
+**Koreksi (12 November 2026):** klaim pada entri ini bahwa "1.27.3 tetap memuat tambalan advisori `GO-2026-6859`" sudah tidak benar. Advisori `GO-2026-6859` (`net/http` race `MaxBytesReader`, CVE-2026-97054) diperbarui pada 11 November 2026 dengan tambalan pada `go1.27.4`; `go1.27.3` rentan karena kode backend memakai `http.MaxBytesReader`. Modul dinaikkan ke `go1.27.4` dan image dibangun ulang tanpa `gosu` — lihat `DEC-045`.
+
+
+### DEC-044 — Aturan eviden pengajuan cuti
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik produk (belum ditetapkan)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Cuti melahirkan (`BERSALIN`), cuti sakit (`SAKIT` dan `SAKIT_BERKEPANJANGAN`), dan cuti harian (`IZIN_PENTING`) wajib menyertakan eviden saat pengajuan dibuat; pengajuan tanpa eviden ditolak `422`, dan eviden dicek ulang saat persetujuan. Bentuk eviden: `SURAT_DOKTER` (berkas, nomor, tanggal surat dokter wajib) hanya untuk cuti sakit dan melahirkan; `FOTO` (berkas dan waktu tangkap wajib) atau `LAINNYA` (waktu dan keterangan wajib) untuk cuti harian. Metadata disimpan pada kolom baru tabel `Cuti`: `jenisEviden` (enum `SURAT_DOKTER`/`FOTO`/`LAINNYA`), `fileEvidenUrl`, `waktuEviden`, `catatanEviden`. Kolom lama `fileSuratUrl` di-`RENAME` menjadi `fileEvidenUrl` (bukan drop) lewat migrasi `000019_cuti_eviden.sql`.
+- **Bukti:** `backend/migrations/000019_cuti_eviden.sql`, `backend/internal/directory/domain/leave_eviden.go`, `backend/internal/directory/app/leave.go`, `backend/internal/httpserver/hr_leave_handlers.go`, dan tes di `hr_leave_handlers_test.go` serta `leave_eviden_test.go`; kontrak di `docs/openapi.yaml`; kebijakan di `docs/PRD.md` §11.
+
+
+### DEC-045 — Go dinaikkan ke 1.27.4; image container tidak lagi mengandung gosu
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Direktif `go` pada `backend/go.mod` dan `ARG GO_VERSION` pada `backend/Dockerfile` naik dari `1.27.3` ke `1.27.4`. Alasan: advisori `GO-2026-6859` (race `MaxBytesReader` pada `net/http`, CVE-2026-97054, ditemukan pada `go1.27.3`) diperbaiki pada `go1.27.4`; backend memakai `http.MaxBytesReader` di 3 jalur handler. Hasil: `govulncheck@latest` melaporkan "No vulnerabilities found." Semua CVE standar Go yang dilaporkan sebelumnya (CVE-2025-68121, CVE-2026-39821, CVE-2026-39822; CVE-2026-56857 dan CVE-2026-78663 dengan rentang <1.26.9) tidak memengaruhi `go1.27.4` karena tambalan sudah ada pada cabang 1.27 yang lebih lama atau rentangnya tidak mencakup 1.27.x. Image runtime adalah `gcr.io/distroless/static-debian12:nonroot` yang hanya memuat 3 binary statis (`/bin/server`, `/bin/jobsched`, `/bin/migrate`); `usr/sbin/` kosong dan tidak ada `gosu` — temuan CVE lama pada `/usr/sbin/gosu` berasal dari image Alpine-lawas yang sudah tidak dibangun.
+- **Bukti:** `backend/go.mod`, `backend/Dockerfile`, `go version -m` binary image (`go1.27.4`), `docker export` image (tanpa `/usr/sbin/gosu`), `govulncheck` bersih, `gofmt`/`vet`/`test`/`build` hijau.
+
+
+### DEC-046 — Workflow migrasi Goose diperkuat (belum dijalankan di GitHub)
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui (arah pengguna), file workflow diperkuat di repo dan urutan perintah diuji manual terhadap DB uji `simpeg_perf`
+- **Rincian:** Workflow `.github/workflows/deploy-migrations.yml` belum pernah ada di repo remote (belum pernah di-commit/push), GitHub environment `staging`/`production` belum dibuat, dan secret `DATABASE_URL` belum ada, sehingga workflow belum pernah dijalankan. Workflow diperkuat: pakai runner migrasi milik repo (`backend/cmd/migrate` dengan goose v3.30.0 ter-pinning lewat `backend/go.mod`, bukan `go install ...@latest`), gagal cepat bila `DATABASE_URL` kosong, `timeout-minutes: 30`, grup concurrency, `migrate status` sebelum dan sesudah `migrate up`. Environment dan secret harus dibuat di GitHub sebelum workflow dapat dijalankan; penerapan harus dicoba di `staging` (DB uji) terlebih dahulu sebelum `production`.
+- **Bukti:** `.github/workflows/deploy-migrations.yml`, `backend/cmd/migrate/main.go`, dan verifikasi urutan perintah manual terhadap `simpeg_perf` (status → up no-op versi 19 → status).
+
+
+### DEC-047 — Manajemen dokumen pegawai/dosen melalui arsip dokumen + Cloudinary
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik produk (belum ditetapkan)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Modul arsip dokumen pegawai (`ArsipDokumenPegawai`) sudah ada dan diperluas untuk menampung 11 jenis dokumen pegawai/dosen (KTP, NPWP, Kartu Keluarga, Rekening Bank, SK Pengangkatan Yayasan, SK Mendikbud, Pakta Integritas, Lainnya, Foto, Ijazah Terakhir, SK Kepegawaian/Kontrak, BPJS Ketenagakerjaan, BPJS Kesehatan, Sertifikat Serdos). Setiap jenis memiliki aturan format MIME dan ukuran maksimal yang divalidasi pada metadata berkas (backend tidak menangani unggah berkas; berkas diunggah langsung ke Cloudinary oleh klien, backend hanya menyimpan URL + metadata). Migrasi `000020_arsip_dokumen_tambahan.sql` menambah nilai enum baru pada `JenisDokumenArsip` dan kolom `fileSize`, `mimeType`, `cloudinaryPublicId` pada tabel `arsipDokumenPegawai`. Endpoint: `GET/POST/PATCH/DELETE /api/v1/arsip{...}`. Konfigurasi Cloudinary dibaca dari `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` (`.env.example`). `no_rek` dan `nama_rek` sudah tersedia sebagai `BankRekening` dan `BankAtasNama` pada tabel `user`. Timestamps `createdAt`/`updatedAt` disimpan UTC di database dan ditampilkan Asia/Jakarta.
+- **Bukti:** `backend/migrations/000020_arsip_dokumen_tambahan.sql`, `backend/internal/models/models_hr.go`, `backend/internal/models/enums.go`, `backend/internal/directory/domain/arsip.go`, `backend/internal/directory/app/arsip.go`, `backend/internal/directory/repository/gorm_arsip.go`, `backend/internal/httpserver/hr_arsip_handlers.go`, `backend/internal/config/config.go` (`CloudinaryConfig`), `.env.example`, `docs/openapi.yaml`.
+
 

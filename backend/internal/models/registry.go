@@ -17,6 +17,12 @@ func All() []any {
 		&Pemberhentian{}, &Paklaring{}, &PesanKeluar{}, &AuditLog{},
 		&Session{}, &Account{}, &Verification{}, &TwoFactor{},
 		&OutboxMessage{}, &Pembayaran{}, &MachineCredential{},
+		&SloMetric{},
 		&SKPPeriode{}, &SKPTargetKinerja{}, &LogAktivitasHarian{}, &PenilaianKinerjaAkhir{},
+		&PeriodeAkademik{}, &EvaluasiBKD{}, &TridharmaPendidikan{}, &TridharmaPenelitian{},
+		&TridharmaPengabdian{}, &TridharmaPenunjang{},
+		&KeluargaPegawai{}, &RiwayatGolongan{}, &KomponenTunjangan{}, &KomponenPotongan{},
+		&ArsipDokumenPegawai{}, &RiwayatSertifikasi{}, &RiwayatPelatihan{}, &SisterSyncMap{},
+		&RiwayatPenghargaan{},
 	}
 }

@@ -795,6 +795,462 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/audit-logs/export:
+    get:
+      tags: [Audit]
+      operationId: exportAuditLogs
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: audit:read
+      summary: Mengekspor jejak audit ke berkas CSV
+      description: >-
+        Membutuhkan permission audit:read (admin, seluruh jejak) atau
+        audit:read:homebase (operator, jejak unit penugasannya beserta
+        turunannya). Ekspor di-stream sebagai berkas CSV dengan BOM UTF-8,
+        urutan kronologis naik, dan tanpa batas jumlah baris. Filter yang
+        tersedia sama dengan endpoint daftar (aksi, search); parameter
+        sort dan pagination diabaikan. Setiap ekspor yang berhasil dicatat
+        kembali sebagai aksi audit.exported.
+      security:
+        - bearerSession: []
+      parameters:
+        - $ref: "#/components/parameters/AuditAction"
+        - $ref: "#/components/parameters/Search"
+      responses:
+        "200":
+          description: Berkas CSV jejak audit dalam cakupan pemohon.
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/cuti:
+    get:
+      tags: [Cuti]
+      operationId: listCuti
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: cuti:read
+      summary: Membaca daftar pengajuan cuti pegawai
+      description: >-
+        Membutuhkan permission cuti:read:any (admin, seluruh pengajuan),
+        cuti:read:homebase (operator/atasan, pengajuan unit penugasannya
+        beserta turunannya), atau cuti:read:self (pegawai, pengajuan
+        miliknya sendiri). Filter: userId, jenis, status, search.
+      security:
+        - bearerSession: []
+      parameters:
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Sort"
+        - $ref: "#/components/parameters/Order"
+      responses:
+        "200":
+          description: Halaman pengajuan cuti dalam cakupan pemohon.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CutiPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      tags: [Cuti]
+      operationId: createCuti
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: cuti:create
+      summary: Mengajukan cuti baru
+      description: >-
+        Membutuhkan permission cuti:create (admin, setiap pegawai) atau
+        cuti:create:homebase (operator, pegawai dalam cakupan unit). Pegawai
+        hanya dapat mengajukan cuti untuk dirinya sendiri. Status awal
+        selalu MENUNGGU.
+
+        Cuti melahirkan (BERSALIN), cuti sakit (SAKIT dan SAKIT_BERKEPANJANGAN),
+        dan cuti harian (IZIN_PENTING) wajib menyertakan eviden saat pengajuan
+        dibuat; pengajuan tanpa eviden ditolak dengan 422. Cuti sakit dan
+        melahirkan hanya menerima jenis eviden SURAT_DOKTER (berkas, nomor, dan
+        tanggal surat dokter wajib). Cuti harian hanya menerima FOTO (berkas dan
+        waktu tangkap wajib) atau LAINNYA (waktu dan keterangan wajib). Eviden
+        juga dicek ulang saat persetujuan.
+      security:
+        - bearerSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CutiCreateRequest"
+      responses:
+        "201":
+          description: Pengajuan cuti berhasil dibuat.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CutiDTO"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/cuti/{cutiId}:
+    get:
+      tags: [Cuti]
+      operationId: getCuti
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: cuti:read
+      summary: Membaca satu pengajuan cuti
+      security:
+        - bearerSession: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200":
+          description: Detail pengajuan cuti.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CutiDTO"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    patch:
+      tags: [Cuti]
+      operationId: updateCuti
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: cuti:update
+      summary: Mengubah pengajuan cuti yang masih MENUNGGU
+      description: >-
+        Hanya dapat dilakukan pada status MENUNGGU oleh pemilik pengajuan atau
+        atasan/HRD dengan cakupan unit. Pengajuan yang wajib menyertakan eviden
+        tetap harus memiliki eviden setelah perubahan; pengajuan yang dikosongkan
+        eviden-nya ditolak dengan 422.
+      security:
+        - bearerSession: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CutiPatchRequest"
+      responses:
+        "200":
+          description: Pengajuan cuti berhasil diubah.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CutiDTO"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/cuti/{cutiId}/approve:
+    post:
+      tags: [Cuti]
+      operationId: approveCuti
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: cuti:approve
+      summary: Menyetujui pengajuan cuti
+      description: >-
+        Hanya dapat dilakukan pada status MENUNGGU oleh atasan/HRD dengan
+        cakupan unit. disetujuiBy diisi oleh pelaku. Cuti yang wajib menyertakan
+        eviden tidak dapat disetujui bila eviden belum ada (dicek ulang saat
+        persetujuan); ditolak dengan 422.
+      security:
+        - bearerSession: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CutiActionRequest"
+      responses:
+        "200":
+          description: Pengajuan cuti disetujui.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CutiDTO"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/cuti/{cutiId}/reject:
+    post:
+      tags: [Cuti]
+      operationId: rejectCuti
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: cuti:approve
+      summary: Menolak pengajuan cuti
+      description: >-
+        Hanya dapat dilakukan pada status MENUNGGU oleh atasan/HRD dengan
+        cakupan unit. disetujuiBy diisi oleh pelaku.
+      security:
+        - bearerSession: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CutiActionRequest"
+      responses:
+        "200":
+          description: Pengajuan cuti ditolak.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CutiDTO"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/arsip:
+    get:
+      tags: [Arsip]
+      operationId: listArsip
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: arsip:read
+      summary: Membaca daftar arsip dokumen pegawai
+      description: >-
+        Membutuhkan permission arsip:read:any (admin, semua arsip),
+        arsip:read:homebase (operator/atasan, arsip unitnya beserta turunan),
+        atau arsip:read:self (pegawai, arsipnya sendiri).
+      security:
+        - bearerSession: []
+      parameters:
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/Sort"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/UserID"
+      responses:
+        "200":
+          description: Daftar arsip dokumen pegawai.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArsipPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      tags: [Arsip]
+      operationId: createArsip
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: arsip:create
+      summary: Menambahkan entri arsip dokumen pegawai baru
+      description: >-
+        Membutuhkan permission arsip:create (admin) atau
+        arsip:create:homebase (operator, pegawai dalam cakupan unit). Pegawai
+        hanya dapat membuat arsip untuk dirinya sendiri. Berkas disimpan di
+        Cloudinary oleh klien; backend hanya menerima URL dan metadata berkas.
+        Setiap jenis dokumen memiliki aturan format MIME dan ukuran maksimal
+        yang berbeda (lihat validasi pada domain arsip).
+      security:
+        - bearerSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArsipCreateRequest"
+      responses:
+        "201":
+          description: Entri arsip dokumen berhasil dibuat.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArsipDTO"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/arsip/{arsipId}:
+    get:
+      tags: [Arsip]
+      operationId: getArsip
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: arsip:read
+      summary: Membaca satu entri arsip dokumen pegawai
+      security:
+        - bearerSession: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200":
+          description: Detail arsip dokumen pegawai.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArsipDTO"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    patch:
+      tags: [Arsip]
+      operationId: updateArsip
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: arsip:update
+      summary: Mengubah entri arsip dokumen pegawai
+      description: >-
+        Hanya dapat dilakukan oleh pemilik arsip atau atasan/HRD dengan
+        cakupan unit. Metadata berkas (url, ukuran, tipe MIME) divalidasi
+        ulang saat diubah.
+      security:
+        - bearerSession: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArsipPatchRequest"
+      responses:
+        "200":
+          description: Entri arsip dokumen berhasil diubah.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArsipDTO"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/arsip/{arsipId}/archive:
+    delete:
+      tags: [Arsip]
+      operationId: archiveArsip
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: arsip:archive
+      summary: Mengarsipkan (menonaktifkan) entri arsip dokumen pegawai
+      security:
+        - bearerSession: []
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "204":
+          description: Entri arsip dokumen diarsipkan.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/cloudinary/upload-signature:
+    get:
+      tags: [Cloudinary]
+      operationId: cloudinaryUploadSignature
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: arsip:create
+      summary: Mengembalikan tanda tangan unggah berkas ke Cloudinary
+      description: >-
+        Klien meminta tanda tangan unggah sebelum mengunggah berkas dokumen
+        pegawai langsung ke Cloudinary. Backend hanya menghasilkan tanda
+        tangan dan parameter (cloudName, apiKey, timestamp, signature); berkas
+        itu sendiri tidak melalui backend. Tanda tangan dihitung dengan
+        SHA-1 atas parameter yang diurutkan alfabetik dan API secret.
+      security:
+        - bearerSession: []
+      responses:
+        "200":
+          description: Tanda tangan dan parameter unggah Cloudinary.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CloudinaryUploadSignature"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/categories:
     get:
       tags: [Categories]
@@ -1212,6 +1668,14 @@ components:
       schema:
         type: string
         format: uuid
+    ID:
+      name: cutiId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: ID pengajuan cuti.
     Sort:
       name: sort
       in: query
@@ -1292,6 +1756,15 @@ components:
   responses:
     BadRequest:
       description: Parameter atau format request tidak valid.
+      headers:
+        X-API-Version:
+          $ref: "#/components/headers/APIVersion"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    UnprocessableEntity:
+      description: Request tidak lolos validasi aturan bisnis (misalnya eviden cuti yang wajib belum disertakan).
       headers:
         X-API-Version:
           $ref: "#/components/headers/APIVersion"
@@ -1955,3 +2428,262 @@ components:
               type: object
               additionalProperties:
                 type: string
+    Cuti:
+      type: object
+      required: [id, userId, jenis, tanggalMulai, tanggalSelesai, status, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        jenis:
+          type: string
+          enum: [TAHUNAN, PANJANG, BERSALIN, SAKIT, SAKIT_BERKEPANJANGAN, IZIN_PENTING, POLITIK]
+        tanggalMulai:
+          type: string
+          format: date-time
+        tanggalSelesai:
+          type: string
+          format: date-time
+        alamatCuti:
+          type: [string, "null"]
+        alasan:
+          type: [string, "null"]
+        status:
+          type: string
+          enum: [MENUNGGU, DISETUJUI, DITOLAK]
+        disetujuiBy:
+          type: [string, "null"]
+          format: uuid
+        catatan:
+          type: [string, "null"]
+        subJenis:
+          type: [string, "null"]
+          enum: [MENIKAH, MELAHIRKAN_ISTRI, MENIKAHKAN_ANAK, KELUARGA_INTI, KELUARGA_LAIN]
+        nomorSurat:
+          type: [string, "null"]
+        tanggalSuratDokter:
+          type: [string, "null"]
+          format: date-time
+        jenisEviden:
+          type: [string, "null"]
+          enum: [SURAT_DOKTER, FOTO, LAINNYA]
+        fileEvidenUrl:
+          type: [string, "null"]
+        waktuEviden:
+          type: [string, "null"]
+          format: date-time
+        catatanEviden:
+          type: [string, "null"]
+        persenGaji:
+          type: number
+        untukHaji:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CutiPage:
+      type: object
+      required: [items, page, pageSize, totalItems, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Cuti"
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        totalItems:
+          type: integer
+        totalPages:
+          type: integer
+    CutiCreateRequest:
+      type: object
+      required: [userId, jenis, tanggalMulai, tanggalSelesai]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        jenis:
+          type: string
+          enum: [TAHUNAN, PANJANG, BERSALIN, SAKIT, SAKIT_BERKEPANJANGAN, IZIN_PENTING, POLITIK]
+        tanggalMulai:
+          type: string
+        tanggalSelesai:
+          type: string
+        alamatCuti:
+          type: string
+        alasan:
+          type: string
+        subJenis:
+          type: string
+          enum: [MENIKAH, MELAHIRKAN_ISTRI, MENIKAHKAN_ANAK, KELUARGA_INTI, KELUARGA_LAIN]
+        nomorSurat:
+          type: string
+        tanggalSuratDokter:
+          type: string
+        jenisEviden:
+          type: string
+          enum: [SURAT_DOKTER, FOTO, LAINNYA]
+        fileEvidenUrl:
+          type: string
+        waktuEviden:
+          type: string
+        catatanEviden:
+          type: string
+        persenGaji:
+          type: number
+        untukHaji:
+          type: boolean
+    CutiPatchRequest:
+      type: object
+      properties:
+        jenis:
+          type: string
+        tanggalMulai:
+          type: string
+        tanggalSelesai:
+          type: string
+        alamatCuti:
+          type: string
+        alasan:
+          type: string
+        subJenis:
+          type: string
+        nomorSurat:
+          type: string
+        tanggalSuratDokter:
+          type: string
+        jenisEviden:
+          type: string
+          enum: [SURAT_DOKTER, FOTO, LAINNYA]
+        fileEvidenUrl:
+          type: string
+        waktuEviden:
+          type: string
+        catatanEviden:
+          type: string
+        persenGaji:
+          type: number
+        untukHaji:
+          type: boolean
+    CutiActionRequest:
+      type: object
+      properties:
+        catatan:
+          type: string
+    Arsip:
+      type: object
+      required: [id, userId, jenisDokumen, judul, fileUrl, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        jenisDokumen:
+          type: string
+          enum: [KTP, NPWP, KARTU_KELUARGA, REKENING_BANK, SK_PENGANGKATAN_YAYASAN, SK_MENDIKBUD, PAKTA_INTEGRITAS, LAINNYA, FOTO, IJAHAN_TERAKHIR, SK_KEPEGAWAIAN_KONTRAK, BPJS_KETENAGAKERJAAN, BPJS_KESEHATAN, SERTIFIKAT_SERDOS]
+        judul:
+          type: string
+        fileUrl:
+          type: string
+        fileSize:
+          type: integer
+        mimeType:
+          type: string
+        keterangan:
+          type: [string, "null"]
+        berlakuSampai:
+          type: [string, "null"]
+          format: date
+        cloudinaryPublicId:
+          type: [string, "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ArsipPage:
+      type: object
+      required: [items, page, pageSize, totalItems, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Arsip"
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        totalItems:
+          type: integer
+        totalPages:
+          type: integer
+    ArsipCreateRequest:
+      type: object
+      required: [userId, jenisDokumen, judul, fileUrl, fileSize, mimeType]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        jenisDokumen:
+          type: string
+          enum: [KTP, NPWP, KARTU_KELUARGA, REKENING_BANK, SK_PENGANGKATAN_YAYASAN, SK_MENDIKBUD, PAKTA_INTEGRITAS, LAINNYA, FOTO, IJAHAN_TERAKHIR, SK_KEPEGAWAIAN_KONTRAK, BPJS_KETENAGAKERJAAN, BPJS_KESEHATAN, SERTIFIKAT_SERDOS]
+        judul:
+          type: string
+        fileUrl:
+          type: string
+        fileSize:
+          type: integer
+        mimeType:
+          type: string
+        keterangan:
+          type: string
+        berlakuSampai:
+          type: string
+        cloudinaryPublicId:
+          type: string
+    ArsipPatchRequest:
+      type: object
+      properties:
+        jenisDokumen:
+          type: string
+        judul:
+          type: string
+        fileUrl:
+          type: string
+        fileSize:
+          type: integer
+        mimeType:
+          type: string
+        keterangan:
+          type: string
+        berlakuSampai:
+          type: string
+        cloudinaryPublicId:
+          type: string
+    CloudinaryUploadSignature:
+      type: object
+      required: [cloudName, apiKey, timestamp, signature]
+      properties:
+        cloudName:
+          type: string
+        apiKey:
+          type: string
+        timestamp:
+          type: integer
+        signature:
+          type: string
+        folder:
+          type: string
+        resourceType:
+          type: string

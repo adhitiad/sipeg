@@ -195,3 +195,39 @@ func TestAuditDTODoesNotExposeRawUnitColumn(t *testing.T) {
 		t.Fatalf("audit DTO leaked profile fields: %s", body)
 	}
 }
+
+func TestAuditExportScopeFollowsOperatorHomebase(t *testing.T) {
+	store := &fakeDirectoryStore{scopeIDs: []string{unitA, unitAChild}}
+	mux := scopeMux(store, auth.Principal{UserID: atasanID, RoleName: "operator", HomebaseID: unitA},
+		map[string]map[auth.Permission]bool{"operator": {"audit:read:homebase": true}})
+
+	request := httptest.NewRequest(http.MethodGet, APIPrefix+"/audit-logs/export", nil)
+	request.Header.Set("Authorization", "Bearer valid-session")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body)
+	}
+	if len(store.streamOptions.ScopeHomebaseIDs) != 2 {
+		t.Fatalf("export scope units = %v, want unit + descendant", store.streamOptions.ScopeHomebaseIDs)
+	}
+}
+
+func TestAuditExportAdminIsNotScoped(t *testing.T) {
+	store := &fakeDirectoryStore{}
+	mux := scopeMux(store, auth.Principal{UserID: atasanID, RoleName: "admin"},
+		map[string]map[auth.Permission]bool{"admin": {"audit:read": true}})
+
+	request := httptest.NewRequest(http.MethodGet, APIPrefix+"/audit-logs/export", nil)
+	request.Header.Set("Authorization", "Bearer valid-session")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body)
+	}
+	if len(store.streamOptions.ScopeHomebaseIDs) != 0 {
+		t.Fatalf("global role must not be scoped, got %v", store.streamOptions.ScopeHomebaseIDs)
+	}
+}

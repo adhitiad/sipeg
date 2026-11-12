@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -41,6 +42,11 @@ type Schedule struct {
 //
 // Jadwal membuat QStash memanggil destination secara berulang sesuai cron,
 // sehingga pekerjaan asinkron dijalankan dari luar instance backend.
+//
+// API v2 QStash memakai bentuk yang sama dengan publikasi: destination
+// merupakan bagian dari path, sedangkan cron, percobaan ulang, dan metode
+// dikirim sebagai header Upstash. Bentuk lama yang menaruh destination dan
+// cron di dalam body ditolak QStash dengan "invalid destination url".
 func (p *Publisher) CreateSchedule(ctx context.Context, request ScheduleRequest) (string, error) {
 	if strings.TrimSpace(request.Destination) == "" {
 		return "", errors.New("qstash schedule destination is required")
@@ -56,17 +62,26 @@ func (p *Publisher) CreateSchedule(ctx context.Context, request ScheduleRequest)
 	if body == "" {
 		body = "{}"
 	}
-	payload, err := json.Marshal(map[string]any{
-		"destination": request.Destination,
-		"body":        body,
-		"cron":        request.Cron,
-		"retries":     request.Retries,
-	})
+	target, err := url.Parse(
+		strings.TrimRight(p.schedulesURL(), "/") + "/" + strings.TrimPrefix(request.Destination, "/"),
+	)
 	if err != nil {
-		return "", fmt.Errorf("encode qstash schedule request: %w", err)
+		return "", fmt.Errorf("build qstash schedule url: %w", err)
 	}
 
-	response, err := p.do(ctx, http.MethodPost, p.schedulesURL(), payload)
+	request2, err := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), strings.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("build qstash schedule request: %w", err)
+	}
+	request2.Header.Set("Authorization", "Bearer "+p.Token)
+	request2.Header.Set("Content-Type", "application/json")
+	request2.Header.Set("Upstash-Cron", request.Cron)
+	request2.Header.Set("Upstash-Method", http.MethodPost)
+	if request.Retries > 0 {
+		request2.Header.Set("Upstash-Retries", fmt.Sprintf("%d", request.Retries))
+	}
+
+	response, err := p.send(request2)
 	if err != nil {
 		return "", err
 	}
@@ -119,11 +134,28 @@ func (p *Publisher) DeleteSchedule(ctx context.Context, id string) error {
 }
 
 // schedulesURL mengembalikan endpoint jadwal yang dipakai publisher.
+//
+// Nilai SchedulesURL dipakai apa adanya bila sudah memuat jalur jadwal.
+// Bila kosong, endpoint diturunkan dari BaseURL supaya token regional dan
+// jadwal berada pada region yang sama. Tanpa ini, jadwal akan dibuat pada
+// region global padahal token dimiliki region lain.
 func (p *Publisher) schedulesURL() string {
-	if p.SchedulesURL != "" {
-		return p.SchedulesURL
+	if trimmed := strings.TrimRight(strings.TrimSpace(p.SchedulesURL), "/"); trimmed != "" {
+		return withSchedulesPath(trimmed)
 	}
-	return DefaultSchedulesURL
+	base := strings.TrimRight(strings.TrimSpace(p.BaseURL), "/")
+	if base == "" {
+		return DefaultSchedulesURL
+	}
+	return withSchedulesPath(base)
+}
+
+// withSchedulesPath menambahkan jalur jadwal bila belum ada.
+func withSchedulesPath(base string) string {
+	if strings.HasSuffix(base, "/v2/schedules") {
+		return base
+	}
+	return base + "/v2/schedules"
 }
 
 // do menjalankan satu permintaan HTTP ke QStash dan memeriksa statusnya.
@@ -141,6 +173,15 @@ func (p *Publisher) do(ctx context.Context, method, endpoint string, payload []b
 		request.Header.Set("Content-Type", "application/json")
 	}
 
+	response, err := p.send(request)
+	if err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
+// send menjalankan satu permintaan HTTP ke QStash dan memeriksa statusnya.
+func (p *Publisher) send(request *http.Request) (*http.Response, error) {
 	client := p.HTTPClient
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}

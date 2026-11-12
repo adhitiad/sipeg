@@ -2,7 +2,6 @@ package observability
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -99,12 +98,9 @@ func TestRequestIDMiddlewareGeneratesIDWhenMissing(t *testing.T) {
 func TestAccessLogDoesNotRecordCredentialsOrQueryValues(t *testing.T) {
 	var buffer bytes.Buffer
 	logger := New(&buffer)
-	handler := AccessLogMiddleware(AccessLogOptions{
-		Logger: logger,
-		PrincipalFromContext: func(ctx context.Context) (string, string, bool) {
-			return "user-1", "operator", true
-		},
-	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := AccessLogMiddleware(AccessLogOptions{Logger: logger})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sink, _ := ActorSinkFromContext(r.Context())
+		sink.Observe("user-1", "operator")
 		w.WriteHeader(http.StatusOK)
 	}))
 

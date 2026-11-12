@@ -3,12 +3,58 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"simpeg/backend/internal/audit"
 	"simpeg/backend/internal/directory/domain"
 	"simpeg/backend/internal/listing"
 	"simpeg/backend/internal/models"
 )
+
+// exportBatchSize adalah jumlah baris yang diambil per batch saat streaming
+// jejak audit untuk ekspor, memakai keyset pagination agar memori terkontrol
+// tanpa batas jumlah baris keseluruhan.
+const exportBatchSize = 1000
+
+// StreamAuditLogs mengirimkan seluruh jejak audit yang cocok filter ke fn,
+// satu batch per batch, dalam urutan kronologis naik (createdAt ASC, id ASC).
+// Sort dan pagination diabaikan; filter sama dengan ListAuditLogs.
+func (s GormStore) StreamAuditLogs(ctx context.Context, options listing.Options, fn func(models.AuditLog) error) error {
+	query := s.DB.WithContext(ctx).Model(&models.AuditLog{})
+	if options.Aksi != "" {
+		query = query.Where("aksi = ?", options.Aksi)
+	}
+	if options.Search != "" {
+		pattern := "%" + escapeLike(options.Search) + "%"
+		query = query.Where("(aksi ILIKE ? ESCAPE '\\' OR keterangan ILIKE ? ESCAPE '\\')", pattern, pattern)
+	}
+	if len(options.ScopeHomebaseIDs) > 0 {
+		query = query.Where(`"unitId" IN ?`, options.ScopeHomebaseIDs)
+	}
+
+	var lastCreated time.Time
+	var lastID string
+	for {
+		var entries []models.AuditLog
+		batch := query.Order(`"createdAt" ASC, "id" ASC`).
+			Where(`("createdAt", "id") > (?, ?)`, lastCreated, lastID).
+			Limit(exportBatchSize).
+			Find(&entries)
+		if batch.Error != nil {
+			return fmt.Errorf("stream audit logs: %w", batch.Error)
+		}
+		if len(entries) == 0 {
+			return nil
+		}
+		for _, entry := range entries {
+			if err := fn(entry); err != nil {
+				return err
+			}
+			lastCreated = entry.CreatedAt
+			lastID = entry.ID
+		}
+	}
+}
 
 // ListAuditLogs membaca jejak perubahan sesuai filter dan pagination.
 func (s GormStore) ListAuditLogs(ctx context.Context, options listing.Options) ([]models.AuditLog, int64, error) {

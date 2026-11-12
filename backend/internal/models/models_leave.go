@@ -18,7 +18,10 @@ type Cuti struct {
 	SubJenis              *SubJenisIzinPenting
 	NomorSurat            *string
 	TanggalSuratDokter    *time.Time `gorm:"type:timestamp(3)"`
-	FileSuratUrl          *string
+	JenisEviden           *JenisEviden
+	FileEvidenUrl         *string
+	WaktuEviden           *time.Time `gorm:"type:timestamp(3)"`
+	CatatanEviden         *string
 	PersenGaji            float64
 	UntukHaji             bool
 	TahapSaatIni          *TingkatTerusan

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"simpeg/backend/internal/audit"
@@ -27,7 +28,7 @@ type GormStore struct {
 // Slip milik pegawai lain tidak terlihat bila principal tidak memegang
 // cakupan unit; penyaringan memakai subquery ke tabel pegawai.
 func (s GormStore) ListSlips(ctx context.Context, options listing.Options) ([]models.Gaji, int64, error) {
-	query := s.DB.WithContext(ctx).Model(&models.Gaji{}).Preload("Pegawai")
+	query := s.DB.WithContext(ctx).Model(&models.Gaji{}).Preload("Pegawai").Preload("GajiTunjangans").Preload("GajiPotongans")
 	if options.UserID != "" {
 		query = query.Where(`"userId" = ?`, options.UserID)
 	}
@@ -67,7 +68,7 @@ func (s GormStore) ListSlips(ctx context.Context, options listing.Options) ([]mo
 // GetSlip membaca satu slip gaji beserta data pegawai pemiliknya.
 func (s GormStore) GetSlip(ctx context.Context, id string) (models.Gaji, error) {
 	var slip models.Gaji
-	err := s.DB.WithContext(ctx).Preload("Pegawai").Where("id = ?", id).First(&slip).Error
+	err := s.DB.WithContext(ctx).Preload("Pegawai").Preload("GajiTunjangans").Preload("GajiPotongans").Where("id = ?", id).First(&slip).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return models.Gaji{}, domain.ErrNotFound
@@ -170,4 +171,39 @@ func (s GormStore) ConfirmedPayment(ctx context.Context, userID, period string) 
 		return false, fmt.Errorf("check payroll payment confirmation: %w", err)
 	}
 	return count > 0, nil
+}
+
+// createPayrollAudit menulis entri jejak audit untuk area penggajian.
+func createPayrollAudit(ctx context.Context, tx *gorm.DB, actorID, action string, targetID, unitID *string) error {
+	return audit.Write(ctx, tx, audit.Entry{
+		ActorID:  actorID,
+		Action:   action,
+		TargetID: targetID,
+		UnitID:   unitID,
+	})
+}
+
+func classifyRecordError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return domain.ErrNotFound
+	case errors.Is(err, gorm.ErrDuplicatedKey):
+		return domain.ErrConflict
+	default:
+		return err
+	}
+}
+
+func escapeLike(value string) string {
+	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return replacer.Replace(value)
+}
+
+func optionalRef(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }

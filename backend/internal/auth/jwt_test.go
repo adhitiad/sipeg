@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -163,7 +164,7 @@ func TestCombinedSessionResolverJWTFirst(t *testing.T) {
 	})
 	resolver := NewCombinedSessionResolver(verifier, nil)
 
-	principal, err := resolver.ResolvePrincipal(nil, tokenString)
+	principal, err := resolver.ResolvePrincipal(context.TODO(), tokenString)
 	if err != nil {
 		t.Fatalf("expected valid principal from JWT, got error: %v", err)
 	}
@@ -177,7 +178,7 @@ func TestCombinedSessionResolverFallsBackToGORM(t *testing.T) {
 	resolver := NewCombinedSessionResolver(verifier, nil)
 
 	// Token yang bukan JWT (bukan 3 bagian) → fallback ke GORM (nil DB → ErrInvalidSession)
-	_, err := resolver.ResolvePrincipal(nil, "opaque-session-token")
+	_, err := resolver.ResolvePrincipal(context.TODO(), "opaque-session-token")
 	if err != ErrInvalidSession {
 		t.Fatalf("expected ErrInvalidSession for nil DB, got: %v", err)
 	}

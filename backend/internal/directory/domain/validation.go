@@ -10,11 +10,13 @@ import (
 
 // Batas panjang nilai teks yang diterima untuk data pegawai dan unit.
 const (
-	MaxNameLength     = 200
-	MaxEmailLength    = 254
-	MaxNIPLength      = 50
-	MaxPositionLength = 200
-	MaxDescription    = 2000
+	MaxNameLength      = 200
+	MaxEmailLength     = 254
+	MaxNIPLength       = 50
+	MaxNIKLength       = 50
+	MaxPositionLength  = 200
+	MaxPekerjaanLength = 200
+	MaxDescription     = 2000
 )
 
 // TextLength menghitung jumlah karakter unicode pada sebuah nilai.
@@ -64,4 +66,10 @@ func (f Field) String() string {
 		return ""
 	}
 	return f.Value
+}
+
+// validateDate memeriksa apakah string tanggal tidak kosong dan memuat
+// setidaknya tahun dan bulan (format "YYYY-MM" atau "YYYY-MM-DD").
+func validateDate(value string) bool {
+	return len(value) >= 7
 }

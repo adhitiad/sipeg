@@ -21,24 +21,38 @@ type payrollAPI struct {
 	payroll *app.Service
 }
 
+// TunjanganItemDTO adalah satu item tunjangan dalam rincian slip gaji.
+type TunjanganItemDTO struct {
+	Jenis string `json:"jenis"`
+	Nilai string `json:"nilai"`
+}
+
+// PotonganItemDTO adalah satu item potongan dalam rincian slip gaji.
+type PotonganItemDTO struct {
+	Jenis   string `json:"jenis"`
+	Nominal string `json:"nominal"`
+}
+
 // PayrollDTO adalah bentuk publik slip gaji.
 //
 // Seluruh nominal dinyatakan dalam Rupiah Indonesia dan sudah diformat
-// dengan pemisah ribuan versi Indonesia.
+// dengan pemisah ribuan versi Indonesia. Pendapatan dan potongan disajikan
+// sebagai array rincian per komponen.
 type PayrollDTO struct {
-	ID             string  `json:"id"`
-	NomorSlip      string  `json:"nomorSlip"`
-	UserID         string  `json:"userId"`
-	Nama           string  `json:"nama"`
-	Periode        string  `json:"periode"`
-	PeriodeLabel   string  `json:"periodeLabel"`
-	Status         string  `json:"status"`
-	StatusLabel    string  `json:"statusLabel"`
-	TanggalGaji    string  `json:"tanggalGaji"`
-	GajiPokok      string  `json:"gajiPokok"`
-	TotalGaji      string  `json:"totalGaji"`
-	PotonganPph21  string  `json:"potonganPph21"`
-	TanggalDibayar *string `json:"tanggalDibayar"`
+	ID             string             `json:"id"`
+	NomorSlip      string             `json:"nomorSlip"`
+	UserID         string             `json:"userId"`
+	Nama           string             `json:"nama"`
+	Periode        string             `json:"periode"`
+	PeriodeLabel   string             `json:"periodeLabel"`
+	Status         string             `json:"status"`
+	StatusLabel    string             `json:"statusLabel"`
+	TanggalGaji    string             `json:"tanggalGaji"`
+	GajiPokok      string             `json:"gajiPokok"`
+	Pendapatan     []TunjanganItemDTO `json:"pendapatan"`
+	Potongan       []PotonganItemDTO  `json:"potongan"`
+	TotalGaji      string             `json:"totalGaji"`
+	TanggalDibayar *string            `json:"tanggalDibayar"`
 }
 
 // paymentRequest adalah bentuk permintaan konfirmasi pembayaran.
@@ -135,22 +149,43 @@ func (api payrollAPI) confirmPayment(w http.ResponseWriter, r *http.Request) {
 }
 
 // payrollDTO memetakan slip gaji ke bentuk publik.
+//
+// Tunjangan diambil dari slip.GajiTunjangans dan potongan dari
+// slip.GajiPotongans. Seluruh nominal diformat dengan money.Format agar
+// mengikuti konvensi Rupiah Indonesia.
 func payrollDTO(slip models.Gaji) PayrollDTO {
 	period := timeutil.InLocation(slip.Periode)
 	parsed, _ := payrolldomain.ParsePeriod(period.Format("2006-01"))
 
+	pendapatan := make([]TunjanganItemDTO, 0, len(slip.GajiTunjangans))
+	for _, t := range slip.GajiTunjangans {
+		pendapatan = append(pendapatan, TunjanganItemDTO{
+			Jenis: t.Jenis,
+			Nilai: money.Format(t.Nominal),
+		})
+	}
+
+	potongan := make([]PotonganItemDTO, 0, len(slip.GajiPotongans))
+	for _, p := range slip.GajiPotongans {
+		potongan = append(potongan, PotonganItemDTO{
+			Jenis:   p.Jenis,
+			Nominal: money.Format(p.Nominal),
+		})
+	}
+
 	dto := PayrollDTO{
-		ID:            slip.ID,
-		NomorSlip:     slip.NomorSlip,
-		UserID:        slip.UserId,
-		Periode:       parsed.Key(),
-		PeriodeLabel:  parsed.Label(),
-		Status:        string(slip.Status),
-		StatusLabel:   payrolldomain.StatusLabel(slip.Status),
-		TanggalGaji:   timeutil.FormatDate(slip.TanggalGaji),
-		GajiPokok:     money.Format(slip.GajiPokok),
-		TotalGaji:     money.Format(slip.TotalGaji),
-		PotonganPph21: money.Format(slip.PotonganPph21),
+		ID:           slip.ID,
+		NomorSlip:    slip.NomorSlip,
+		UserID:       slip.UserId,
+		Periode:      parsed.Key(),
+		PeriodeLabel: parsed.Label(),
+		Status:       string(slip.Status),
+		StatusLabel:  payrolldomain.StatusLabel(slip.Status),
+		TanggalGaji:  timeutil.FormatDate(slip.TanggalGaji),
+		GajiPokok:    money.Format(slip.GajiPokok),
+		Pendapatan:   pendapatan,
+		Potongan:     potongan,
+		TotalGaji:    money.Format(slip.TotalGaji),
 	}
 	if slip.Pegawai != nil {
 		dto.Nama = slip.Pegawai.Nama

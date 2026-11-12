@@ -52,6 +52,11 @@ func expectInsertSessionExec(mock sqlmock.Sqlmock) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 }
 
+func expectInsertAuditLog(mock sqlmock.Sqlmock) {
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO "auditLog"`)).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+}
+
 func TestIssuerCreatesSessionAndReturnsToken(t *testing.T) {
 	db, mock := newIssuerDB(t)
 	roleID := "role-1"
@@ -59,6 +64,9 @@ func TestIssuerCreatesSessionAndReturnsToken(t *testing.T) {
 	expectRoleForIssuance(mock, roleID, "operator")
 	mock.ExpectBegin()
 	expectInsertSessionExec(mock)
+	mock.ExpectCommit()
+	mock.ExpectBegin()
+	expectInsertAuditLog(mock)
 	mock.ExpectCommit()
 
 	issuer := NewGormSessionIssuer(db, time.Hour)
@@ -83,6 +91,9 @@ func TestIssuerSkipsRoleLookupWhenRoleIdEmpty(t *testing.T) {
 	expectUserForIssuance(mock, "user-2", nil, true)
 	mock.ExpectBegin()
 	expectInsertSessionExec(mock)
+	mock.ExpectCommit()
+	mock.ExpectBegin()
+	expectInsertAuditLog(mock)
 	mock.ExpectCommit()
 
 	issuer := NewGormSessionIssuer(db, time.Hour)

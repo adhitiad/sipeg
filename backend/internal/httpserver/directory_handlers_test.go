@@ -22,11 +22,15 @@ type fakeDirectoryStore struct {
 	employees      []models.User
 	byID           map[string]models.User
 	auditLogs      []models.AuditLog
+	cutiLogs       []models.Cuti
+	createdCuti    models.Cuti
+	updatedCuti    models.Cuti
 	categories     []models.Kategori
 	scopeIDs       []string
 	recordedAudits []audit.Entry
 	listHomebaseID string
 	listOptions    listing.Options
+	streamOptions  listing.Options
 	batchCalls     int
 	organization   models.Homebase
 	employeePatch  domain.EmployeePatch
@@ -110,6 +114,16 @@ func (s *fakeDirectoryStore) ListOrganizations(_ context.Context, options listin
 func (s *fakeDirectoryStore) ListAuditLogs(_ context.Context, options listing.Options) ([]models.AuditLog, int64, error) {
 	s.listOptions = options
 	return s.auditLogs, int64(len(s.auditLogs)), s.err
+}
+
+func (s *fakeDirectoryStore) StreamAuditLogs(_ context.Context, options listing.Options, fn func(models.AuditLog) error) error {
+	s.streamOptions = options
+	for _, entry := range s.auditLogs {
+		if err := fn(entry); err != nil {
+			return err
+		}
+	}
+	return s.err
 }
 
 func (s *fakeDirectoryStore) ListCategories(_ context.Context, options listing.Options) ([]models.Kategori, int64, error) {
@@ -196,6 +210,7 @@ func testDirectoryMuxWithResolver(resolver auth.SessionResolver, store *fakeDire
 			Organizations: app.NewOrganizationService(store, policy, store),
 			Categories:    app.NewCategoryService(store, nil),
 			Audits:        app.NewAuditService(store, policy, store),
+			Leave:         app.NewLeaveService(store, policy, store),
 		},
 	})
 }
@@ -324,7 +339,6 @@ func TestEmployeeUpdateAcceptsEditableProfileFields(t *testing.T) {
 		t.Fatalf("unexpected profile updates: %#v", store.employeePatch)
 	}
 }
-
 func TestArchiveEmployeeUsesResolvedActor(t *testing.T) {
 	store := &fakeDirectoryStore{}
 	mux := testDirectoryMux(store, map[string]map[auth.Permission]bool{
@@ -367,7 +381,6 @@ func TestStoreErrorsDoNotLeakDatabaseDetails(t *testing.T) {
 	request.Header.Set("Authorization", "Bearer valid-session")
 	response := httptest.NewRecorder()
 	mux.ServeHTTP(response, request)
-
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", response.Code)
 	}

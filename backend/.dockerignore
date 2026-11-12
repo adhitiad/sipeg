@@ -1,0 +1,11 @@
+# Berkas yang tidak ikut dibawa ke build context image backend.
+.git
+.github
+.vscode
+.serena
+agents
+docs
+rabbitmq
+.env
+.env.*
+*.md

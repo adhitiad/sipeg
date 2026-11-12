@@ -29,7 +29,7 @@ Status konfigurasi layanan eksternal tidak berarti integrasinya sudah dipakai ol
 
 ## Backend
 
-Persyaratan: versi Go yang tercantum di `backend/go.mod` (saat ini Go 1.26.0).
+Persyaratan: versi Go yang tercantum di `backend/go.mod` (saat ini Go 1.27.4).
 
 Jalankan pengujian:
 
@@ -46,7 +46,20 @@ GitHub Actions menjalankan pemeriksaan format, verifikasi dependency, vet, test,
 
 Paket database menyediakan `OpenPostgres(dsn)` untuk membuka koneksi GORM dengan pemetaan nama tabel dan kolom sesuai schema referensi. Isi `DATABASE_URL` dengan connection string Supabase PostgreSQL di lingkungan backend sebelum menghubungkan aplikasi. Jangan menaruh nilainya di README atau commit ke Git.
 
-Belum ada server HTTP atau perintah `go run` untuk menjalankan aplikasi. Jangan gunakan GORM `AutoMigrate` untuk membuat skema produksi; tool migrasi masih perlu diputuskan.
+Server HTTP tersedia di `backend/cmd/server` dan dijalankan dengan `DATABASE_URL` di lingkungan (lihat bagian deployment). Jangan gunakan GORM `AutoMigrate` untuk membuat skema produksi; migrasi diterapkan lewat Goose (`backend/migrations/`, `cmd/migrate`).
+
+## Deployment (docker/podman)
+
+Broker RabbitMQ berdiri sendiri pada `rabbitmq/docker-compose.yml` dan stack backend pada `docker-compose.yml` (`migrations`, `jobsched`, `backend`; semua binary dari satu image `backend/Dockerfile`). Broker dan backend tetap berjalan pada satu server melalui jaringan bersama `simpeg-broker`.
+
+```bash
+# Isi .env terlebih dahulu (DATABASE_URL, TRUSTED_ORIGINS, BETTER_AUTH_SECRET).
+docker compose -f rabbitmq/docker-compose.yml up -d   # broker lebih dulu
+docker compose up -d --build                          # atau: podman-compose up -d --build
+curl http://localhost:8080/ready
+```
+
+Saat pengembangan, jalankan hanya broker (`cd rabbitmq && docker compose up -d`) dan backend native dengan `RABBITMQ_URL=amqp://simpeg:simpeg@localhost:5672/`. Detail broker, topologi antrean, dan verifikasi manual ada di `rabbitmq/README.md`. QStash tetap tersedia sebagai alternatif cloud bila `RABBITMQ_URL` tidak diisi (`DEC-042`).
 
 ## Variabel lingkungan
 
@@ -57,6 +70,7 @@ Simpan nilai lokal di `.env` atau gunakan secret manager pada deployment. File `
 | `DATABASE_URL` | Koneksi backend ke Supabase PostgreSQL. |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Redis Upstash untuk cache/state sementara setelah integrasinya dibuat. |
 | `QSTASH_URL`, `QSTASH_TOKEN`, `QSTASH_CURRENT_SIGNING_KEY`, `QSTASH_NEXT_SIGNING_KEY` | Mengirim pekerjaan ke QStash dan memverifikasi callback di backend. |
+| `RABBITMQ_URL`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD` | Broker RabbitMQ pengganti QStash pada deployment docker/podman (`DEC-042`). |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_SECURE`, `SMTP_FROM` | Pengiriman email dari backend. Gunakan TLS/STARTTLS sesuai port dan kebijakan provider. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | OAuth Google bila alur autentikasi sudah diimplementasikan. |
 | `ALLOWED_EMAIL_DOMAINS` | Domain email yang diizinkan untuk akses SIMPEG (pisahkan dengan koma). |

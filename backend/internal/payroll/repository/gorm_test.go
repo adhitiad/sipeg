@@ -36,6 +36,41 @@ func newPayrollDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock) {
 	return db, mock
 }
 
+// countingMatcher menghitung statement yang berhasil dicocokkan.
+type countingMatcher struct {
+	inner sqlmock.QueryMatcher
+	count int
+}
+
+func (m *countingMatcher) Match(expectedSQL, actualSQL string) error {
+	if err := m.inner.Match(expectedSQL, actualSQL); err != nil {
+		return err
+	}
+	m.count++
+	return nil
+}
+
+// newCountingPayrollDB membuat store pengujian yang menghitung statement SQL.
+func newCountingPayrollDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock, *countingMatcher) {
+	t.Helper()
+	matcher := &countingMatcher{inner: sqlmock.QueryMatcherRegexp}
+	sqlDB, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(matcher))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{
+		NamingStrategy:       database.PostgresNamingStrategy{},
+		TranslateError:       true,
+		DisableAutomaticPing: true,
+		Logger:               logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return db, mock, matcher
+}
+
 func TestRecordPaymentWritesPaymentSlipAndNotificationInOneTransaction(t *testing.T) {
 	db, mock := newPayrollDB(t)
 

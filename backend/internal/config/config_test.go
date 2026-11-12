@@ -8,7 +8,9 @@ import (
 
 func setBaseEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/simpeg")
+	// DSN tanpa kredensial: konfigurasi hanya butuh nilai non-kosong, dan
+	// pemindaian kebocoran connection string di CI menolak pola password.
+	t.Setenv("DATABASE_URL", "postgres://simpeg@localhost:5432/simpeg")
 	t.Setenv("APP_ENV", "development")
 	t.Setenv("PORT", "")
 	t.Setenv("BETTER_AUTH_SECRET", "")

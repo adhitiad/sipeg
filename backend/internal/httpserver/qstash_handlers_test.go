@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"simpeg/backend/internal/audit"
+	"simpeg/backend/internal/observability"
 	"simpeg/backend/internal/qstash"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -78,6 +80,36 @@ func TestQStashCallbackRejectsTamperedBody(t *testing.T) {
 
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", response.Code)
+	}
+}
+
+func TestQStashCallbackLogsRejectedSignature(t *testing.T) {
+	var buffer bytes.Buffer
+	logger := observability.New(&buffer)
+	mux := http.NewServeMux()
+	verifier := qstash.NewVerifier([]string{qstashSigningKey}, qstashSubject)
+	RegisterQStashRoutes(mux, &QStashOptions{
+		Verifier: verifier,
+		Cleaner:  audit.NewCleaner(nil, 0),
+		Recorder: &fakeAuditRecorder{},
+		Logger:   logger,
+	})
+
+	request := httptest.NewRequest(http.MethodPost, APIPrefix+"/internal/qstash/audit/cleanup",
+		strings.NewReader(`{"kind":"audit.cleanup"}`))
+	request.Header.Set(qstash.HeaderSignature, "token-rahasia")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", response.Code)
+	}
+	logged := buffer.String()
+	if !strings.Contains(logged, "webhook_signature_rejected") {
+		t.Fatalf("expected rejection event, got %s", logged)
+	}
+	if strings.Contains(logged, "token-rahasia") {
+		t.Fatalf("signature leaked into log: %s", logged)
 	}
 }
 

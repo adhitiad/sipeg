@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"context"
+	"encoding/csv"
 	"fmt"
 	"net/http"
 	"strings"
@@ -106,6 +107,102 @@ func (api directoryAPI) recordAuditAccess(ctx context.Context, principal auth.Pr
 		UnitID:  unitID,
 		Note:    &note,
 	})
+}
+
+// exportAuditLogs meng-stream jejak audit dalam cakupan principal sebagai
+// berkas CSV. Sort dan pagination diabaikan: urutan selalu kronologis naik
+// (createdAt ASC, id ASC) dan tidak ada batas jumlah baris. Filter sama
+// dengan endpoint daftar (aksi, search). Ekspor yang berhasil dicatat sebagai
+// aksi audit.exported setelah stream selesai.
+func (api directoryAPI) exportAuditLogs(w http.ResponseWriter, r *http.Request) {
+	aksi := strings.TrimSpace(r.URL.Query().Get("aksi"))
+	search := strings.TrimSpace(r.URL.Query().Get("search"))
+	if textLength(aksi) > listing.MaxSearchLength || textLength(search) > listing.MaxSearchLength {
+		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidQuery)
+		return
+	}
+
+	principal, _ := auth.PrincipalFromContext(r.Context())
+
+	filename := "audit-log-" + timeutil.InLocation(time.Now()).Format("20060102T150405") + ".csv"
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	w.WriteHeader(http.StatusOK)
+
+	// BOM UTF-8 agar Microsoft Excel membuka berkas dengan benar.
+	if _, err := w.Write([]byte{0xEF, 0xBB, 0xBF}); err != nil {
+		return
+	}
+
+	writer := csv.NewWriter(w)
+	if err := writer.Write(csvAuditHeader()); err != nil {
+		return
+	}
+	writer.Flush()
+
+	flush := func() {
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+	}
+	flush()
+
+	count := 0
+	err := api.audits.StreamAuditLogs(r.Context(), principal, listing.Options{Aksi: aksi, Search: search}, func(entry models.AuditLog) error {
+		count++
+		if err := writer.Write([]string{
+			entry.ID,
+			timeutil.InLocation(entry.CreatedAt).Format(time.RFC3339),
+			strValue(entry.AktorId),
+			entry.Aksi,
+			strValue(entry.Sasaran),
+			strValue(entry.UnitId),
+			strValue(entry.Keterangan),
+			strValue(entry.Ip),
+		}); err != nil {
+			return err
+		}
+		if count%100 == 0 {
+			writer.Flush()
+			flush()
+		}
+		return nil
+	})
+	if err != nil {
+		return
+	}
+	writer.Flush()
+	flush()
+
+	// Catat ekspor setelah stream selesai; stream yang terputus di tengah
+	// tidak dicatat sebagai ekspor (hanya diagnostics di log aplikasi).
+	note := fmt.Sprintf("%d baris diekspor", count)
+	if aksi != "" {
+		note = fmt.Sprintf("%s — %d baris diekspor", aksi, count)
+	}
+	var unitID *string
+	if principal.HomebaseID != "" {
+		unitID = &principal.HomebaseID
+	}
+	_ = api.audits.Record(r.Context(), audit.Entry{
+		ActorID: principal.UserID,
+		Action:  audit.ActionAuditExported,
+		UnitID:  unitID,
+		Note:    &note,
+	})
+}
+
+// csvAuditHeader mengembalikan nama kolom berkas ekspor jejak audit.
+func csvAuditHeader() []string {
+	return []string{"id", "createdAt", "aktorId", "aksi", "sasaranId", "unitId", "keterangan", "ip"}
+}
+
+// strValue mengembalikan isi pointer string, atau string kosong bila nil.
+func strValue(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 func (api directoryAPI) listCategories(w http.ResponseWriter, r *http.Request) {

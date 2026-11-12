@@ -7,6 +7,7 @@
 package money
 
 import (
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -18,8 +19,12 @@ const Code = "IDR"
 // Symbol adalah simbol mata uang yang dipakai pada teks rupiah.
 const Symbol = "Rp"
 
-// decimals adalah jumlah desimal yang dipertahankan saat pembulatan.
-const decimals = 2
+const (
+	// decimals adalah jumlah desimal yang dipertahankan saat pembulatan.
+	decimals = 2
+	// decimalScale adalah pengali untuk mengubah nilai uang ke desimal penuh.
+	decimalScale = 100
+)
 
 // Format mengubah nilai uang menjadi teks rupiah dengan konvensi Indonesia:
 // pemisah ribuan memakai titik dan pemisah desimal memakai koma.
@@ -31,9 +36,9 @@ func Format(amount float64) string {
 	}
 
 	negative := amount < 0
-	value := math.Abs(math.Round(amount*100)) / 100
+	value := math.Abs(math.Round(amount*decimalScale)) / decimalScale
 	whole := int64(value)
-	fraction := int64(math.Round((value - float64(whole)) * 100))
+	fraction := int64(math.Round((value - float64(whole)) * decimalScale))
 
 	text := groupThousands(whole)
 	if fraction > 0 {
@@ -72,10 +77,7 @@ func groupThousands(value int64) string {
 	return builder.String()
 }
 
-// twoDigits memformat dua digit desimal dengan nol di depan bila perlu.
+// twoDigits memformat bagian desimal dengan nol di depan bila perlu.
 func twoDigits(value int64) string {
-	if value < 10 {
-		return "0" + strconv.FormatInt(value, 10)
-	}
-	return strconv.FormatInt(value, 10)
+	return fmt.Sprintf("%0*d", decimals, value)
 }

@@ -40,11 +40,29 @@ type Message struct {
 	ProcessedAt *time.Time
 }
 
+// NewMessage membuat pesan antrean dengan status awal PENDING.
+//
+// Pesan yang dibuat lewat fungsi ini siap diantrekan satu per satu maupun
+// sekaligus lewat EnqueueBatch.
+func NewMessage(kind, dedupeKey, payload string) Message {
+	return Message{
+		Kind:        kind,
+		DedupeKey:   dedupeKey,
+		Payload:     payload,
+		Status:      StatusPending,
+		AvailableAt: time.Now().UTC(),
+	}
+}
+
 // Store menyimpan dan mengambil baris outbox.
 type Store interface {
 	// Enqueue menambahkan pekerjaan baru. DedupeKey yang sama tidak boleh
 	// menghasilkan baris kedua.
 	Enqueue(ctx context.Context, kind, dedupeKey, payload string) (Message, error)
+	// EnqueueBatch menambahkan banyak pekerjaan sekaligus. Kunci idempotensi
+	// yang sudah ada dilewati tanpa error. Nilai balik adalah jumlah baris
+	// yang benar-benar diantrekan.
+	EnqueueBatch(ctx context.Context, messages []Message) (int, error)
 	// Claim mengambil sampai batch pesan siap diproses dan menguncinya.
 	Claim(ctx context.Context, batchSize int, now time.Time) ([]Message, error)
 	// Complete menandai pesan selesai diproses.

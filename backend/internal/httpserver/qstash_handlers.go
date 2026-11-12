@@ -10,6 +10,7 @@ import (
 
 	"simpeg/backend/internal/apierror"
 	"simpeg/backend/internal/audit"
+	"simpeg/backend/internal/observability"
 	"simpeg/backend/internal/qstash"
 )
 
@@ -110,9 +111,8 @@ func (api qstashAPI) payrollNotify(w http.ResponseWriter, r *http.Request) {
 // memeriksa jenis pekerjaan. Bila pemeriksaan gagal, fungsi menulis respons
 // error dan mengembalikan ok=false.
 func (api qstashAPI) verifiedBody(w http.ResponseWriter, r *http.Request, verifier *qstash.Verifier, expectedKind string) ([]byte, bool) {
-	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64*1024))
-	if err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidJSON)
+	raw, ok := readRawBody(w, r)
+	if !ok {
 		return nil, false
 	}
 	if verifier == nil {
@@ -120,12 +120,13 @@ func (api qstashAPI) verifiedBody(w http.ResponseWriter, r *http.Request, verifi
 		return nil, false
 	}
 	if err := verifier.Verify(qstash.SignatureFromRequest(r), raw); err != nil {
+		api.logRejectedCallback(r, expectedKind)
 		writeErrorResponse(w, http.StatusUnauthorized, apierror.CodeUnauthorized)
 		return nil, false
 	}
 
 	var job qstashJob
-	if err := json.Unmarshal(raw, &job); err != nil {
+	if err := decodeJob(raw, &job); err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidJSON)
 		return nil, false
 	}
@@ -134,6 +135,27 @@ func (api qstashAPI) verifiedBody(w http.ResponseWriter, r *http.Request, verifi
 		return nil, false
 	}
 	return raw, true
+}
+
+// readRawBody membaca body permintaan mentah untuk verifikasi signature.
+//
+// Body dibaca dengan batas ukuran agar callback berukuran wajar tidak dapat
+// menghabiskan memori backend.
+func readRawBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64*1024))
+	if err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidJSON)
+		return nil, false
+	}
+	return raw, true
+}
+
+// decodeJob membaca isi pekerjaan QStash dari body mentah.
+func decodeJob(raw []byte, job *qstashJob) error {
+	if err := json.Unmarshal(raw, job); err != nil {
+		return fmt.Errorf("decode qstash job: %w", err)
+	}
+	return nil
 }
 
 // recordOutcome mencatat hasil pekerjaan. Kegagalan pencatatan tidak
@@ -149,5 +171,16 @@ func (api qstashAPI) recordOutcome(ctx context.Context, action, messageID, note 
 	_ = api.options.Recorder.Record(ctx, audit.Entry{
 		Action: action,
 		Note:   &detail,
+	})
+}
+
+// logRejectedCallback mencatat callback yang ditolak karena signature tidak
+// valid. Nilai signature tidak pernah dicatat karena merupakan rahasia.
+func (api qstashAPI) logRejectedCallback(r *http.Request, kind string) {
+	api.options.Logger.Warn("webhook_signature_rejected", observability.Fields{
+		"request_id": observability.RequestIDFromContext(r.Context()),
+		"job":        kind,
+		"method":     r.Method,
+		"path":       r.URL.Path,
 	})
 }

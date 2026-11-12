@@ -151,6 +151,19 @@ Integrasi tersebut belum diimplementasikan. Bila integrasi sudah aktif:
    data lebih dulu.
 3. Dokumentasikan tindakan pada catatan deployment.
 
+4. Migrasi `000019_cuti_eviden.sql` bersifat aditif dan dapat dibalik: hanya
+   menambah kolom nullable, mengubah nama kolom `fileSuratUrl` menjadi
+   `fileEvidenUrl` (tidak ada kolom yang dihapus secara permanen pada Up, dan
+   Down mengembalikan nama lama), serta menambah enum `JenisEviden` yang baru
+   digunakan model. Rollback lewat `goose down` aman pada database yang belum
+   menulis ke kolom baru.
+
+Workflow migrasi GitHub (`.github/workflows/deploy-migrations.yml`) belum
+pernah dijalankan karena environment `staging`/`production` dan secret
+`DATABASE_URL` belum dibuat di GitHub. Sebelum menjalankan workflow di
+produksi, cobalah urutan perintahnya (`migrate status` → `migrate up` →
+`migrate status`) pada database uji terlebih dahulu.
+
 ## 8. Skema dan mapping GORM tidak sinkron
 
 Gejala: query gagal dengan `column "..." does not exist`, atau tes paritas skema
@@ -161,6 +174,196 @@ gagal.
 indeks jalur query kritis, dan cakupan migrasi RLS. Tes ini tidak membuktikan
 bahwa migrasi sudah diterapkan atau seluruh kolom GORM cocok dengan database.
 
+Untuk pemeriksaan langsung terhadap database target, pakai subcommand `schema`
+dari perkakas pengukuran. Perintah itu membandingkan kolom yang dinyatakan
+model GORM dengan kolom yang benar-benar ada:
+
+```bash
+cd backend
+export DATABASE_URL="postgres://<user>:<sandi>@<host>:5432/<database>?sslmode=require"
+go run ./cmd/perfbench schema
+```
+
+Keluarannya memuat tiga kelompok selisih: model punya kolom tapi database
+tidak, database punya kolom tapi model tidak, dan model tanpa tabel. Tabel
+yang tidak ada pada database menandakan migrasi belum diterapkan.
+
 **Tindakan:** verifikasi skema database target terhadap migrasi Goose dan
 perbaiki migrasi/model melalui perubahan berversi yang ditinjau. Jangan memakai
 `AutoMigrate` untuk memperbaiki skema production.
+
+### 8.1 Koneksi database ditolak pooler
+
+Gejala: permintaan menjawab `503` dengan `service_unavailable`, dan log
+menampilkan `FATAL: (EMAXCONNSESSION) max clients reached in session mode`.
+
+**Diagnosis:** pooler sesi Supabase membatasi jumlah koneksi concurrently per
+proyek. Bila `DB_MAX_OPEN_CONNS` melampaui batas itu, PostgreSQL menolak
+koneksi baru. Periksa batas pooler pada proyek Supabase dan nilai
+`DB_MAX_OPEN_CONNS` yang aktif.
+
+**Tindakan:** turunkan `DB_MAX_OPEN_CONNS` di bawah batas pooler, atau
+pindahkan ke pooler transaksi yang melakukan multiplexing pada porta 6543.
+Bawaan repository adalah 10 koneksi, yang memberi ruang di bawah batas
+pooler tanpa menurunkan throughput pada beban wajar.
+
+### 8.2 Publikasi dan jadwal QStash ditolak
+
+Gejala: log `qstash_schedule_failed` atau `qstash_job_payload_failed`, dengan
+pesan `404` atau `400 invalid destination url`.
+
+**Diagnosis:** bentuk endpoint QStash harus sesuai. `QSTASH_URL` boleh diisi
+root API regional (misalnya `https://qstash-us-east-1.upstash.io`) atau
+endpoint lengkap; jalur `/v2/publish` dan `/v2/schedules` ditambahkan
+otomatis bila belum ada. Endpoint jadwal diturunkan dari `QSTASH_URL` bila
+`QSTASH_SCHEDULES_URL` kosong, sehingga token, publikasi, dan jadwal berada
+pada satu region.
+
+Periksa daftar jadwal yang benar-benar terdaftar:
+
+```bash
+curl -H "Authorization: Bearer $QSTASH_TOKEN" \
+  https://qstash-us-east-1.upstash.io/v2/schedules
+```
+
+**Tindakan:** jalankan ulang backend setelah konfigurasi diperbaiki. Backend
+mendaftarkan jadwal secara idempoten, sehingga penyalaan ulang tidak membuat
+jadwal ganda. Bila jadwal lama menunjuk tujuan yang sudah tidak dipakai,
+hapus lewat `DELETE /v2/schedules/{scheduleId}`.
+
+### 8.3 Email tidak terkirim
+
+Gejala: antrean keluar menumpuk dengan status `PENDING`, atau log worker
+menyebut `smtp` pada pesan galat.
+
+**Diagnosis:** mode keamanan SMTP ditentukan oleh `SMTP_SECURE` dan porta:
+
+| Mode | Perilaku | Porta lazim |
+|------|-----------|-------------|
+| `SMTP_SECURE=true` | TLS langsung sejak koneksi pertama | 465 |
+| `SMTP_SECURE=false` | Koneksi polos, dinaikkan lewat STARTTLS bila tersedia | 587 |
+| `SMTP_SECURE` kosong | Mode ditebak dari porta: 465 memakai TLS langsung, porta lain memakai STARTTLS | — |
+
+Galat `tls: first record does not look like a TLS handshake` berarti mode TLS
+langsung dipakai pada porta submission. Galat `535` dari Google Workspace
+berarti kredensial ditolak; Google Workspace menuntut *app password*, bukan
+sandi akun biasa.
+
+Bentuk `SMTP_FROM` boleh berupa alamat polos maupun bentuk baku
+`"Nama Tampilan" <alamat@domain>`. Bentuk kedua dipakai apa adanya pada
+header `From`, sedangkan perintah SMTP `MAIL FROM` memakai alamat polosnya.
+
+**Tindakan:** samakan `SMTP_SECURE` dengan porta server, lalu gunakan *app
+password* yang sah bila penyedia adalah Google Workspace.
+
+## 8A. Pemeriksaan SLO terjadwal
+
+**Gejala:** alert SLO tidak pernah datang, atau alert datang pada waktu yang
+tidak wajar.
+
+**Diagnosis:** tiga hal harus benar:
+
+1. `SLO_ENABLED=true` mengaktifkan pengoleki metrik dan mendaftarkan
+   pemeriksaan terjadwal.
+2. Jadwal `slo.evaluate` terdaftar pada QStash (periksa daftar jadwal seperti
+   pada bagian 8.2), atau pada mode self-hosted: `SLO_EVALUATE_ENABLED=true`
+   pada penjadwal RabbitMQ dan pesan `slo.evaluate` mengalir setiap 5 menit
+   (bagian 8B).
+3. `SLO_ALERT_RECIPIENTS` berisi alamat penerima yang sah.
+
+```bash
+cd backend
+export DATABASE_URL="postgres://<user>:<sandi>@<host>:5432/<database>?sslmode=require"
+go run ./cmd/perfbench schema
+
+# Metrik yang terkumpul pada jendela terakhir.
+psql "$DATABASE_URL" -c \
+  'SELECT "windowStart", "route", "requestCount", "errorCount", "latencyMaxMs"
+     FROM "sloMetric" ORDER BY "windowStart" DESC LIMIT 10;'
+```
+
+**Tindakan:** metrik disimpan di PostgreSQL, bukan Redis. Bila tabel
+`sloMetric` kosong, pengoleki tidak berjalan: periksa `SLO_ENABLED` dan log
+slo_metric_flush_failed. Bila metrik terkumpul tetapi alert tidak dikirim,
+periksa antrean keluar (outboxMessage) dan status pengiriman email.
+
+## 8B. Pekerjaan terjadwal RabbitMQ (self-hosted)
+
+**Gejala:** pekerjaan harian (pembersihan jejak audit, pemberitahuan slip
+gaji H+1) tidak berjalan, padahal deployment memakai docker/podman dengan
+`RABBITMQ_URL` terisi.
+
+**Diagnosis:** tiga komponen harus hidup:
+
+1. Broker: `docker compose ps rabbitmq` harus berstatus healthy.
+2. Penjadwal: log `jobsched` memuat `jobsched_schedule_ready` untuk setiap
+   kind; `jobsched_published` muncul pada setiap tick.
+3. Konsumen: log `backend` memuat `mq_consumer_started` dan `mq_job_done`
+   setiap pekerjaan berjalan.
+
+```bash
+docker compose exec rabbitmq rabbitmqctl list_queues name messages
+docker compose run --rm --entrypoint /bin/jobsched jobsched publish audit.cleanup
+docker compose logs backend | grep mq_job
+```
+
+**Tindakan:** bila `simpeg.jobs.dead` berisi pesan, periksa log
+`mq_job_failed` untuk mengetahui penyebabnya, perbaiki, lalu jalankan ulang
+pekerjaannya dengan `jobsched publish <kind>`; pesan dead-letter tidak
+kembali otomatis karena tick cron berikutnya sudah memicu eksekusi baru.
+Pekerjaan idempoten sehingga pengulangan aman. Bila konsumen gagal
+tersambung, log `mq_consumer_error` berulang setiap 5 detik; periksa
+kredensial `RABBITMQ_URL` dan jaringan antar container.
+
+## 9. Percobaan akses tidak sah
+
+**Gejala:** log keamanan menunjukkan `auth_failed`, `access_denied`, atau
+`rate_limited` berulang dari satu `client_ip`, atau jejak audit memuat aksi
+`authz.denied`.
+
+**Dua sumber bukti:**
+
+| Sumber | Isi | Dipakai untuk |
+|--------|-----|---------------|
+| Log keamanan (`msg`: `auth_failed`, `access_denied`, `rate_limited`) | `client_ip`, `path`, `status`, `request_id`, `user_id`, `role` | Deteksi volume dan korelasi cepat |
+| Jejak audit aksi `authz.denied` | aktor, unit cakupan, izin diminta, pola route | Menelusuri pihak yang mencoba akses di luar haknya |
+| Log keamanan `webhook_signature_rejected` | `job`, `path`, `request_id` | Mendeteksi callback QStash yang tidak sah |
+
+`user_id` dan `role` hanya ada pada peristiwa yang terjadi setelah autentikasi
+berhasil. Kegagalan autentikasi (`auth_failed`) tidak memuat aktor karena belum
+ada identitas terverifikasi.
+
+**Diagnosis:**
+
+```bash
+# Jejak penolakan di gerbang izin, tanpa membuka isi data pegawai.
+psql "$DATABASE_URL" -c "select \"createdAt\", \"aktorId\", \"unitId\", \"keterangan\" from \"auditLog\" where \"aksi\" = 'authz.denied' order by \"createdAt\" desc limit 50;"
+```
+
+**Tindakan:**
+
+1. Ambil `request_id` dari satu entry log keamanan, lalu telusuri log akses pada
+   `request_id` yang sama untuk melihat urutan permintaan.
+2. Cocokkan `aktorId` pada `authz.denied` dengan daftar akun pilot. Akses dari
+   akun yang tidak memegang izin memunculkan dugaan salah grant atau
+   penyalahgunaan wewenang.
+3. Naikkan `RATE_LIMIT_AUTH_REQUESTS` hanya setelah memastikan traffic memang
+   sah. Batas yang ada memperlambat credential stuffing.
+4. Cabut sesi yang dicurigai melalui `POST /api/v1/auth/logout`, nonaktifkan akun
+   bila perlu, lalu catat kronologi insiden.
+5. Jika `webhook_signature_rejected` muncul berulang, periksa konfigurasi
+   signing key QStash dan penjadwal, bukan isi log signature.
+
+**Ambang alert awal.** Nilai berikut adalah titik awal untuk disetel operator,
+belum berdasarkan baseline volume:
+
+| Event | Syarat alert awal |
+|-------|-------------------|
+| `auth_failed` | lebih dari 20 kejadian dari satu `client_ip` dalam 5 menit |
+| `access_denied` | lebih dari 50 kejadian dari satu `client_ip` dalam 5 menit |
+| `rate_limited` | muncul berulang pada path autentikasi |
+| `webhook_signature_rejected` | lebih dari 3 kejadian dalam 10 menit |
+
+**Jangan:** menganggap `access_denied` sebagai bug. `403` pada endpoint
+terlindungi adalah hasil yang benar untuk role yang tidak memegang izin, dan
+perlu diperlakukan sebagai bukti percobaan akses, bukan tanda gangguan layanan.

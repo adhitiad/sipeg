@@ -2,14 +2,21 @@ package qstash
 
 import (
 	"context"
-	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
 func TestCreateScheduleSendsCronAndDestination(t *testing.T) {
-	var received map[string]any
+	var (
+		receivedPath   string
+		receivedCron   string
+		receivedRetry  string
+		receivedMethod string
+		receivedBody   string
+	)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method = %s, want POST", r.Method)
@@ -17,9 +24,12 @@ func TestCreateScheduleSendsCronAndDestination(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer qstash-token" {
 			t.Errorf("authorization = %q", r.Header.Get("Authorization"))
 		}
-		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
-			t.Errorf("decode body: %v", err)
-		}
+		receivedPath = r.URL.Path
+		receivedCron = r.Header.Get("Upstash-Cron")
+		receivedRetry = r.Header.Get("Upstash-Retries")
+		receivedMethod = r.Header.Get("Upstash-Method")
+		raw, _ := io.ReadAll(r.Body)
+		receivedBody = string(raw)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"scheduleId":"sched-1"}`))
 	}))
@@ -40,14 +50,21 @@ func TestCreateScheduleSendsCronAndDestination(t *testing.T) {
 	if id != "sched-1" {
 		t.Fatalf("schedule id = %q", id)
 	}
-	if received["cron"] != "0 19 * * *" {
-		t.Fatalf("cron = %v", received["cron"])
+	// API v2 QStash menerima destination pada path dan cron pada header.
+	if !strings.HasSuffix(receivedPath, "/v2/schedules/"+destination) {
+		t.Fatalf("path = %q, ingin berakhiran /v2/schedules/%s", receivedPath, destination)
 	}
-	if received["destination"] != destination {
-		t.Fatalf("destination = %v", received["destination"])
+	if receivedCron != "0 19 * * *" {
+		t.Fatalf("cron = %q", receivedCron)
 	}
-	if received["body"] != `{"kind":"audit.cleanup"}` {
-		t.Fatalf("body = %v", received["body"])
+	if receivedRetry != "3" {
+		t.Fatalf("percobaan ulang = %q, ingin 3", receivedRetry)
+	}
+	if receivedMethod != http.MethodPost {
+		t.Fatalf("metode = %q, ingin POST", receivedMethod)
+	}
+	if receivedBody != `{"kind":"audit.cleanup"}` {
+		t.Fatalf("body = %q", receivedBody)
 	}
 }
 

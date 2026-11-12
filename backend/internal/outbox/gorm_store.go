@@ -43,6 +43,62 @@ func (s GormStore) Enqueue(ctx context.Context, kind, dedupeKey, payload string)
 	return toMessage(record), nil
 }
 
+// EnqueueBatch menambahkan banyak pekerjaan sekaligus.
+//
+// Penulisan batch memakai satu statement INSERT per potongan dengan
+// ON CONFLICT DO NOTHING, sehingga kunci idempotensi yang sudah ada dilewati
+// tanpa error. Nilai balik adalah jumlah baris yang benar-benar diantrekan.
+//
+// Batch ditulis dalam beberapa potongan agar jumlah parameter binding tetap
+// di bawah batas PostgreSQL.
+func (s GormStore) EnqueueBatch(ctx context.Context, messages []Message) (int, error) {
+	if s.DB == nil {
+		return 0, errors.New("outbox database is required")
+	}
+	if len(messages) == 0 {
+		return 0, nil
+	}
+	now := time.Now().UTC()
+	records := make([]models.OutboxMessage, 0, len(messages))
+	for _, message := range messages {
+		if message.Kind == "" {
+			continue
+		}
+		availableAt := message.AvailableAt
+		if availableAt.IsZero() {
+			availableAt = now
+		}
+		records = append(records, models.OutboxMessage{
+			Kind:        message.Kind,
+			DedupeKey:   message.DedupeKey,
+			Payload:     message.Payload,
+			Status:      StatusPending,
+			AvailableAt: availableAt,
+		})
+	}
+	if len(records) == 0 {
+		return 0, nil
+	}
+
+	inserted := 0
+	for start := 0; start < len(records); start += outboxBatchSize {
+		end := start + outboxBatchSize
+		if end > len(records) {
+			end = len(records)
+		}
+		chunk := records[start:end]
+		result := s.DB.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&chunk)
+		if result.Error != nil {
+			return inserted, fmt.Errorf("enqueue outbox messages: %w", result.Error)
+		}
+		inserted += int(result.RowsAffected)
+	}
+	return inserted, nil
+}
+
+// outboxBatchSize membatasi jumlah baris per statement INSERT.
+const outboxBatchSize = 500
+
 // Claim mengambil pesan yang siap diproses lalu mengunci setiap pesan agar
 // tidak diklaim dua worker sekaligus.
 func (s GormStore) Claim(ctx context.Context, batchSize int, now time.Time) ([]Message, error) {

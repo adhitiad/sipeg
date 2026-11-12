@@ -6,12 +6,20 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"simpeg/backend/internal/notify"
 )
 
 // Default nilai operasional yang aman bila env tidak disetel.
+//
+// Bawaan pool koneksi sengaja kecil. Pooler sesi Supabase membatasi jumlah
+// koneksi concurrently per proyek; ketika batas itu terlampaui, PostgreSQL
+// menolak koneksi baru dengan SQLSTATE XX000 (EMAXCONNSESSION) dan backend
+// menjawab 503. Bawaan 10 connections memberi ruang di bawah batas pooler
+// tanpa mengorbankan throughput pada beban wajar.
 const (
 	defaultPort               = "8080"
-	defaultDBMaxOpenConns     = 25
+	defaultDBMaxOpenConns     = 10
 	defaultDBMaxIdleConns     = 5
 	defaultDBConnMaxLifetime  = 30 * time.Minute
 	defaultDBStatementTimeout = 15 * time.Second
@@ -68,12 +76,7 @@ type Config struct {
 	InviteOnly bool
 
 	// Konfigurasi SMTP untuk pengiriman email.
-	SMTPHost     string
-	SMTPPort     int
-	SMTPUser     string
-	SMTPPassword string
-	SMTPSecure   bool
-	SMTPFrom     string
+	SMTP SMTPConfig
 
 	// Konfigurasi QStash untuk pekerjaan asinkron.
 	QStashURL               string
@@ -82,6 +85,11 @@ type Config struct {
 	QStashCurrentSigningKey string
 	QStashNextSigningKey    string
 
+	// RabbitMQURL adalah alamat broker AMQP untuk mode self-hosted. Bila
+	// diisi, pekerjaan terjadwal berpindah dari callback QStash ke
+	// konsumen RabbitMQ (lihat internal/mq dan cmd/jobsched).
+	RabbitMQURL string
+
 	// Konfigurasi Redis Upstash untuk cache data referensi.
 	RedisURL   string
 	RedisToken string
@@ -89,6 +97,9 @@ type Config struct {
 	// Konfigurasi penyedia hari libur nasional.
 	HolidayAPIURL string
 	HolidayAPIKey string
+
+	// Konfigurasi Cloudinary untuk penyimpanan berkas dokumen pegawai.
+	Cloudinary CloudinaryConfig
 
 	// AuditRetentionDays adalah masa simpan jejak audit dalam hari. 0 = tidak ada pemotongan otomatis.
 	AuditRetentionDays int
@@ -99,17 +110,26 @@ type Config struct {
 	RTOHours int
 	// SLOTarget adalah target ketersediaan layanan dalam persen (99.9 = 99.9%).
 	SLOTarget float64
+	// SLO memuat konfigurasi pengoleksi metrik dan pemeriksaan target
+	// layanan. Lihat internal/config/slo.go.
+	SLO SLOConfig
 }
 
 // SMTPEnabled melapor apakah konfigurasi email sudah cukup untuk dipakai.
 func (c Config) SMTPEnabled() bool {
-	return c.SMTPHost != "" && c.SMTPFrom != ""
+	return c.SMTP.Enabled()
 }
 
 // QStashEnabled melapor apakah QStash sudah dikonfigurasi.
 // QSTASH_URL boleh dikosongkan karena publisher memakai endpoint bawaan.
 func (c Config) QStashEnabled() bool {
 	return c.QStashToken != "" && c.QStashCurrentSigningKey != ""
+}
+
+// RabbitMQEnabled melapor apakah broker RabbitMQ dikonfigurasi untuk
+// pekerjaan terjadwal self-hosted.
+func (c Config) RabbitMQEnabled() bool {
+	return c.RabbitMQURL != ""
 }
 
 // RedisEnabled melapor apakah Redis Upstash sudah dikonfigurasi.
@@ -150,25 +170,27 @@ func Load() (Config, error) {
 		GoogleClientSecret:      strings.TrimSpace(os.Getenv("GOOGLE_CLIENT_SECRET")),
 		AllowedEmailDomains:     splitList(os.Getenv("ALLOWED_EMAIL_DOMAINS")),
 		InviteOnly:              envBool("INVITE_ONLY", false),
-		SMTPHost:                strings.TrimSpace(os.Getenv("SMTP_HOST")),
-		SMTPPort:                envInt("SMTP_PORT", 587),
-		SMTPUser:                strings.TrimSpace(os.Getenv("SMTP_USER")),
-		SMTPPassword:            os.Getenv("SMTP_PASS"),
-		SMTPSecure:              envBool("SMTP_SECURE", true),
-		SMTPFrom:                strings.TrimSpace(os.Getenv("SMTP_FROM")),
+		SMTP:                    loadSMTPConfig(),
 		QStashURL:               strings.TrimSpace(os.Getenv("QSTASH_URL")),
 		QStashSchedulesURL:      strings.TrimSpace(os.Getenv("QSTASH_SCHEDULES_URL")),
 		QStashToken:             strings.TrimSpace(os.Getenv("QSTASH_TOKEN")),
 		QStashCurrentSigningKey: strings.TrimSpace(os.Getenv("QSTASH_CURRENT_SIGNING_KEY")),
 		QStashNextSigningKey:    strings.TrimSpace(os.Getenv("QSTASH_NEXT_SIGNING_KEY")),
+		RabbitMQURL:             strings.TrimSpace(os.Getenv("RABBITMQ_URL")),
 		RedisURL:                strings.TrimSpace(os.Getenv("UPSTASH_REDIS_REST_URL")),
 		RedisToken:              strings.TrimSpace(os.Getenv("UPSTASH_REDIS_REST_TOKEN")),
 		HolidayAPIURL:           strings.TrimSpace(os.Getenv("HOLIDAY_API_URL")),
 		HolidayAPIKey:           strings.TrimSpace(os.Getenv("HOLIDAY_API_KEY")),
-		AuditRetentionDays:      envInt("AUDIT_RETENTION_DAYS", defaultAuditRetentionDays),
-		RPOHours:                envInt("RPO_HOURS", defaultRPOHours),
-		RTOHours:                envInt("RTO_HOURS", defaultRTOHours),
-		SLOTarget:               envFloat("SLO_TARGET", defaultSLOTarget),
+		Cloudinary: CloudinaryConfig{
+			CloudName: strings.TrimSpace(os.Getenv("CLOUDINARY_CLOUD_NAME")),
+			APIKey:    strings.TrimSpace(os.Getenv("CLOUDINARY_API_KEY")),
+			APISecret: strings.TrimSpace(os.Getenv("CLOUDINARY_API_SECRET")),
+		},
+		AuditRetentionDays: envInt("AUDIT_RETENTION_DAYS", defaultAuditRetentionDays),
+		RPOHours:           envInt("RPO_HOURS", defaultRPOHours),
+		RTOHours:           envInt("RTO_HOURS", defaultRTOHours),
+		SLOTarget:          envFloat("SLO_TARGET", defaultSLOTarget),
+		SLO:                loadSLOConfig(),
 	}
 
 	if cfg.AppEnv == "" {
@@ -215,14 +237,8 @@ func (c Config) validate() error {
 	if c.SessionLifetime <= 0 {
 		return fmt.Errorf("SESSION_LIFETIME must be positive")
 	}
-	if c.SMTPHost != "" && c.SMTPFrom == "" {
-		return fmt.Errorf("SMTP_FROM is required when SMTP_HOST is configured")
-	}
-	if c.SMTPFrom != "" && !validEmailAddress(c.SMTPFrom) {
-		return fmt.Errorf("SMTP_FROM must be a valid email address")
-	}
-	if c.SMTPHost != "" && c.SMTPPort < 1 || c.SMTPHost != "" && c.SMTPPort > 65535 {
-		return fmt.Errorf("SMTP_PORT must be between 1 and 65535")
+	if err := c.SMTP.validate(); err != nil {
+		return err
 	}
 	if c.QStashToken != "" && c.QStashCurrentSigningKey == "" {
 		return fmt.Errorf("QSTASH_CURRENT_SIGNING_KEY is required when QSTASH_TOKEN is configured")
@@ -342,22 +358,13 @@ func envDuration(name string, fallback time.Duration) time.Duration {
 	return parsed
 }
 
-// validEmailAddress memeriksa bentuk alamat email sederhana. Pemeriksaan
-// lengkap dilakukan oleh pustaka email saat pengiriman.
+// validEmailAddress memeriksa bentuk alamat email sederhana.
+//
+// Bentuk polos dan bentuk "Nama Tampilan <alamat@domain>" sama-sama
+// diterima karena keduanya baku RFC 5322 dan lazim dipakai pada header
+// From. Pemeriksaan lengkap dilakukan oleh pustaka email saat pengiriman.
 func validEmailAddress(address string) bool {
-	trimmed := strings.TrimSpace(address)
-	at := strings.Index(trimmed, "@")
-	if at <= 0 || at == len(trimmed)-1 {
-		return false
-	}
-	local, domain := trimmed[:at], trimmed[at+1:]
-	if strings.ContainsAny(local, " \t\r\n") || strings.ContainsAny(domain, " \t\r\n") {
-		return false
-	}
-	if !strings.Contains(domain, ".") || strings.HasPrefix(domain, ".") || strings.HasSuffix(domain, ".") {
-		return false
-	}
-	return true
+	return notify.ValidateAddress(address) == nil
 }
 
 func envBool(name string, fallback bool) bool {

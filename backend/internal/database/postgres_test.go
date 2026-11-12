@@ -80,7 +80,9 @@ func TestGORMOrganizationFieldsUsePostgresNames(t *testing.T) {
 }
 
 func TestWithSessionTimeZoneForcesUTC(t *testing.T) {
-	urlDSN := "postgres://user:secret@localhost:5432/simpeg?sslmode=disable"
+	// DSN tanpa kredensial: pemindaian kebocoran connection string di CI
+	// menolak pola password, dan fungsi ini hanya mengubah query parameter.
+	urlDSN := "postgres://simpeg@localhost:5432/simpeg?sslmode=disable"
 	got := withSessionTimeZone(urlDSN)
 	parsed, err := url.Parse(got)
 	if err != nil {

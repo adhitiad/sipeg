@@ -3,7 +3,6 @@ package outbox
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"math"
 	"time"
 )
@@ -26,7 +25,14 @@ type DispatcherOptions struct {
 	// Now dapat diganti pada pengujian.
 	Now func() time.Time
 	// Logger menerima catatan dispatcher. Nil berarti tanpa pencatatan.
-	Logger *slog.Logger
+	Logger Logger
+}
+
+// Logger adalah port pencatatan dispatcher. Field memakai map[string]any agar
+// logger terstruktur pada paket observability dapat dipakai langsung.
+type Logger interface {
+	Info(event string, fields map[string]any)
+	Error(event string, fields map[string]any)
 }
 
 // Dispatcher memproses antrean keluar dan mengirimnya ke tujuan akhirnya.
@@ -144,17 +150,18 @@ func (d *Dispatcher) log(event string, message Message, err error) {
 	if d.options.Logger == nil {
 		return
 	}
-	attributes := []any{
-		"kind", message.Kind,
-		"dedupe_key", message.DedupeKey,
-		"attempts", message.Attempts,
+	// Kunci idempotensi tidak dicatat karena memuat identitas penerima.
+	fields := map[string]any{
+		"message_id": message.ID,
+		"kind":       message.Kind,
+		"attempts":   message.Attempts,
 	}
 	if err != nil {
-		attributes = append(attributes, "error", err.Error())
-		d.options.Logger.Error(event, attributes...)
+		fields["error"] = err.Error()
+		d.options.Logger.Error(event, fields)
 		return
 	}
-	d.options.Logger.Info(event, attributes...)
+	d.options.Logger.Info(event, fields)
 }
 
 // ErrDeliveryRejected menandakan pengirim menolak pesan secara permanen.

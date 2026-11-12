@@ -10,7 +10,10 @@ import (
 )
 
 // Fields adalah pasangan key-value tambahan pada satu entri log.
-type Fields map[string]any
+//
+// Fields berupa alias dari map[string]any agar logger pada paket ini dapat
+// dipakai sebagai port pencatatan oleh paket lain.
+type Fields = map[string]any
 
 // Logger menulis entri log berformat JSON satu baris per entri.
 type Logger struct {
@@ -26,6 +29,9 @@ func New(out io.Writer) *Logger {
 
 // Info menulis entri log level info.
 func (l *Logger) Info(message string, fields Fields) { l.write("info", message, fields) }
+
+// Warn menulis entri log level warn.
+func (l *Logger) Warn(message string, fields Fields) { l.write("warn", message, fields) }
 
 // Error menulis entri log level error.
 func (l *Logger) Error(message string, fields Fields) { l.write("error", message, fields) }

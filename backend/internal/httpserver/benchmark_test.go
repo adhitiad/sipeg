@@ -3,6 +3,7 @@ package httpserver
 import (
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"simpeg/backend/internal/auth"
@@ -82,5 +83,36 @@ func BenchmarkUnitScopeResolution(b *testing.B) {
 		if response.Code != http.StatusOK {
 			b.Fatalf("status = %d", response.Code)
 		}
+	}
+}
+
+// BenchmarkListEmployeesParallel mengukur throughput daftar pegawai saat
+// banyak permintaan dilayani bersamaan.
+//
+// Benchmark ini memakai repository palsu yang aman untuk akses paralel, jadi
+// angka yang dihasilkan menggambarkan kapasitas jalur HTTP dan serialisasi
+// DTO, bukan latensi PostgreSQL.
+func BenchmarkListEmployeesParallel(b *testing.B) {
+	store := &loadStore{employees: loadEmployees(100)}
+	mux := loadMux(store, auth.Principal{UserID: atasanID, RoleName: "admin"},
+		map[string]map[auth.Permission]bool{"admin": {"employee:read:any": true}})
+
+	var failures atomic.Int64
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(iteration *testing.PB) {
+		for iteration.Next() {
+			request := httptest.NewRequest(http.MethodGet, APIPrefix+"/employees?pageSize=100", nil)
+			request.Header.Set("Authorization", "Bearer valid-session")
+			response := httptest.NewRecorder()
+			mux.ServeHTTP(response, request)
+			if response.Code != http.StatusOK {
+				failures.Add(1)
+			}
+		}
+	})
+	b.StopTimer()
+	if failures.Load() != 0 {
+		b.Fatalf("failed requests = %d, want 0", failures.Load())
 	}
 }

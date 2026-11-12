@@ -9,7 +9,9 @@ import (
 	"simpeg/backend/internal/attendance"
 	"simpeg/backend/internal/audit"
 	"simpeg/backend/internal/auth"
+	"simpeg/backend/internal/cloudinary"
 	"simpeg/backend/internal/holiday"
+	"simpeg/backend/internal/observability"
 	"simpeg/backend/internal/payroll/app"
 	"simpeg/backend/internal/qstash"
 )
@@ -33,8 +35,14 @@ type MuxOptions struct {
 	// QStash mendaftarkan endpoint callback pekerjaan asinkron. Bila nil,
 	// callback tidak didaftarkan.
 	QStash *QStashOptions
+	// SLO mendaftarkan endpoint callback pemeriksaan target SLO. Bila nil,
+	// pemeriksaan terjadwal tidak didaftarkan.
+	SLO *SLOOptions
 	// SessionRevoker mengaktifkan POST /api/v1/auth/logout bila tidak nil.
 	SessionRevoker auth.SessionRevoker
+	// Cloudinary menyediakan tanda tangan unggah berkas dokumen. Bila nil,
+	// endpoint tanda tangan unggah tidak didaftarkan.
+	Cloudinary *cloudinary.Service
 	// SessionIssuer mengaktifkan POST /api/v1/auth/session (penerbitan sesi
 	// bootstrap) bila tidak nil. Endpoint ini akan digantikan oleh runtime
 	// Better Auth saat tersedia.
@@ -58,6 +66,9 @@ type QStashOptions struct {
 	PayrollVerifier *qstash.Verifier
 	// PayrollReminder menjalankan pekerjaan pemberitahuan slip gaji H+1.
 	PayrollReminder func(ctx context.Context) (int, error)
+	// Logger menerima catatan keamanan untuk callback yang ditolak. Nil
+	// berarti penolakan signature tidak dicatat ke log.
+	Logger *observability.Logger
 }
 
 type ProfileResponse struct {
@@ -106,10 +117,14 @@ func NewMuxWithOptions(options MuxOptions) *http.ServeMux {
 	if options.QStash != nil {
 		RegisterQStashRoutes(mux, options.QStash)
 	}
+	if options.SLO != nil {
+		RegisterSLORoutes(mux, options.SLO)
+	}
 	RegisterLogoutRoute(mux, options.Resolver, options.SessionRevoker)
 	if options.SessionIssuer != nil {
 		RegisterSessionIssueRoute(mux, options.Resolver, options.Policy, options.SessionIssuer)
 	}
+	registerCloudinaryRoutes(mux, options.Resolver, options.Cloudinary)
 	return mux
 }
 

@@ -144,23 +144,26 @@ func (s GormStore) FindDueReminders(ctx context.Context, until time.Time) ([]Rem
 
 // EnqueueNotifications menulis pesan notifikasi ke antrean keluar.
 //
-// Pesan dengan kunci idempotensi yang sudah ada dilewati, sehingga pekerjaan
-// harian boleh dijalankan berulang kali tanpa menghasilkan pemberitahuan ganda.
-// Nilai balik adalah jumlah pesan yang benar-benar diantrekan.
+// Pesan ditulis sekaligus lewat satu operasi batch sehingga jumlah statement
+// tidak bertambah satu per slip. Pesan dengan kunci idempotensi yang sudah ada
+// dilewati, sehingga pekerjaan harian boleh dijalankan berulang kali tanpa
+// menghasilkan pemberitahuan ganda. Nilai balik adalah jumlah pesan yang
+// benar-benar diantrekan.
 func (s GormStore) EnqueueNotifications(ctx context.Context, notifications []domain.Notification) (int, error) {
-	queue := outbox.GormStore{DB: s.DB}
-	queued := 0
+	messages := make([]outbox.Message, 0, len(notifications))
 	for _, notification := range notifications {
 		if notification.Kind == "" {
 			continue
 		}
-		if _, err := queue.Enqueue(ctx, notification.Kind, notification.DedupeKey, notification.Payload); err != nil {
-			if errors.Is(err, outbox.ErrDuplicate) {
-				continue
-			}
-			return queued, fmt.Errorf("enqueue payroll notice: %w", err)
-		}
-		queued++
+		messages = append(messages, outbox.NewMessage(notification.Kind, notification.DedupeKey, notification.Payload))
+	}
+	if len(messages) == 0 {
+		return 0, nil
+	}
+	queue := outbox.GormStore{DB: s.DB}
+	queued, err := queue.EnqueueBatch(ctx, messages)
+	if err != nil {
+		return 0, fmt.Errorf("enqueue payroll notice: %w", err)
 	}
 	return queued, nil
 }

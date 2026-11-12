@@ -42,3 +42,21 @@ type Repository interface {
 	// mengembalikan jumlah pesan yang benar-benar ditulis.
 	EnqueueNotifications(context.Context, []domain.Notification) (int, error)
 }
+
+// TunjanganRepository adalah port persistensi komponen tunjangan pegawai.
+type TunjanganRepository interface {
+	ListTunjangan(context.Context, listing.Options) ([]models.KomponenTunjangan, int64, error)
+	GetTunjangan(context.Context, string) (models.KomponenTunjangan, error)
+	CreateTunjangan(context.Context, string, models.KomponenTunjangan) (models.KomponenTunjangan, error)
+	UpdateTunjangan(context.Context, string, string, domain.KomponenTunjanganPatch) (models.KomponenTunjangan, error)
+	ArchiveTunjangan(context.Context, string, string) error
+}
+
+// PotonganRepository adalah port persistensi komponen potongan pegawai.
+type PotonganRepository interface {
+	ListPotongan(context.Context, listing.Options) ([]models.KomponenPotongan, int64, error)
+	GetPotongan(context.Context, string) (models.KomponenPotongan, error)
+	CreatePotongan(context.Context, string, models.KomponenPotongan) (models.KomponenPotongan, error)
+	UpdatePotongan(context.Context, string, string, domain.KomponenPotonganPatch) (models.KomponenPotongan, error)
+	ArchivePotongan(context.Context, string, string) error
+}

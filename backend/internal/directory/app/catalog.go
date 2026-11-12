@@ -13,9 +13,9 @@ import (
 	"simpeg/backend/internal/models"
 )
 
-// categoryCacheTTL adalah umur cache daftar kategori. Data referensi dengan
+// CategoryCacheTTL adalah umur cache daftar kategori. Data referensi dengan
 // kardinalitas rendah dan jarang berubah, sehingga TTL pendek sudah memadai.
-const categoryCacheTTL = 5 * time.Minute
+const CategoryCacheTTL = 5 * time.Minute
 
 // cachedCategories adalah bentuk yang disimpan di cache.
 type cachedCategories struct {
@@ -121,6 +121,23 @@ func (s *AuditService) List(ctx context.Context, principal auth.Principal, optio
 		TotalItems: total,
 		TotalPages: listing.PageCount(total, options.PageSize),
 	}, nil
+}
+
+// StreamAuditLogs mengirimkan seluruh jejak audit dalam cakupan principal ke
+// fn, satu batch per batch, tanpa pagination. Urutan tetap kronologis naik.
+// Izin dan cakupan sama persis dengan List.
+func (s *AuditService) StreamAuditLogs(ctx context.Context, principal auth.Principal, options listing.Options, fn func(models.AuditLog) error) error {
+	if !allows(s.policy, principal, "audit:read") {
+		scope, err := s.scope.resolve(ctx, principal)
+		if err != nil {
+			return err
+		}
+		if scope.Empty() {
+			return nil
+		}
+		options.ScopeHomebaseIDs = scope.List()
+	}
+	return s.repo.StreamAuditLogs(ctx, options, fn)
 }
 
 // Record mencatat satu entri jejak audit di luar operasi CRUD.

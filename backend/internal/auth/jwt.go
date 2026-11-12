@@ -77,7 +77,8 @@ func JWTAuthenticate(verifier *JWTVerifier, next http.Handler) http.Handler {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), JWTPrincipalFromClaims(claims))))
+		ctx := contextWithJWTClaims(r.Context(), claims)
+		next.ServeHTTP(w, r.WithContext(WithPrincipal(ctx, JWTPrincipalFromClaims(claims))))
 	})
 }
 

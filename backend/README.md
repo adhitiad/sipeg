@@ -1,6 +1,6 @@
 ﻿# Backend
 
-Backend SIMPEG menggunakan Go, GORM, dan PostgreSQL. `internal/models` memetakan tabel aplikasi yang dibuat oleh migrasi Goose di `migrations/`; migrasi SQL adalah sumber skema yang ditinjau dan diterapkan.
+Backend SIMPEG menggunakan Go 1.27.4 (lihat `backend/go.mod`), GORM, dan PostgreSQL. `internal/models` memetakan tabel aplikasi yang dibuat oleh migrasi Goose di `migrations/`; migrasi SQL adalah sumber skema yang ditinjau dan diterapkan.
 
 Gunakan `internal/database.OpenPostgres` agar nama tabel dan kolom mengikuti konvensi PostgreSQL yang dipakai migrasi. Model menyimpan foreign key sebagai kolom UUID; relasi untuk kebutuhan query dapat ditambahkan bersama fitur yang memakainya.
 
@@ -17,7 +17,7 @@ Versi API memakai prefix path: `/api/v1/employees`, `/api/v1/organizations`, dan
 
 Endpoint operasional `/health` dan `/ready` berada di luar prefix versi.
 
-Atur `DATABASE_URL` pada aplikasi yang memanggil backend dan berikan nilainya ke `OpenPostgres`. Migration runner yang dipilih adalah Goose dengan konfigurasi di `.goose.yaml`; workflow deployment tersedia di `.github/workflows/deploy-migrations.yml` (dipicu secara manual via `workflow_dispatch`, `DATABASE_URL` sebagai secret GitHub). Migration belum pernah diterapkan pada database nyata. Tinjau dan terapkan melalui proses migrasi yang disetujui sebelum memakai CRUD. Jangan menjalankan `AutoMigrate`.
+Atur `DATABASE_URL` pada aplikasi yang memanggil backend dan berikan nilainya ke `OpenPostgres`. Migration runner yang dipilih adalah Goose dengan konfigurasi di `.goose.yaml`; workflow deployment tersedia di `.github/workflows/deploy-migrations.yml` (dipicu secara manual via `workflow_dispatch`, `DATABASE_URL` sebagai secret GitHub, belum pernah dijalankan di GitHub karena environment `staging`/`production` dan secret belum dibuat; urutan perintah diuji manual terhadap DB uji). Migrasi telah diterapkan pada database produksi `postgres` dan database uji `simpeg_perf` hingga versi Goose 19. Tinjau dan terapkan melalui proses migrasi yang disetujui sebelum memakai CRUD. Jangan menjalankan `AutoMigrate`.
 
 ## Struktur lapisan
 
@@ -47,7 +47,7 @@ Zona waktu operasional adalah Asia/Jakarta (UTC+7, WIB). Penyimpanan timestamp m
 | `PORT` | Default `8080`. |
 | `BETTER_AUTH_SECRET` | Shared secret verifikasi JWT Better Auth. Wajib pada production, minimal 32 karakter, dan tidak boleh memuat pola bawaan. |
 | `TRUSTED_ORIGINS` | Origin browser yang diizinkan memanggil API (pisahkan dengan koma). Wildcard `*` ditolak. Kosong berarti tidak ada akses lintas origin. Wajib pada production. |
-| `DB_MAX_OPEN_CONNS` | Batas koneksi terbuka, default `25`. |
+| `DB_MAX_OPEN_CONNS` | Batas koneksi terbuka, default `10`. Pooler sesi Supabase membatasi jumlah koneksi concurrently per proyek; bila batas ini melampaui batas pooler, PostgreSQL menolak koneksi baru (`EMAXCONNSESSION`) dan backend menjawab `503`. |
 | `DB_MAX_IDLE_CONNS` | Batas koneksi idle, default `5`, tidak boleh melebihi `DB_MAX_OPEN_CONNS`. |
 | `DB_CONN_MAX_LIFETIME` | Umur maksimum koneksi, default `30m`. |
 | `DB_STATEMENT_TIMEOUT` | Batas waktu satu statement, default `15s`. |
@@ -60,10 +60,12 @@ Zona waktu operasional adalah Asia/Jakarta (UTC+7, WIB). Penyimpanan timestamp m
 | `RPO_HOURS` | Target pemulihan data dalam jam, default `24`. |
 | `RTO_HOURS` | Target pemulihan layanan dalam jam, default `4`. |
 | `SLO_TARGET` | Target ketersediaan layanan dalam persen, default `99.9`. |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_SECURE`, `SMTP_FROM` | Konfigurasi SMTP. `SMTP_FROM` wajib diisi bila `SMTP_HOST` diisi dan harus berupa alamat email yang sah. |
-| `QSTASH_URL`, `QSTASH_SCHEDULES_URL`, `QSTASH_TOKEN`, `QSTASH_CURRENT_SIGNING_KEY`, `QSTASH_NEXT_SIGNING_KEY` | QStash untuk penjadwalan pekerjaan asinkron. `QSTASH_CURRENT_SIGNING_KEY` wajib diisi bila `QSTASH_TOKEN` diisi. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_SECURE`, `SMTP_FROM` | Konfigurasi SMTP. `SMTP_FROM` wajib diisi bila `SMTP_HOST` diisi dan harus berupa alamat email yang sah; bentuk baku `"Nama Tampilan" <alamat@domain>` juga diterima. `SMTP_SECURE=true` memakai TLS langsung (porta 465), `false` memakai koneksi polos yang dinaikkan lewat STARTTLS (porta 587), dan kosong berarti mode ditebak dari porta. |
+| `QSTASH_URL`, `QSTASH_SCHEDULES_URL`, `QSTASH_TOKEN`, `QSTASH_CURRENT_SIGNING_KEY`, `QSTASH_NEXT_SIGNING_KEY` | QStash untuk penjadwalan pekerjaan asinkron. `QSTASH_CURRENT_SIGNING_KEY` wajib diisi bila `QSTASH_TOKEN` diisi. `QSTASH_URL` boleh diisi root API regional; jalur `/v2/publish` dan `/v2/schedules` ditambahkan otomatis. `QSTASH_SCHEDULES_URL` boleh dikosongkan karena endpoint jadwal diturunkan dari `QSTASH_URL`. |
+| `RABBITMQ_URL` | Broker RabbitMQ untuk pekerjaan terjadwal self-hosted (docker/podman). Bila diisi, server menjalankan konsumen pekerjaan dan melewati pendaftaran jadwal QStash (`DEC-042`). Penjadwal `cmd/jobsched` membaca variabel yang sama; `SLO_EVALUATE_ENABLED` penjadwal harus sama dengan `SLO_ENABLED` backend. |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Cache Redis Upstash untuk data referensi non-sensitif saja. |
 | `HOLIDAY_API_URL`, `HOLIDAY_API_KEY` | Penyedia kalender hari libur nasional (api.co.id). Hanya dipakai untuk penyegaran yang dipicu admin; pembacaan kalender selalu dari tabel `HariLibur`. Bila `HOLIDAY_API_KEY` kosong, penyegaran menolak (`503`) dan kalender bersifat baca saja. |
+| `SLO_ENABLED`, `SLO_WINDOW_MINUTES`, `SLO_P95_TARGET_MS`, `SLO_ERROR_RATE_TARGET`, `SLO_MIN_REQUESTS`, `SLO_ALERT_RECIPIENTS`, `SLO_RETENTION_DAYS` | Pemeriksaan target layanan terjadwal. `SLO_ENABLED=false` (default) berarti pengoleki metrik tidak berjalan sama sekali. Bila diaktifkan, backend menulis metrik ke tabel `sloMetric` dan mendaftarkan pemeriksaan berkala `slo.evaluate` melalui QStash. |
 
 Pada `APP_ENV=production` backend menolak start bila secret lemah atau `TRUSTED_ORIGINS` kosong — konfigurasi tidak aman tidak boleh lolos diam-diam.
 
@@ -96,6 +98,10 @@ Keempat integrasi diimplementasikan sebagai paket terpisah di `internal/`.
 **Outbox persisten** (`internal/outbox`) adalah fondasi. Transaksi bisnis menulis baris outbox dalam transaksi yang sama sehingga pekerjaan tidak hilang saat queue eksternal gagal. Baris diklaim memakai `FOR UPDATE SKIP LOCKED`, kunci `dedupeKey` mencegah pengiriman ganda, retry memakai backoff eksponensial, dan pesan yang melewati batas percobaan diletakkan pada status `FAILED` sebagai dead-letter. Meja `outboxMessage` dibuat lewat migrasi `000006_outbox_message.sql`.
 
 **QStash** (`internal/qstash`) adalah penjadwal pekerjaan asinkron. Callback diverifikasi signature HS256 terhadap **raw request body**, URL tujuan, dan masa berlaku, dengan dukungan rotasi kunci (kunci saat ini dan berikutnya). Endpoint callback yang terdaftar: `POST /api/v1/internal/qstash/audit/cleanup` — ia menjalankan retensi jejak audit dan dicatat sebagai aksi `audit.cleaned`; dan `POST /api/v1/internal/qstash/payroll/notify` — ia menjalankan pemberitahuan ketersediaan slip gaji H+1 dan dicatat sebagai aksi `payroll.notified`. Keduanya **tidak** memakai sesi bearer; pengesahnya signature QStash. Jadwal harian didaftarkan lewat `internal/jobs.EnsureSchedule` yang idempoten: jadwal dengan tujuan yang sama tidak didaftarkan dua kali. Jadwal pemberitahuan H+1 didaftarkan pada `5 19 * * *` (02:05 WIB) dengan 3 percobaan ulang.
+
+**RabbitMQ** (`internal/mq`) adalah pengganti penjadwal QStash pada deployment self-hosted (docker/podman) — `DEC-042`. Bila `RABBITMQ_URL` diisi, server menjalankan konsumen pekerjaan (`mq.Consumer`) dan melewati pendaftaran jadwal QStash; payload dan kind sama dengan callback QStash (`{"kind": "audit.cleanup"}` dan seterusnya), sehingga kedua transport menjalankan logika pekerjaan yang identik. Penjadwal `cmd/jobsched` menerbitkan pesan dari tick cron UTC yang sama dengan jadwal QStash, dengan publisher confirm dan pesan persistent. Pesan yang gagal dijalankan pindah ke antrean `simpeg.jobs.dead` (dead-letter); tick berikutnya memicu eksekusi baru. Topologi (exchange, antrean, binding) dideklarasikan idempoten saat startup. Detail operasional ada di `rabbitmq/README.md` dan `docs/RUNBOOK.md` §8B.
+
+**Migrasi** (`cmd/migrate`) membawa seluruh migrasi Goose dalam binary (embedded filesystem dari `migrations/migrations.go`) sehingga container migrasi tidak memerlukan CLI terpisah. `migrate` menerapkan migrasi yang belum jalan dan `migrate status` menampilkan statusnya; keduanya idempoten dan aman diulang.
 
 **Email** (`internal/notify`) memakai SMTP. `notify.SalaryPaidNotice` tidak menerima parameter nominal — nominal gaji hanya tersedia di halaman terautentikasi dan dirujuk lewat tautan. `notify.EmailDeliverer` menjembatani antrean outbox ke SMTP: worker background mengirim pesan yang diklaim dispatcher. Kesalahan permanen (payload rusak, jenis tidak dikenal, sumber konfirmasi pembayaran belum dikonfigurasi) langsung menjadi dead-letter tanpa diulang; kegagalan sementara dijadwalkan ulang dengan backoff.
 
@@ -157,16 +163,69 @@ Akses dibatasi per unit: `admin` membaca seluruh jejak, `operator` hanya membaca
 
 Kolom `unitId` adalah perubahan skema acuan dan harus selalu diperbarui bersama model GORM dan migrasi (`backend/migrations/000003_audit_log_unit.sql`). Retensi sudah ditetapkan; arsip dan ekspor jejak belum ada.
 
-Schema memerlukan migration SQL [000001_directory_crud.sql](migrations/000001_directory_crud.sql). Draft baru [000009_payroll_schedule.sql](migrations/000009_payroll_schedule.sql) (tabel `jadwalGaji`) dan [000010_holiday.sql](migrations/000010_holiday.sql) (tabel `HariLibur`) belum diterapkan. Migration runner yang dipilih adalah Goose dengan konfigurasi di `.goose.yaml` (direktori `./migrations`, `DATABASE_URL` sebagai env required), tetapi workflow deployment belum dibuat dan tidak ada migration yang sudah diterapkan atau diuji terhadap database nyata. Jangan gunakan `AutoMigrate`; tinjau dan terapkan migration secara terkendali sebelum menjalankan versi backend ini.
+Schema memerlukan migration SQL [000001_directory_crud.sql](migrations/000001_directory_crud.sql). Migration runner yang dipilih adalah Goose dengan konfigurasi di `.goose.yaml` (direktori `./migrations`, `DATABASE_URL` sebagai env required). Workflow deployment tersedia di `.github/workflows/deploy-migrations.yml` dan diperkuat (`DEC-046`), tetapi belum pernah dijalankan di GitHub. Migrasi telah diterapkan dan diuji terhadap database nyata (`postgres` dan `simpeg_perf`) hingga versi Goose 19. Jangan gunakan `AutoMigrate`; tinjau dan terapkan migration secara terkendali sebelum menjalankan versi backend ini.
 
 ## Daftar, filter, dan pengurutan
 
 Seluruh endpoint daftar memakai parameter yang sama: `page` (default 1), `pageSize` (default 20, maksimum 100), `search`, `sort`, dan `order` (`asc`/`desc`). Nilai `sort` di luar allowlist resource ditolak dengan `400 invalid_query`. Kolom SQL ditentukan server melalui allowlist di `internal/directory/domain/list.go` dan `internal/payroll/domain/sort.go`; nilai mentah dari pengguna tidak pernah masuk ke klausa `ORDER`. Nama kolom camelCase harus ditulis dengan kutip ganda (`"createdAt"`) agar tidak difold menjadi huruf kecil oleh PostgreSQL. Kontrak parameter bersama ada di `internal/listing`.
 
-Endpoint daftar yang tersedia: `GET /api/v1/employees`, `GET /api/v1/organizations`, `GET /api/v1/audit-logs` (permission `audit:read`), `GET /api/v1/categories` (permission `category:read`), `GET /api/v1/payroll/slips` (permission `payroll:read:any`/`payroll:read:homebase`/`payroll:read:self`), dan `GET /api/v1/holidays` (permission `holiday:read`). Daftar kategori hanya mengembalikan kategori aktif. DTO audit memuat aktor, aksi, sasaran, keterangan minimal, dan waktu — isi profil pegawai tidak pernah disalin ke audit.
+Endpoint daftar yang tersedia: `GET /api/v1/employees`, `GET /api/v1/organizations`, `GET /api/v1/audit-logs` (permission `audit:read`), `GET /api/v1/audit-logs/export` (CSV streaming, permission `audit:read`), `GET /api/v1/cuti` + `POST /api/v1/cuti` + `GET/PATCH /api/v1/cuti/{id}` + `POST /api/v1/cuti/{id}/approve,reject` (permission `cuti:read`/`cuti:create`/`cuti:update`/`cuti:approve`), `GET /api/v1/categories` (permission `category:read`), `GET /api/v1/payroll/slips` (permission `payroll:read:any`/`payroll:read:homebase`/`payroll:read:self`), dan `GET /api/v1/holidays` (permission `holiday:read`). Daftar kategori hanya mengembalikan kategori aktif. DTO audit memuat aktor, aksi, sasaran, keterangan minimal, dan waktu — isi profil pegawai tidak pernah disalin ke audit.
+
+Eviden pengajuan cuti: `BERSALIN`, `SAKIT`, `SAKIT_BERKEPANJANGAN`, dan `IZIN_PENTING` wajib menyertakan eviden saat pengajuan dibuat dan dicek ulang saat approve. Bentuk eviden: `SURAT_DOKTER` (berkas + nomor + tanggal surat dokter, untuk sakit/melahirkan), `FOTO` (berkas + waktu tangkap), atau `LAINNYA` (waktu + keterangan, untuk harian). Kolom model: `jenisEviden`, `fileEvidenUrl`, `waktuEviden`, `catatanEviden` (kolom lama `fileSuratUrl` di-rename menjadi `fileEvidenUrl` lewat migrasi `000019_cuti_eviden.sql`).
+
+Manajemen dokumen pegawai/dosen: endpoint `GET/POST/PATCH/DELETE /api/v1/arsip{...}` (permission `arsip:read`/`arsip:create`/`arsip:update`/`arsip:archive`). Berkas diunggah langsung ke Cloudinary oleh klien; backend hanya menyimpan URL dan metadata berkas (`fileUrl`, `fileSize`, `mimeType`, `cloudinaryPublicId`). Setiap jenis dokumen memiliki aturan format MIME dan ukuran maksimal (lihat `docs/PRD.md` dan `docs/DECISIONS.md` DEC-047). Konfigurasi Cloudinary: `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` (`.env.example`). Nomor rekening (`BankRekening`) dan nama rekening (`BankAtasNama`) sudah tersedia pada tabel `user`. Timestamps `createdAt`/`updatedAt` disimpan UTC dan ditampilkan Asia/Jakarta. Migrasi `000020_arsip_dokumen_tambahan.sql` menambah jenis dokumen dan kolom metadata.
 
 ## Event presensi mesin
 
 `POST /api/v1/attendance/events` menyimpan fakta tap ternormalisasi (`machineId`, PIN mesin, waktu RFC 3339 ber-offset, dan `idempotencyKey`). Waktu disimpan sebagai UTC dengan presisi milidetik. Retry identik mengembalikan event yang sama; key yang sama dengan PIN/waktu berbeda menghasilkan `409`. PIN hanya kunci pengguna eksternal, bukan relasi langsung ke `User`; endpoint tidak membuat status harian atau menerima payload vendor/biometrik, GPS, maupun foto.
 
 Endpoint memakai sesi bearer yang sama dengan API lain dan permission `attendance:event:ingest`; grant ini saat ini hanya diberikan kepada role `admin`. Ini mengautentikasi pemohon API, bukan perangkat. Autentikasi/kredensial perangkat dan adapter Fingerspot Revo W-230N belum tersedia karena kontrak vendor belum ditemukan. Draft [000002_attendance_events.sql](migrations/000002_attendance_events.sql) belum diterapkan; zona waktu sumber perangkat, jaminan idempotency key, pemetaan PIN, dan retensi masih perlu diputuskan. Migration belum diterapkan atau diuji terhadap database nyata.
+
+## Performa dan uji beban
+
+Benchmark, uji beban burst, dan uji soak memakai repository palsu sehingga tidak memerlukan database:
+
+```bash
+go test -run "^$" -bench "Benchmark" -benchmem ./internal/httpserver/... ./internal/directory/app/...
+go test ./internal/httpserver/... -run TestBurstRequestsRemainStable -v
+SIMPEG_SOAK=1 SIMPEG_SOAK_DURATION=30 SIMPEG_SOAK_STREAMS=16 go test ./internal/httpserver/... -run TestSoakReadPath -v
+```
+
+Uji soak bersifat opt-in (`SIMPEG_SOAK=1`) agar pipeline CI tetap cepat. Angka hasil pengukuran dan kekurangannya dicatat di `../docs/PERFORMANCE-BASELINE.md`.
+
+### Perkakas pengukuran terhadap dependensi nyata
+
+`cmd/perfbench` mengukur backend terhadap PostgreSQL, Redis, QStash, dan SMTP sungguhan. Perkakas ini adalah perkakas operator, bukan bagian dari jalur permintaan aplikasi, dan hanya membaca kredensial dari environment.
+
+```bash
+export DATABASE_URL="postgres://<user>:<sandi>@<host>:5432/<database>?sslmode=require"
+
+go run ./cmd/perfbench seed     --employees=5000 --months=6 --audit=50000
+go run ./cmd/perfbench schema
+go run ./cmd/perfbench explain
+go run ./cmd/perfbench latency  --iterations=40
+go run ./cmd/perfbench e2e      --requests=400 --streams=16
+go run ./cmd/perfbench e2e      --soak --duration=60s --streams=16
+go run ./cmd/perfbench deps     --redis --qstash --smtp --count=100
+go run ./cmd/perfbench slo
+```
+
+| Subcommand | Kegunaan |
+| --- | --- |
+| `seed` | Mengisi database uji dengan data sintetis (pegawai, unit, slip gaji, jejak audit). |
+| `schema` | Membandingkan kolom model GORM dengan kolom yang benar-benar ada di database target. |
+| `explain` | Menjalankan `EXPLAIN (ANALYZE, BUFFERS)` atas statement yang direkam saat repository produksi berjalan. |
+| `latency` | Mengukur distribusi latensi tiap skenario query. |
+| `e2e` | Menjalankan binari `cmd/server` asli lalu mengukurnya lewat HTTP. |
+| `deps` | Mengukur beban Redis, QStash, dan SMTP. |
+| `slo` | Memanggil endpoint pemeriksaan SLO dengan signature QStash seperti callback sungguhan. |
+
+Perintah `deps` menyentuh layanan pihak ketiga. Uji Redis memakai namespace sendiri dan menghapus kuncinya. Uji SMTP mengirim email sungguhan; penerima bawaan adalah alamat akun SMTP sendiri agar uji beban tidak mengirimi pihak ketiga, dan dapat diganti lewat `PERFBENCH_SMTP_RECIPIENTS`. Uji QStash memakai tujuan sekali pakai yang memang tidak dieksekusi.
+
+Jalur volume tinggi dijaga jumlah statement-nya oleh pengujian:
+
+- Impor massal pegawai memeriksa identitas dengan satu query per chunk 250 baris, bukan satu query per baris per kolom (`internal/directory/repository/gorm_import.go`).
+- Jejak audit impor ditulis dengan satu statement multi-row lewat `audit.WriteBatch` (`internal/audit/audit.go`).
+- Notifikasi penggajian diantrekan dengan satu statement lewat `outbox.EnqueueBatch` (`internal/outbox/gorm_store.go`).
+
+Pengujian penjaga jumlah statement ada di `internal/directory/repository/gorm_import_test.go` dan `internal/payroll/repository/schedule_test.go`. Bentrok impor terhadap data yang sudah ada tetap dilaporkan per kolom (`email`, `nip`, `nidn`, `nidk`) beserta indeks baris yang tepat.

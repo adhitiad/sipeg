@@ -11,11 +11,13 @@ import (
 	"time"
 
 	"simpeg/backend/internal/apierror"
-	"simpeg/backend/internal/auth"
 	"simpeg/backend/internal/directory/app"
 	"simpeg/backend/internal/directory/domain"
 	"simpeg/backend/internal/models"
+	payrollapp "simpeg/backend/internal/payroll/app"
+	skpapp "simpeg/backend/internal/skp/app"
 	"simpeg/backend/internal/timeutil"
+	tridharmaapp "simpeg/backend/internal/tridharma/app"
 )
 
 // directoryAPI memegang use case yang dipakai oleh handler direktori.
@@ -24,6 +26,18 @@ type directoryAPI struct {
 	organizations *app.OrganizationService
 	categories    *app.CategoryService
 	audits        *app.AuditService
+	skp           *skpapp.SKPService
+	tridharma     *tridharmaapp.TridharmaService
+	keluarga      *app.KeluargaService
+	golongan      *app.GolonganService
+	arsip         *app.ArsipService
+	sertifikasi   *app.SertifikasiService
+	pelatihan     *app.PelatihanService
+	sister        *app.SisterService
+	penghargaan   *app.PenghargaanService
+	tunjangan     *payrollapp.TunjanganService
+	potongan      *payrollapp.PotonganService
+	leave         *app.LeaveService
 }
 
 // EmployeeDTO adalah bentuk publik data pegawai.
@@ -133,11 +147,6 @@ func organizationDTO(organization models.Homebase) OrganizationDTO {
 		CreatedAt: timeutil.InLocation(organization.CreatedAt),
 		UpdatedAt: timeutil.InLocation(organization.UpdatedAt),
 	}
-}
-
-func currentActor(r *http.Request) string {
-	principal, _ := auth.PrincipalFromContext(r.Context())
-	return principal.UserID
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

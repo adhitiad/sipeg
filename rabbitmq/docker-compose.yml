@@ -1,0 +1,50 @@
+# Stack broker RabbitMQ untuk SIMPEG — berdiri sendiri agar pengembangan
+# dan deployment backend tidak terikat siklus hidup broker.
+#
+# Mode pengembangan (broker saja, backend dijalankan native):
+#   docker compose up -d
+#   # lalu di backend/:
+#   RABBITMQ_URL=amqp://simpeg:simpeg@localhost:5672/ go run ./cmd/server
+#   RABBITMQ_URL=amqp://simpeg:simpeg@localhost:5672/ go run ./cmd/jobsched
+#
+# Deployment satu server: jalankan stack ini lebih dahulu karena ia membuat
+# jaringan simpeg-broker yang dipakai stack backend (root) sebagai
+# jaringan eksternal; di matikan paling akhir.
+#   docker compose -f rabbitmq/docker-compose.yml up -d
+#   docker compose -f docker-compose.yml up -d --build
+#
+# Berlaku juga untuk podman-compose. Kredensial ganti melalui
+# RABBITMQ_USER/RABBITMQ_PASSWORD sebelum dipakai di luar komputer lokal.
+
+name: simpeg-broker
+
+services:
+  rabbitmq:
+    image: rabbitmq:4-management
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-simpeg}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-simpeg}
+    volumes:
+      - ./rabbitmq.conf:/etc/rabbitmq/conf.d/10-simpeg.conf:ro
+      - rabbitmq-data:/var/lib/rabbitmq
+    ports:
+      - "5672:5672"     # AMQP; dibuka ke host untuk pengembangan native
+      - "15672:15672"   # UI manajemen; jangan terekspos di production
+    networks:
+      - broker
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+networks:
+  broker:
+    # Nama eksplisit supaya stack backend (root) dapat bergabung lewat
+    # deklarasi external network dengan nama yang sama.
+    name: simpeg-broker
+
+volumes:
+  rabbitmq-data:

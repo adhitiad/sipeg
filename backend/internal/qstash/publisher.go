@@ -79,10 +79,7 @@ func (p *Publisher) Publish(ctx context.Context, request PublishRequest) error {
 		return fmt.Errorf("encode qstash publish request: %w", err)
 	}
 
-	endpoint := p.BaseURL
-	if endpoint == "" {
-		endpoint = DefaultPublishURL
-	}
+	endpoint := p.publishEndpoint()
 	target, err := url.Parse(strings.TrimRight(endpoint, "/") + "/" + strings.TrimPrefix(request.Destination, "/"))
 	if err != nil {
 		return fmt.Errorf("build qstash url: %w", err)
@@ -119,4 +116,21 @@ func (p *Publisher) Publish(ctx context.Context, request PublishRequest) error {
 		return fmt.Errorf("%w: status %d: %s", ErrPublishRejected, response.StatusCode, strings.TrimSpace(string(detail)))
 	}
 	return nil
+}
+
+// publishEndpoint menentukan endpoint publikasi QStash.
+//
+// Nilai BaseURL boleh berupa root API regional, misalnya
+// "https://qstash-us-east-1.upstash.io", atau endpoint lengkap yang sudah
+// memuat jalur "/v2/publish". Tanpa penanganan ini, URL tujuan akan menempel
+// langsung ke root sehingga QStash menjawab 404.
+func (p *Publisher) publishEndpoint() string {
+	base := strings.TrimRight(strings.TrimSpace(p.BaseURL), "/")
+	if base == "" {
+		return DefaultPublishURL
+	}
+	if strings.HasSuffix(base, "/v2/publish") {
+		return base
+	}
+	return base + "/v2/publish"
 }

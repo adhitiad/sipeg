@@ -109,8 +109,6 @@ func (s *statusRecorder) RequestIDValue() string {
 // AccessLogOptions mengatur isi log akses.
 type AccessLogOptions struct {
 	Logger *Logger
-	// PrincipalFromContext mengambil identitas pemohon bila sudah terautentikasi.
-	PrincipalFromContext func(ctx context.Context) (string, string, bool)
 }
 
 // AccessLogMiddleware mencatat satu entri log terstruktur per permintaan.
@@ -120,7 +118,8 @@ func AccessLogMiddleware(options AccessLogOptions) func(http.Handler) http.Handl
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			started := options.Logger.Now()
 			recorder := &statusRecorder{ResponseWriter: w}
-			next.ServeHTTP(recorder, r)
+			sink := &ActorSink{}
+			next.ServeHTTP(recorder, r.WithContext(WithActorSink(r.Context(), sink)))
 
 			fields := Fields{
 				"request_id":  RequestIDFromContext(r.Context()),
@@ -130,11 +129,11 @@ func AccessLogMiddleware(options AccessLogOptions) func(http.Handler) http.Handl
 				"bytes":       recorder.bytes,
 				"duration_ms": time.Since(started).Milliseconds(),
 			}
-			if options.PrincipalFromContext != nil {
-				if userID, role, ok := options.PrincipalFromContext(r.Context()); ok {
-					fields["user_id"] = userID
-					fields["role"] = role
-				}
+			// Sink menangkap principal dari middleware autentikasi yang berada
+			// di dalam router, yang tidak dapat dibaca dari context luar.
+			if userID, role, ok := sink.Load(); ok {
+				fields["user_id"] = userID
+				fields["role"] = role
 			}
 			if recorder.status >= http.StatusInternalServerError {
 				options.Logger.Error("http_request", fields)

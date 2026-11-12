@@ -80,6 +80,11 @@ CREATE TABLE IF NOT EXISTS "penilaianKinerjaAkhir" (
     CONSTRAINT "penilaian_user_periode_key" UNIQUE ("userId", "skpPeriodeId")
 );
 
+ALTER TABLE "skpPeriode" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "skpTargetKinerja" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "logAktivitasHarian" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "penilaianKinerjaAkhir" ENABLE ROW LEVEL SECURITY;
+
 -- +goose Down
 DROP TABLE IF EXISTS "penilaianKinerjaAkhir" CASCADE;
 DROP TABLE IF EXISTS "logAktivitasHarian" CASCADE;

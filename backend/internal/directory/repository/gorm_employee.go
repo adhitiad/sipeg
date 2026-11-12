@@ -73,69 +73,6 @@ func (s GormStore) CreateEmployee(ctx context.Context, actorID string, employee 
 	return employee, err
 }
 
-// CreateEmployees membuat banyak pegawai sekaligus. Bila salah satu baris
-// bentrok, seluruh transaksi dibatalkan.
-func (s GormStore) CreateEmployees(ctx context.Context, actorID string, employees []models.User) ([]models.User, error) {
-	if len(employees) == 0 {
-		return nil, domain.ErrConflict
-	}
-	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for i, employee := range employees {
-			var count int64
-			if err := tx.Model(&models.User{}).Where("LOWER(email) = ?", strings.ToLower(employee.Email)).Count(&count).Error; err != nil {
-				return err
-			}
-			if count > 0 {
-				return &domain.EmployeeConflictError{Index: i, Field: "email"}
-			}
-			if employee.Nip != nil {
-				if err := tx.Model(&models.User{}).Where("nip = ?", *employee.Nip).Count(&count).Error; err != nil {
-					return err
-				}
-				if count > 0 {
-					return &domain.EmployeeConflictError{Index: i, Field: "nip"}
-				}
-			}
-			if employee.Nidn != nil {
-				if err := tx.Model(&models.User{}).Where("nidn = ?", *employee.Nidn).Count(&count).Error; err != nil {
-					return err
-				}
-				if count > 0 {
-					return &domain.EmployeeConflictError{Index: i, Field: "nidn"}
-				}
-			}
-			if employee.Nidk != nil {
-				if err := tx.Model(&models.User{}).Where("nidk = ?", *employee.Nidk).Count(&count).Error; err != nil {
-					return err
-				}
-				if count > 0 {
-					return &domain.EmployeeConflictError{Index: i, Field: "nidk"}
-				}
-			}
-		}
-		for i := range employees {
-			employees[i].EmailVerified = false
-			employees[i].Aktif = true
-			if err := tx.Create(&employees[i]).Error; err != nil {
-				if errors.Is(classifyRecordError(err), domain.ErrConflict) {
-					return &domain.EmployeeConflictError{Index: i, Field: "identity"}
-				}
-				return err
-			}
-			if err := createAudit(ctx, tx, audit.Entry{ActorID: actorID, Action: audit.ActionEmployeeCreated, TargetID: &employees[i].ID, UnitID: employees[i].HomebaseId}); err != nil {
-				return err
-			}
-		}
-		// Entri ringkasan membedakan impor massal dari pembuatan satuan.
-		note := fmt.Sprintf("%d pegawai diimpor", len(employees))
-		return createAudit(ctx, tx, audit.Entry{ActorID: actorID, Action: audit.ActionEmployeeImported, Note: &note, UnitID: importUnitID(employees)})
-	})
-	if err != nil {
-		return nil, err
-	}
-	return employees, nil
-}
-
 // UpdateEmployee memperbarui profil pegawai dan mencatat jejak audit dalam
 // satu transaksi.
 func (s GormStore) UpdateEmployee(ctx context.Context, actorID, id string, patch domain.EmployeePatch) (models.User, error) {

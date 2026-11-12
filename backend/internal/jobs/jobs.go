@@ -29,6 +29,14 @@ const CronAuditCleanup = "0 19 * * *"
 // pemberitahuan berjalan.
 const CronPayrollNotify = "5 19 * * *"
 
+// CronSLOEvaluate adalah jadwal berkala pemeriksaan target SLO.
+//
+// Pemeriksaan berjalan tiap lima menit agar alert latensi dan laju
+// kesalahan dikirim relatif cepat setelah target terlampaui. Jadwal memakai
+// ekspresi cron yang didukung QStash, yaitu satu field menit dan satu field
+// jam.
+const CronSLOEvaluate = "*/5 * * * *"
+
 // ErrScheduleUnavailable menandai jadwal tidak dapat didaftarkan.
 var ErrScheduleUnavailable = errors.New("qstash schedule is unavailable")
 

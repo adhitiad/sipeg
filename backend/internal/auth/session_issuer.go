@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"simpeg/backend/internal/audit"
 	"simpeg/backend/internal/models"
 	"simpeg/backend/internal/timeutil"
 )
@@ -84,6 +85,22 @@ func (i *GormSessionIssuer) IssueSession(ctx context.Context, userID string) (st
 	}
 	if err := i.DB.WithContext(ctx).Create(&session).Error; err != nil {
 		return "", time.Time{}, fmt.Errorf("create session: %w", err)
+	}
+
+	// Jejak audit untuk penerbitan sesi (login). Aktor adalah principal yang
+	// terautentikasi dari konteks; target adalah pengguna yang diberikan sesi.
+	principal, _ := PrincipalFromContext(ctx)
+	var unitID *string
+	if principal.HomebaseID != "" {
+		unitID = &principal.HomebaseID
+	}
+	if err := audit.Write(ctx, i.DB, audit.Entry{
+		ActorID:  principal.UserID,
+		Action:   audit.ActionSessionIssued,
+		TargetID: &session.ID,
+		UnitID:   unitID,
+	}); err != nil {
+		return "", time.Time{}, fmt.Errorf("write audit: %w", err)
 	}
 
 	return token, expiresAt, nil

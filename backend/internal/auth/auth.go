@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"simpeg/backend/internal/apierror"
+	"simpeg/backend/internal/observability"
 )
 
 type Permission string
@@ -79,6 +80,12 @@ func Authenticate(resolver SessionResolver) func(http.Handler) http.Handler {
 				return
 			}
 
+			// Sink memberi middleware di luar router akses ke identitas
+			// pemohon, yang tidak dapat dibaca dari context luar.
+			if sink, ok := observability.ActorSinkFromContext(r.Context()); ok {
+				sink.Observe(principal.UserID, principal.RoleName)
+			}
+
 			next.ServeHTTP(w, r.WithContext(WithPrincipal(WithSessionToken(r.Context(), token), principal)))
 		})
 	}
@@ -92,6 +99,7 @@ func RequirePermission(policy Policy, permission Permission, next http.Handler) 
 			return
 		}
 		if policy == nil || !policy.Allows(principal.RoleName, permission) {
+			recordDenial(r, principal, permission)
 			writeError(w, http.StatusForbidden, apierror.CodeForbidden)
 			return
 		}
@@ -117,6 +125,7 @@ func RequireAnyPermission(policy Policy, permissions []Permission, next http.Han
 				return
 			}
 		}
+		recordDenial(r, principal, permissions...)
 		writeError(w, http.StatusForbidden, apierror.CodeForbidden)
 	})
 }

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 	"regexp"
 	"testing"
 	"time"
@@ -167,5 +168,41 @@ func TestEnqueueNotificationsStopsOnNonDuplicateError(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestEnqueueNotificationsWritesBatchInOneStatement(t *testing.T) {
+	db, mock, matcher := newCountingPayrollDB(t)
+	const notices = 50
+
+	notifications := make([]domain.Notification, 0, notices)
+	for index := 0; index < notices; index++ {
+		notifications = append(notifications, domain.Notification{
+			Kind:      "email.slip-tersedia",
+			DedupeKey: fmt.Sprintf("slip-available:slip-%d", index),
+			Payload:   "{}",
+		})
+	}
+
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO "outboxMessage"`)).
+		WillReturnResult(sqlmock.NewResult(0, notices))
+	mock.ExpectCommit()
+
+	store := GormStore{DB: db}
+	queued, err := store.EnqueueNotifications(context.Background(), notifications)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if queued != notices {
+		t.Fatalf("queued = %d, want %d", queued, notices)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+	// Implementasi lama menulis satu statement per pemberitahuan.
+	t.Logf("statements for %d notifications: %d", notices, matcher.count)
+	if matcher.count > 1 {
+		t.Fatalf("statements = %d, want at most 1", matcher.count)
 	}
 }

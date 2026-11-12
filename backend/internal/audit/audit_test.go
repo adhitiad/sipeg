@@ -65,6 +65,45 @@ func TestWriteRejectsMissingDatabaseHandle(t *testing.T) {
 	}
 }
 
+func TestWriteBatchInsertsAllEntriesInOneStatement(t *testing.T) {
+	db, mock := newAuditDB(t)
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`INSERT INTO "auditLog"`).
+		WillReturnResult(sqlmock.NewResult(0, 3))
+	mock.ExpectCommit()
+
+	unit := "33333333-3333-4333-8333-333333333333"
+	entries := []Entry{
+		{ActorID: "user-1", Action: ActionEmployeeCreated, UnitID: &unit},
+		{ActorID: "user-1", Action: ActionEmployeeCreated, UnitID: &unit},
+		{ActorID: "user-1", Action: ActionEmployeeImported, UnitID: &unit},
+	}
+	if err := WriteBatch(context.Background(), db, entries); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWriteBatchWithoutEntriesDoesNotTouchDatabase(t *testing.T) {
+	db, mock := newAuditDB(t)
+
+	if err := WriteBatch(context.Background(), db, nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWriteBatchRejectsMissingDatabaseHandle(t *testing.T) {
+	if err := WriteBatch(context.Background(), nil, []Entry{{Action: ActionEmployeeUpdated}}); err == nil {
+		t.Fatal("expected error without database handle")
+	}
+}
+
 func TestAuditRecordCarriesUnitScopeColumn(t *testing.T) {
 	// Kolom unitId harus ada pada model agar jejak dapat dibatasi per unit.
 	record := models.AuditLog{UnitId: nil}

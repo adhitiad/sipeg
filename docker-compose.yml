@@ -1,0 +1,72 @@
+# Deployment backend SIMPEG dengan Docker/Podman.
+#
+# Broker RabbitMQ berdiri sendiri pada rabbitmq/docker-compose.yml. Jalankan
+# stack broker lebih dahulu karena stack ini bergabung ke jaringan
+# simpeg-broker miliknya:
+#   docker compose -f rabbitmq/docker-compose.yml up -d
+#   docker compose up -d --build
+#   (podman-compose: perintah sama)
+#
+# Layanan stack ini:
+#   migrations  penerapan migrasi Goose sekali jalan (cmd/migrate)
+#   jobsched    penjadwal cron yang menerbitkan pesan pekerjaan (cmd/jobsched)
+#   backend     HTTP API + worker latar (cmd/server)
+#
+# Wajib di .env: DATABASE_URL, TRUSTED_ORIGINS, BETTER_AUTH_SECRET.
+# APP_ENV produksi menolak start bila secret kurang dari 32 karakter.
+
+name: simpeg
+
+services:
+  migrations:
+    build: ./backend
+    image: simpeg-backend
+    entrypoint: ["/bin/migrate"]
+    restart: "no"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+
+  jobsched:
+    build: ./backend
+    image: simpeg-backend
+    entrypoint: ["/bin/jobsched"]
+    restart: unless-stopped
+    environment:
+      # Hostname rabbitmq adalah alias layanan pada jaringan simpeg-broker
+      # yang dimiliki stack broker (rabbitmq/docker-compose.yml).
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-simpeg}:${RABBITMQ_PASSWORD:-simpeg}@rabbitmq:5672/
+      # Sama dengan SLO_ENABLED backend: tanpa pengoleki metrik, pesan
+      # pemeriksaan SLO tidak perlu diterbitkan.
+      SLO_EVALUATE_ENABLED: ${SLO_ENABLED:-false}
+    networks:
+      - broker
+
+  backend:
+    build: ./backend
+    image: simpeg-backend
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      # Nilai kosong diteruskan apa adanya; backend sendiri menolak start
+      # bila DATABASE_URL kosong atau secret produksi tidak sah, sehingga
+      # kesalahan konfigurasi tetap terlihat pada log backend.
+      DATABASE_URL: ${DATABASE_URL}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      TRUSTED_ORIGINS: ${TRUSTED_ORIGINS}
+      APP_ENV: ${APP_ENV:-production}
+      # Menimpa RABBITMQ_URL dari .env (yang memakai localhost untuk
+      # pengembangan native) dengan alamat broker pada jaringan bersama.
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-simpeg}:${RABBITMQ_PASSWORD:-simpeg}@rabbitmq:5672/
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+    networks:
+      - broker
+
+networks:
+  broker:
+    name: simpeg-broker
+    # Jaringan dibuat oleh stack broker; stack ini hanya bergabung.
+    external: true

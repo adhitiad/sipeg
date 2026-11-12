@@ -31,6 +31,10 @@ type SMTPConfig struct {
 	// UseTLS mengaktifkan TLS saat koneksi. STARTTLS dipakai bila server
 	// hanya mendukungnya, bergantung pada kebijakan provider.
 	UseTLS bool
+	// TLSConfig menimpa konfigurasi TLS bawaan. Dipakai bila server memakai
+	// otoritas sertifikat pribadi. Nil memakai ServerName dari Host dan
+	// TLS 1.2 sebagai batas bawah.
+	TLSConfig *tls.Config
 	// Timeout membatasi waktu koneksi dan pengiriman.
 	Timeout time.Duration
 }
@@ -90,6 +94,31 @@ type smtpTransport struct {
 	config SMTPConfig
 }
 
+// startTLSIfOffered menaikkan koneksi ke TLS bila server menawarkannya.
+//
+// Server submission pada porta 587 mulai dari koneksi polos lalu memakai
+// perintah STARTTLS. Bila server tidak menawarkannya, koneksi tetap dipakai
+// apa adanya. Fungsi ini dipanggil sebelum autentikasi karena kredensial
+// tidak boleh dikirim lewat koneksi yang belum dienkripsi.
+func startTLSIfOffered(client *smtp.Client, config *tls.Config) error {
+	offered, _ := client.Extension("STARTTLS")
+	if !offered {
+		return nil
+	}
+	if err := client.StartTLS(config); err != nil {
+		return fmt.Errorf("starttls: %w", err)
+	}
+	return nil
+}
+
+// tlsConfig mengembalikan konfigurasi TLS yang dipakai koneksi.
+func (t *smtpTransport) tlsConfig() *tls.Config {
+	if t.config.TLSConfig != nil {
+		return t.config.TLSConfig
+	}
+	return &tls.Config{ServerName: t.config.Host, MinVersion: tls.VersionTLS12}
+}
+
 func (t *smtpTransport) Send(ctx context.Context, raw []byte, from string, recipients []string) error {
 	address := fmt.Sprintf("%s:%d", t.config.Host, t.config.Port)
 	dialer := &net.Dialer{Timeout: t.config.Timeout}
@@ -97,7 +126,7 @@ func (t *smtpTransport) Send(ctx context.Context, raw []byte, from string, recip
 	var conn net.Conn
 	var err error
 	if t.config.UseTLS {
-		conn, err = tls.DialWithDialer(dialer, "tcp", address, &tls.Config{ServerName: t.config.Host, MinVersion: tls.VersionTLS12})
+		conn, err = tls.DialWithDialer(dialer, "tcp", address, t.tlsConfig())
 	} else {
 		conn, err = dialer.DialContext(ctx, "tcp", address)
 	}
@@ -120,12 +149,24 @@ func (t *smtpTransport) Send(ctx context.Context, raw []byte, from string, recip
 	}
 	_ = conn.SetDeadline(deadline)
 
+	// Server submission pada porta 587 menerima koneksi polos lalu menawarkan
+	// STARTTLS. Peningkatan ke TLS dilakukan sebelum autentikasi karena
+	// kredensial tidak boleh dikirim lewat koneksi polos.
+	if !t.config.UseTLS {
+		if err := startTLSIfOffered(client, t.tlsConfig()); err != nil {
+			return err
+		}
+		// Handshake TLS memperbarui batas waktu: batas sebelumnya bisa
+		// sudah habis.
+		_ = conn.SetDeadline(deadline)
+	}
+
 	if t.config.Username != "" {
 		if err := client.Auth(smtp.PlainAuth("", t.config.Username, t.config.Password, t.config.Host)); err != nil {
 			return fmt.Errorf("authenticate smtp: %w", err)
 		}
 	}
-	if err := client.Mail(from); err != nil {
+	if err := client.Mail(EnvelopeSender(from)); err != nil {
 		return fmt.Errorf("smtp mail command: %w", err)
 	}
 	for _, recipient := range recipients {

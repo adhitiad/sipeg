@@ -19,10 +19,10 @@ var (
 
 // Sort allowlist untuk daftar periode SKP.
 var SKPPeriodeSortColumns = map[string]string{
-	"tahun":       `"tahun"`,
-	"semester":    `"semester"`,
-	"status":      `"status"`,
-	"createdAt":   `"createdAt"`,
+	"tahun":     `"tahun"`,
+	"semester":  `"semester"`,
+	"status":    `"status"`,
+	"createdAt": `"createdAt"`,
 }
 
 // SKPPeriodeSortFields mengembalikan kunci sort yang valid untuk daftar periode SKP.
@@ -32,12 +32,12 @@ func SKPPeriodeSortFields() []string {
 
 // Sort allowlist untuk daftar target kinerja SKP.
 var SKPTargetSortColumns = map[string]string{
-	"uraian":     `"uraian"`,
-	"target":     `"target"`,
-	"realisasi":  `"realisasi"`,
-	"bobot":      `"bobot"`,
-	"status":     `"status"`,
-	"createdAt":  `"createdAt"`,
+	"uraian":    `"uraian"`,
+	"target":    `"target"`,
+	"realisasi": `"realisasi"`,
+	"bobot":     `"bobot"`,
+	"status":    `"status"`,
+	"createdAt": `"createdAt"`,
 }
 
 // SKPTargetSortFields mengembalikan kunci sort yang valid untuk daftar target kinerja.
@@ -60,10 +60,10 @@ func LogAktivitasSortFields() []string {
 
 // Sort allowlist untuk daftar penilaian kinerja akhir.
 var PenilaianSortColumns = map[string]string{
-	"nilaiAkhir":     `"nilaiAkhir"`,
-	"predikat":       `"predikat"`,
+	"nilaiAkhir":       `"nilaiAkhir"`,
+	"predikat":         `"predikat"`,
 	"tanggalPenilaian": `"tanggalPenilaian"`,
-	"createdAt":      `"createdAt"`,
+	"createdAt":        `"createdAt"`,
 }
 
 // PenilaianSortFields mengembalikan kunci sort yang valid untuk daftar penilaian akhir.

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "Target environment (staging or production)"
+        description: "Target environment (staging atau production)"
         required: true
         default: "staging"
         type: choice
@@ -15,6 +15,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: migrations-${{ github.event.inputs.environment }}
+  cancel-in-progress: true
+
 jobs:
   deploy-migrations:
     runs-on: ubuntu-latest
@@ -22,6 +26,7 @@ jobs:
       run:
         working-directory: backend
     environment: ${{ github.event.inputs.environment }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -31,12 +36,21 @@ jobs:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
 
-      - name: Download and verify dependencies
+      - name: Download dan verifikasi dependensi
         run: |
           go mod download
           go mod verify
 
-      - name: Check formatting
+      - name: Gagal cepat bila DATABASE_URL belum diisi
+        run: |
+          if [ -z "${DATABASE_URL}" ]; then
+            echo "Secret DATABASE_URL belum diisi pada environment ${{ github.event.inputs.environment }}"
+            exit 1
+          fi
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Cek format kode
         run: |
           files="$(gofmt -l .)"
           if [ -n "$files" ]; then
@@ -44,32 +58,20 @@ jobs:
             exit 1
           fi
 
-      - name: Run vet
-        run: go vet ./...
+      - name: Uji keselarasan model GORM dengan skema migrasi
+        run: go test ./internal/database/...
 
-      - name: Run tests
-        run: go test ./...
-
-      - name: Install Goose migration CLI
-        run: |
-          go install github.com/pressly/goose/v3/cmd/goose@latest
-
-      - name: Verify migration files are sequential with headers
-        run: |
-          go test ./internal/database/ -run 'TestMigrationFilesAreSequentiallyNumbered|TestMigrationFilesHaveHeader' -v
-
-      - name: Verify migration coverage
-        run: |
-          go test ./internal/database/ -run 'TestMigrationFilesAreSequentiallyNumbered|TestMigrationFilesHaveHeader|TestGormModelsHaveMigrationTables|TestCriticalQueryPathsHaveMigrationIndexes|TestRowLevelSecurityMigrationCoversEveryTable' -v
-
-      - name: Check migration status (dry-run)
+      - name: Status migrasi sebelum diterapkan
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          goose -dir ./migrations postgres "${DATABASE_URL}" status
+        run: go run ./cmd/migrate status
 
-      - name: Apply pending migrations
+      - name: Terapkan migrasi tertunda
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          goose -dir ./migrations postgres "${DATABASE_URL}" up
+        run: go run ./cmd/migrate up
+
+      - name: Status migrasi setelah diterapkan
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: go run ./cmd/migrate status

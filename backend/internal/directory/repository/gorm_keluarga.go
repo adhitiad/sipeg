@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"simpeg/backend/internal/audit"
+	"simpeg/backend/internal/crypto"
 	"simpeg/backend/internal/directory/domain"
 	"simpeg/backend/internal/listing"
 	"simpeg/backend/internal/models"
@@ -19,14 +20,21 @@ import (
 func (s GormStore) ListKeluarga(ctx context.Context, options listing.Options) ([]models.KeluargaPegawai, int64, error) {
 	query := s.DB.WithContext(ctx).Model(&models.KeluargaPegawai{})
 	if options.UserID != "" {
-		query = query.Where("userId = ?", options.UserID)
+		query = query.Where(`"userId" = ?`, options.UserID)
 	}
 	if len(options.ScopeHomebaseIDs) > 0 {
-		query = query.Where("userId IN (SELECT id FROM user WHERE homebaseId IN ?)", options.ScopeHomebaseIDs)
+		query = query.Where(`"userId" IN (SELECT "id" FROM "user" WHERE "homebaseId" IN ?)`, options.ScopeHomebaseIDs)
 	}
 	if options.Search != "" {
 		pattern := "%" + escapeLike(options.Search) + "%"
-		query = query.Where("(nama ILIKE ? ESCAPE '\\' OR nik ILIKE ? ESCAPE '\\')", pattern, pattern)
+		// NIK keluarga terenkripsi tidak dapat dicocokkan dengan ILIKE;
+		// pencarian pada NIK memakai blind index (kesetaraan persis setelah
+		// normalisasi). Kolom nama tetap dicari sebagai substring.
+		nikHash, err := crypto.BlindIndex(options.Search)
+		if err != nil {
+			return nil, 0, fmt.Errorf("blind index pencarian NIK keluarga: %w", err)
+		}
+		query = query.Where(`(nama ILIKE ? ESCAPE '\' OR "nikHash" = ?)`, pattern, nikHash)
 	}
 
 	var total int64
@@ -56,6 +64,9 @@ func (s GormStore) GetKeluarga(ctx context.Context, id string) (models.KeluargaP
 
 func (s GormStore) CreateKeluarga(ctx context.Context, actorID string, item models.KeluargaPegawai) (models.KeluargaPegawai, error) {
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := setKeluargaNikHash(&item); err != nil {
+			return err
+		}
 		if err := tx.Create(&item).Error; err != nil {
 			return classifyRecordError(err)
 		}
@@ -65,9 +76,12 @@ func (s GormStore) CreateKeluarga(ctx context.Context, actorID string, item mode
 }
 
 func (s GormStore) UpdateKeluarga(ctx context.Context, actorID, id string, patch domain.KeluargaPatch) (models.KeluargaPegawai, error) {
-	updates := keluargaColumns(patch)
+	updates, err := keluargaColumns(patch)
+	if err != nil {
+		return models.KeluargaPegawai{}, err
+	}
 	var item models.KeluargaPegawai
-	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&item).Error; err != nil {
 			return classifyRecordError(err)
 		}
@@ -99,7 +113,12 @@ func (s GormStore) ArchiveKeluarga(ctx context.Context, actorID, id string) erro
 	})
 }
 
-func keluargaColumns(patch domain.KeluargaPatch) map[string]any {
+// keluargaColumns memetakan patch domain menjadi kolom database.
+//
+// Kolom terenkripsi (nik) ditulis sebagai ciphertext eksplisit beserta blind
+// index-nya; keduanya selalu diisi berpasangan. NIK pada keluarga bersifat
+// wajib sehingga tidak dapat dikosongkan lewat patch.
+func keluargaColumns(patch domain.KeluargaPatch) (map[string]any, error) {
 	updates := make(map[string]any)
 	if patch.Hubungan.Present {
 		if patch.Hubungan.Null {
@@ -116,11 +135,20 @@ func keluargaColumns(patch domain.KeluargaPatch) map[string]any {
 		}
 	}
 	if patch.NIK.Present {
-		if patch.NIK.Null {
-			updates["nik"] = nil
-		} else {
-			updates["nik"] = strings.TrimSpace(patch.NIK.Value)
+		nik := strings.TrimSpace(patch.NIK.Value)
+		if patch.NIK.Null || nik == "" {
+			return nil, fmt.Errorf("NIK keluarga tidak dapat dikosongkan: %w", domain.ErrValidation)
 		}
+		ciphertext, err := crypto.Encrypt(nik)
+		if err != nil {
+			return nil, fmt.Errorf("enkripsi NIK keluarga: %w", err)
+		}
+		updates["nik"] = ciphertext
+		hash, err := crypto.BlindIndex(nik)
+		if err != nil {
+			return nil, fmt.Errorf("blind index NIK keluarga: %w", err)
+		}
+		updates["nikHash"] = hash
 	}
 	if patch.TanggalLahir.Present {
 		if patch.TanggalLahir.Null {
@@ -143,5 +171,5 @@ func keluargaColumns(patch domain.KeluargaPatch) map[string]any {
 			updates["statusTanggungan"] = patch.StatusTanggungan.Value
 		}
 	}
-	return updates
+	return updates, nil
 }

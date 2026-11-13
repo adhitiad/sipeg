@@ -95,6 +95,9 @@ func (api directoryAPI) createPotongan(w http.ResponseWriter, r *http.Request) {
 		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidJSON)
 		return
 	}
+	if !requireUUID(w, request.UserID) {
+		return
+	}
 	input := payrolldomain.CreateKomponenPotongan{
 		UserID:         request.UserID,
 		JenisPotongan:  strings.TrimSpace(request.JenisPotongan),

@@ -18,14 +18,14 @@ import (
 func (s GormStore) ListSister(ctx context.Context, options listing.Options) ([]models.SisterSyncMap, int64, error) {
 	query := s.DB.WithContext(ctx).Model(&models.SisterSyncMap{})
 	if options.UserID != "" {
-		query = query.Where("userId = ?", options.UserID)
+		query = query.Where(`"userId" = ?`, options.UserID)
 	}
 	if len(options.ScopeHomebaseIDs) > 0 {
-		query = query.Where("userId IN (SELECT id FROM user WHERE homebaseId IN ?)", options.ScopeHomebaseIDs)
+		query = query.Where(`"userId" IN (SELECT "id" FROM "user" WHERE "homebaseId" IN ?)`, options.ScopeHomebaseIDs)
 	}
 	if options.Search != "" {
 		pattern := "%" + escapeLike(options.Search) + "%"
-		query = query.Where("idEksternal ILIKE ? ESCAPE '\\'", pattern)
+		query = query.Where(`"idEksternal" ILIKE ? ESCAPE '\'`, pattern)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {

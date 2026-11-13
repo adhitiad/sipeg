@@ -20,6 +20,7 @@ type DirectoryServices struct {
 	Tridharma     *tridharmaapp.TridharmaService
 	Keluarga      *app.KeluargaService
 	Golongan      *app.GolonganService
+	Jabatan       *app.JabatanService
 	Arsip         *app.ArsipService
 	Sertifikasi   *app.SertifikasiService
 	Pelatihan     *app.PelatihanService
@@ -40,6 +41,16 @@ func RegisterDirectoryRoutes(mux *http.ServeMux, resolver auth.SessionResolver, 
 		skp:           services.SKP,
 		tridharma:     services.Tridharma,
 		leave:         services.Leave,
+		keluarga:      services.Keluarga,
+		golongan:      services.Golongan,
+		jabatan:       services.Jabatan,
+		arsip:         services.Arsip,
+		sertifikasi:   services.Sertifikasi,
+		pelatihan:     services.Pelatihan,
+		sister:        services.Sister,
+		penghargaan:   services.Penghargaan,
+		tunjangan:     services.Tunjangan,
+		potongan:      services.Potongan,
 	}
 	protected := func(permission auth.Permission, handler http.Handler) http.Handler {
 		return auth.Authenticate(resolver)(auth.RequirePermission(policy, permission, handler))
@@ -49,6 +60,7 @@ func RegisterDirectoryRoutes(mux *http.ServeMux, resolver auth.SessionResolver, 
 	}
 
 	mux.Handle("GET "+APIPrefix+"/employees", protectedAny([]auth.Permission{"employee:read:any", "employee:read:homebase", "employee:read:self"}, http.HandlerFunc(api.listEmployees)))
+	mux.Handle("GET "+APIPrefix+"/employees/summary", protectedAny([]auth.Permission{"employee:read:any", "employee:read:homebase", "employee:read:self"}, http.HandlerFunc(api.summaryEmployees)))
 	mux.Handle("POST "+APIPrefix+"/employees", protectedAny([]auth.Permission{"employee:create", "employee:create:homebase"}, http.HandlerFunc(api.createEmployee)))
 	mux.Handle("GET "+APIPrefix+"/employees/import-template.csv", protectedAny([]auth.Permission{"employee:import", "employee:import:homebase"}, http.HandlerFunc(api.employeeImportTemplate)))
 	mux.Handle("POST "+APIPrefix+"/employees/import", protectedAny([]auth.Permission{"employee:import", "employee:import:homebase"}, http.HandlerFunc(api.importEmployees)))
@@ -66,6 +78,14 @@ func RegisterDirectoryRoutes(mux *http.ServeMux, resolver auth.SessionResolver, 
 	mux.Handle("GET "+APIPrefix+"/audit-logs", protectedAny([]auth.Permission{"audit:read", "audit:read:homebase"}, http.HandlerFunc(api.listAuditLogs)))
 	mux.Handle("GET "+APIPrefix+"/audit-logs/export", protectedAny([]auth.Permission{"audit:read", "audit:read:homebase"}, http.HandlerFunc(api.exportAuditLogs)))
 	mux.Handle("GET "+APIPrefix+"/categories", protected("category:read", http.HandlerFunc(api.listCategories)))
+
+	if api.jabatan != nil {
+		mux.Handle("GET "+APIPrefix+"/jabatan", protected("jabatan:read", http.HandlerFunc(api.listJabatans)))
+		mux.Handle("POST "+APIPrefix+"/jabatan", protected("jabatan:manage", http.HandlerFunc(api.createJabatan)))
+		mux.Handle("GET "+APIPrefix+"/jabatan/{jabatanId}", protected("jabatan:read", http.HandlerFunc(api.getJabatan)))
+		mux.Handle("PATCH "+APIPrefix+"/jabatan/{jabatanId}", protected("jabatan:manage", http.HandlerFunc(api.updateJabatan)))
+		mux.Handle("DELETE "+APIPrefix+"/jabatan/{jabatanId}", protected("jabatan:manage", http.HandlerFunc(api.archiveJabatan)))
+	}
 
 	// ═══════════════════════════ HR Extensions ═══════════════════════════
 

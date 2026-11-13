@@ -2,6 +2,8 @@ package models
 
 import (
 	"time"
+
+	"simpeg/backend/internal/crypto"
 )
 
 // KeluargaPegawai mencatat data keluarga dan tanggungan pegawai
@@ -11,8 +13,9 @@ type KeluargaPegawai struct {
 	UserId           string                `gorm:"type:uuid;index:keluarga_pegawai_user_idx"`
 	Hubungan         JenisHubunganKeluarga `gorm:"type:JenisHubunganKeluarga;index:keluarga_pegawai_hubungan_idx"`
 	Nama             string
-	Nik              string    `gorm:"index:keluarga_pegawai_nik_idx"`
-	TanggalLahir     time.Time `gorm:"type:date"`
+	Nik              crypto.Encrypted `gorm:"column:nik"`
+	NikHash          *string          `gorm:"column:nikHash"`
+	TanggalLahir     time.Time        `gorm:"type:date"`
 	Pekerjaan        *string
 	StatusTanggungan StatusTanggungan `gorm:"type:StatusTanggungan;default:'TANGGUNGAN'"`
 }

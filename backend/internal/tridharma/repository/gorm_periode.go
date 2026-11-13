@@ -26,7 +26,7 @@ func (s GormStore) ListPeriodeAkademik(ctx context.Context, options listing.Opti
 		return nil, 0, fmt.Errorf("count periode akademik: %w", err)
 	}
 	var items []models.PeriodeAkademik
-	order := listing.OrderClause(sortColumnsPeriodeAkademik, options.Sort, options.Order, "tahun")
+	order := listing.OrderClause(tridharmadomain.PeriodeAkademikSortColumns, options.Sort, options.Order, "tahun")
 	err := query.Order(order).
 		Offset((options.Page - 1) * options.PageSize).
 		Limit(options.PageSize).
@@ -109,7 +109,7 @@ func (s GormStore) ListEvaluasiBKD(ctx context.Context, options listing.Options)
 		return nil, 0, fmt.Errorf("count evaluasi BKD: %w", err)
 	}
 	var items []models.EvaluasiBKD
-	order := listing.OrderClause(sortColumnsEvaluasiBKD, options.Sort, options.Order, "tanggalEvaluasi")
+	order := listing.OrderClause(tridharmadomain.EvaluasiBKDSortColumns, options.Sort, options.Order, "tanggalEvaluasi")
 	err := query.Order(order).
 		Offset((options.Page - 1) * options.PageSize).
 		Limit(options.PageSize).

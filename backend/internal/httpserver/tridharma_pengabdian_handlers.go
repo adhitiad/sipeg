@@ -126,6 +126,9 @@ func (api directoryAPI) createTridharmaPengabdian(w http.ResponseWriter, r *http
 		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidJSON)
 		return
 	}
+	if !requireUUID(w, request.UserID, request.PeriodeAkademikID) {
+		return
+	}
 
 	principal, _ := auth.PrincipalFromContext(r.Context())
 	item := models.TridharmaPengabdian{
@@ -167,6 +170,9 @@ func (api directoryAPI) updateTridharmaPengabdian(w http.ResponseWriter, r *http
 	var request tridharmaPengabdianPatchRequest
 	if err := decodeJSON(w, r, &request); err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidJSON)
+		return
+	}
+	if !requireOptionalUUID(w, request.DinilaiOleh) {
 		return
 	}
 

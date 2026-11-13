@@ -126,6 +126,9 @@ func (api directoryAPI) createTridharmaPenelitian(w http.ResponseWriter, r *http
 		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidJSON)
 		return
 	}
+	if !requireUUID(w, request.UserID, request.PeriodeAkademikID) {
+		return
+	}
 
 	principal, _ := auth.PrincipalFromContext(r.Context())
 	item := models.TridharmaPenelitian{
@@ -167,6 +170,9 @@ func (api directoryAPI) updateTridharmaPenelitian(w http.ResponseWriter, r *http
 	var request tridharmaPenelitianPatchRequest
 	if err := decodeJSON(w, r, &request); err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidJSON)
+		return
+	}
+	if !requireOptionalUUID(w, request.DinilaiOleh) {
 		return
 	}
 

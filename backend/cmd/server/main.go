@@ -16,12 +16,15 @@ import (
 	"simpeg/backend/internal/cache"
 	"simpeg/backend/internal/cloudinary"
 	"simpeg/backend/internal/config"
+	"simpeg/backend/internal/crypto"
 	"simpeg/backend/internal/database"
 	"simpeg/backend/internal/directory/app"
 	"simpeg/backend/internal/directory/repository"
 	"simpeg/backend/internal/holiday"
 	"simpeg/backend/internal/httpserver"
 	"simpeg/backend/internal/jobs"
+	meapp "simpeg/backend/internal/me/app"
+	merepository "simpeg/backend/internal/me/repository"
 	"simpeg/backend/internal/observability"
 	"simpeg/backend/internal/outbox"
 	payrollapp "simpeg/backend/internal/payroll/app"
@@ -42,6 +45,13 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("config: %v", err)
+	}
+	if len(cfg.PIIEncryptionKey) > 0 {
+		if err := crypto.Configure(cfg.PIIEncryptionKey); err != nil {
+			log.Fatalf("crypto: %v", err)
+		}
+	} else {
+		log.Printf("crypto: PII_ENCRYPTION_KEY tidak dikonfigurasi; kolom PII tidak dapat dibaca/ditulis (hanya sah di luar production)")
 	}
 
 	db, err := database.OpenPostgres(cfg.DatabaseURL)
@@ -87,6 +97,9 @@ func main() {
 	payrollStore := payrollrepository.GormStore{DB: db}
 	payrollService := payrollapp.NewService(payrollStore, policy, store)
 
+	// Layanan profil mandiri: principal mengubah nama/nomor HP miliknya sendiri.
+	meService := meapp.NewService(merepository.GormStore{DB: db})
+
 	// Cache daftar kategori pegawai memakai Redis bila dikonfigurasi. Tanpa
 	// Redis, pembacaan tetap langsung ke PostgreSQL.
 	var categoryCache *cache.Cache
@@ -117,6 +130,7 @@ func main() {
 		Tridharma:     tridharmaapp.NewTridharmaService(tridharmaStore, policy, store),
 		Keluarga:      app.NewKeluargaService(store, policy, store),
 		Golongan:      app.NewGolonganService(store, policy, store),
+		Jabatan:       app.NewJabatanService(store, policy),
 		Arsip:         app.NewArsipService(store, policy, store),
 		Sertifikasi:   app.NewSertifikasiService(store, policy, store),
 		Pelatihan:     app.NewPelatihanService(store, policy, store),
@@ -149,7 +163,12 @@ func main() {
 
 	// Pengoleki metrik SLO dan pemeriksaan target layanan. Pengoleki hanya
 	// aktif bila SLO_ENABLED disetel; tanpa itu backend tidak menulis metrik
-	// apa pun dan tidak menambah beban pada jalur permintaan.
+	// apa pun dan tidak menambah beban pada jalur permintaan. Dasbor admin
+	// tetap terdaftar dan menampilkan tabel kosong bila pengoleki tidak
+	// pernah menulis metrik.
+	sloDashboard := sloapp.NewDashboardService(sloapp.DashboardOptions{
+		Repository: slorepository.NewGormStore(db),
+	})
 	var sloCollector *slo.Collector
 	var sloService *sloapp.Service
 	if cfg.SLOEnabled() {
@@ -223,9 +242,11 @@ func main() {
 		Holiday:           holidayService,
 		QStash:            qstashOptions,
 		SLO:               sloOptions,
+		SLODashboard:      sloDashboard,
 		SessionRevoker:    auth.GormSessionRevoker{DB: db},
 		SessionIssuer:     sessionIssuer,
 		Cloudinary:        cloudinaryService,
+		Me:                meService,
 		ReadinessCheckers: []httpserver.DependencyChecker{database.PingChecker{DB: db}},
 	})
 

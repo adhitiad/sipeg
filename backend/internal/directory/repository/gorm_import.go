@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"simpeg/backend/internal/audit"
+	"simpeg/backend/internal/crypto"
 	"simpeg/backend/internal/directory/domain"
 	"simpeg/backend/internal/models"
 
@@ -34,8 +35,15 @@ func (s GormStore) CreateEmployees(ctx context.Context, actorID string, employee
 		if err != nil {
 			return err
 		}
-		if index, field, conflict := existing.firstConflict(employees); conflict {
+		if index, field, conflict, err := existing.firstConflict(employees); err != nil {
+			return err
+		} else if conflict {
 			return &domain.EmployeeConflictError{Index: index, Field: field}
+		}
+		for i := range employees {
+			if err := setIdentityHashes(&employees[i]); err != nil {
+				return fmt.Errorf("identitas baris %d: %w", i, err)
+			}
 		}
 
 		entries := make([]audit.Entry, 0, len(employees)+1)
@@ -112,8 +120,8 @@ func (found *existingIdentity) scanChunk(tx *gorm.DB, chunk []models.User) error
 	nidks := make([]string, 0, len(chunk))
 	for _, employee := range chunk {
 		emails = append(emails, strings.ToLower(employee.Email))
-		if employee.Nip != nil {
-			nips = append(nips, *employee.Nip)
+		if nip := crypto.Deref(employee.Nip); nip != "" {
+			nips = append(nips, nip)
 		}
 		if employee.Nidn != nil {
 			nidns = append(nidns, *employee.Nidn)
@@ -135,15 +143,23 @@ func (found *existingIdentity) scanChunk(tx *gorm.DB, chunk []models.User) error
 		}
 	}
 
-	var existingNips []string
+	var existingNipHashes []string
 	if len(nips) > 0 {
-		err := tx.Model(&models.User{}).Where("nip IN ?", nips).
-			Pluck("nip", &existingNips).Error
+		nipHashes := make([]string, 0, len(nips))
+		for _, nip := range nips {
+			hash, err := crypto.BlindIndex(nip)
+			if err != nil {
+				return fmt.Errorf("blind index NIP: %w", err)
+			}
+			nipHashes = append(nipHashes, hash)
+		}
+		err := tx.Model(&models.User{}).Where(`"nipHash" IN ?`, nipHashes).
+			Pluck("nipHash", &existingNipHashes).Error
 		if err != nil {
 			return fmt.Errorf("scan existing employee nip: %w", err)
 		}
-		for _, nip := range existingNips {
-			found.nips[nip] = struct{}{}
+		for _, hash := range existingNipHashes {
+			found.nips[hash] = struct{}{}
 		}
 	}
 
@@ -179,26 +195,30 @@ func (found *existingIdentity) scanChunk(tx *gorm.DB, chunk []models.User) error
 // Urutan pemeriksaan mengikuti urutan kolom pada model: email, NIP, NIDN, lalu
 // NIDK. Bentrok di dalam batch sendiri bukan hasil pemeriksaan ini; yang
 // tertangkap indeks unik saat penyimpanan.
-func (found existingIdentity) firstConflict(employees []models.User) (int, string, bool) {
+func (found existingIdentity) firstConflict(employees []models.User) (int, string, bool, error) {
 	for index, employee := range employees {
 		if _, exists := found.emails[strings.ToLower(employee.Email)]; exists {
-			return index, "email", true
+			return index, "email", true, nil
 		}
-		if employee.Nip != nil {
-			if _, exists := found.nips[*employee.Nip]; exists {
-				return index, "nip", true
+		if nip := crypto.Deref(employee.Nip); nip != "" {
+			hash, err := crypto.BlindIndex(nip)
+			if err != nil {
+				return 0, "", false, fmt.Errorf("blind index NIP: %w", err)
+			}
+			if _, exists := found.nips[hash]; exists {
+				return index, "nip", true, nil
 			}
 		}
 		if employee.Nidn != nil {
 			if _, exists := found.nidns[*employee.Nidn]; exists {
-				return index, "nidn", true
+				return index, "nidn", true, nil
 			}
 		}
 		if employee.Nidk != nil {
 			if _, exists := found.nidks[*employee.Nidk]; exists {
-				return index, "nidk", true
+				return index, "nidk", true, nil
 			}
 		}
 	}
-	return 0, "", false
+	return 0, "", false, nil
 }

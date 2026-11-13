@@ -92,6 +92,9 @@ func (api directoryAPI) createPenghargaan(w http.ResponseWriter, r *http.Request
 		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidJSON)
 		return
 	}
+	if !requireUUID(w, request.UserID) {
+		return
+	}
 	input := domain.CreateRiwayatPenghargaan{
 		UserID:           request.UserID,
 		NamaPenghargaan:  strings.TrimSpace(request.NamaPenghargaan),

@@ -29,7 +29,7 @@ func (s GormStore) ListTridharmaPendidikan(ctx context.Context, options listing.
 		return nil, 0, fmt.Errorf("count tridharma pendidikan: %w", err)
 	}
 	var items []models.TridharmaPendidikan
-	order := listing.OrderClause(sortColumnsTridharmaPendidikan, options.Sort, options.Order, "createdAt")
+	order := listing.OrderClause(tridharmadomain.TridharmaPendidikanSortColumns, options.Sort, options.Order, "createdAt")
 	err := query.Order(order).
 		Offset((options.Page - 1) * options.PageSize).
 		Limit(options.PageSize).
@@ -118,7 +118,7 @@ func (s GormStore) ListTridharmaPenelitian(ctx context.Context, options listing.
 		return nil, 0, fmt.Errorf("count tridharma penelitian: %w", err)
 	}
 	var items []models.TridharmaPenelitian
-	order := listing.OrderClause(sortColumnsTridharmaPenelitian, options.Sort, options.Order, "createdAt")
+	order := listing.OrderClause(tridharmadomain.TridharmaPenelitianSortColumns, options.Sort, options.Order, "createdAt")
 	err := query.Order(order).
 		Offset((options.Page - 1) * options.PageSize).
 		Limit(options.PageSize).
@@ -207,7 +207,7 @@ func (s GormStore) ListTridharmaPengabdian(ctx context.Context, options listing.
 		return nil, 0, fmt.Errorf("count tridharma pengabdian: %w", err)
 	}
 	var items []models.TridharmaPengabdian
-	order := listing.OrderClause(sortColumnsTridharmaPengabdian, options.Sort, options.Order, "createdAt")
+	order := listing.OrderClause(tridharmadomain.TridharmaPengabdianSortColumns, options.Sort, options.Order, "createdAt")
 	err := query.Order(order).
 		Offset((options.Page - 1) * options.PageSize).
 		Limit(options.PageSize).

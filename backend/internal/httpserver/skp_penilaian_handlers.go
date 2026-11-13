@@ -113,6 +113,9 @@ func (api directoryAPI) createPenilaian(w http.ResponseWriter, r *http.Request) 
 		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidJSON)
 		return
 	}
+	if !requireUUID(w, request.UserID, request.SKPPeriodeID) {
+		return
+	}
 
 	tanggalPenilaian, err := time.Parse("2006-01-02", strings.TrimSpace(request.TanggalPenilaian))
 	if err != nil {

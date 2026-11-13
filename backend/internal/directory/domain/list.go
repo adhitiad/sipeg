@@ -8,11 +8,12 @@ import (
 // sumber kebenaran; kolom SQL tidak pernah berasal dari input mentah pengguna.
 // Nama kolom memakai kutip ganda karena skema acuan memakai camelCase.
 var (
+	// Kolom terenkripsi (nik/nip/npwp) tidak dapat diurutkan; sort NIP
+	// dihapus karena ciphertext acak tidak mengikuti urutan plaintext.
 	EmployeeSortColumns = map[string]string{
-		"nama":      `"nama"`,
-		"nip":       `"nip"`,
-		"createdAt": `"createdAt"`,
-		"updatedAt": `"updatedAt"`,
+		"nama":      `"user"."nama"`,
+		"createdAt": `"user"."createdAt"`,
+		"updatedAt": `"user"."updatedAt"`,
 	}
 	OrganizationSortColumns = map[string]string{
 		"name":      `"name"`,
@@ -30,9 +31,16 @@ var (
 		"createdAt": `"createdAt"`,
 		"updatedAt": `"updatedAt"`,
 	}
+	JabatanSortColumns = map[string]string{
+		"nama":      `"nama"`,
+		"jenis":     `"jenis"`,
+		"createdAt": `"createdAt"`,
+		"updatedAt": `"updatedAt"`,
+	}
+	// Kolom terenkripsi (nik) tidak dapat diurutkan; sort NIK dihapus karena
+	// ciphertext acak tidak mengikuti urutan plaintext.
 	KeluargaSortColumns = map[string]string{
 		"nama":             `"nama"`,
-		"nik":              `"nik"`,
 		"tanggalLahir":     `"tanggalLahir"`,
 		"statusTanggungan": `"statusTanggungan"`,
 		"createdAt":        `"createdAt"`,
@@ -115,3 +123,6 @@ func SisterSortFields() []string { return listing.SortKeys(SisterSortColumns) }
 
 // PenghargaanSortFields mengembalikan kunci sort yang valid untuk daftar penghargaan.
 func PenghargaanSortFields() []string { return listing.SortKeys(PenghargaanSortColumns) }
+
+// JabatanSortFields mengembalikan kunci sort yang valid untuk daftar jabatan.
+func JabatanSortFields() []string { return listing.SortKeys(JabatanSortColumns) }

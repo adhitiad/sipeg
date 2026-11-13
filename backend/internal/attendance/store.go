@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"simpeg/backend/internal/auth"
+	"simpeg/backend/internal/crypto"
 	"simpeg/backend/internal/models"
 )
 
@@ -39,9 +40,22 @@ type StatusCount struct {
 	Count  int64
 }
 
+// UnitDayRow adalah satu pegawai aktif dalam cakupan beserta catatan
+// kehadirannya untuk sebuah tanggal. `Status` nil berarti belum tercatat.
+type UnitDayRow struct {
+	UserID   string
+	Nama     string
+	Nip      *crypto.Encrypted
+	UnitID   *string
+	UnitName *string
+	Status   *models.StatusPresensi
+	Note     *string
+}
+
 type RecordReader interface {
 	ListMyRecords(context.Context, string, RecordFilter) ([]models.Presensi, int64, error)
 	ListUnitSummary(context.Context, []string, RecordFilter) ([]StatusCount, error)
+	ListUnitDay(context.Context, []string, time.Time) ([]UnitDayRow, error)
 }
 
 type UnitScopeReader interface {

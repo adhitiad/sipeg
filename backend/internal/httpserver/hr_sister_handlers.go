@@ -88,6 +88,9 @@ func (api directoryAPI) createSister(w http.ResponseWriter, r *http.Request) {
 		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidJSON)
 		return
 	}
+	if !requireUUID(w, request.UserID) {
+		return
+	}
 	input := domain.CreateSisterSyncMap{
 		UserID:          request.UserID,
 		SistemEksternal: models.SistemEksternal(request.SistemEksternal),

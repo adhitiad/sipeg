@@ -29,7 +29,7 @@ func (s GormStore) ListTridharmaPenunjang(ctx context.Context, options listing.O
 		return nil, 0, fmt.Errorf("count tridharma penunjang: %w", err)
 	}
 	var items []models.TridharmaPenunjang
-	order := listing.OrderClause(sortColumnsTridharmaPenunjang, options.Sort, options.Order, "createdAt")
+	order := listing.OrderClause(tridharmadomain.TridharmaPenunjangSortColumns, options.Sort, options.Order, "createdAt")
 	err := query.Order(order).
 		Offset((options.Page - 1) * options.PageSize).
 		Limit(options.PageSize).

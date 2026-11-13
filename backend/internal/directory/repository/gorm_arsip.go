@@ -17,10 +17,10 @@ import (
 func (s GormStore) ListArsip(ctx context.Context, options listing.Options) ([]models.ArsipDokumenPegawai, int64, error) {
 	query := s.DB.WithContext(ctx).Model(&models.ArsipDokumenPegawai{})
 	if options.UserID != "" {
-		query = query.Where("userId = ?", options.UserID)
+		query = query.Where(`"userId" = ?`, options.UserID)
 	}
 	if len(options.ScopeHomebaseIDs) > 0 {
-		query = query.Where("userId IN (SELECT id FROM user WHERE homebaseId IN ?)", options.ScopeHomebaseIDs)
+		query = query.Where(`"userId" IN (SELECT "id" FROM "user" WHERE "homebaseId" IN ?)`, options.ScopeHomebaseIDs)
 	}
 	if options.Search != "" {
 		pattern := "%" + escapeLike(options.Search) + "%"

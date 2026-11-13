@@ -29,6 +29,10 @@ const (
 	ActionSessionRevoked          = "session.revoked"
 	ActionAuditAccessed           = "audit.accessed"
 
+	// ActionProfileUpdated menandai pembaruan profil mandiri (nama atau nomor
+	// HP) oleh principal sendiri. Jejak hanya memuat nama kolom, bukan nilai.
+	ActionProfileUpdated = "profile.updated"
+
 	// ActionAuthorizationDenied menandai akses yang ditolak karena role tidak
 	// memegang izin yang diminta. Jejak hanya memuat aktor, izin, dan pola
 	// route, bukan isi sumber daya yang ditolak.
@@ -110,6 +114,10 @@ const (
 	ActionCutiUpdated  = "cuti.updated"
 	ActionCutiApproved = "cuti.approved"
 	ActionCutiRejected = "cuti.rejected"
+
+	ActionJabatanCreated  = "jabatan.created"
+	ActionJabatanUpdated  = "jabatan.updated"
+	ActionJabatanArchived = "jabatan.archived"
 )
 
 // Entry menggambarkan satu catatan jejak audit.

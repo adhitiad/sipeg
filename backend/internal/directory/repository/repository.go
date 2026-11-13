@@ -25,6 +25,16 @@ type EmployeeRepository interface {
 	UpdateEmployee(context.Context, string, string, domain.EmployeePatch) (models.User, error)
 	AssignEmployeeRole(context.Context, string, string, string) (models.User, error)
 	ArchiveEmployee(context.Context, string, string) error
+	CountEmployeesSummary(context.Context, listing.Options) (domain.EmployeeSummary, error)
+}
+
+// JabatanRepository adalah port persistensi master jabatan.
+type JabatanRepository interface {
+	ListJabatans(context.Context, listing.Options) ([]models.Jabatan, int64, error)
+	GetJabatan(context.Context, string) (models.Jabatan, error)
+	CreateJabatan(context.Context, string, models.Jabatan) (models.Jabatan, error)
+	UpdateJabatan(context.Context, string, string, domain.JabatanPatch) (models.Jabatan, error)
+	ArchiveJabatan(context.Context, string, string) error
 }
 
 // OrganizationRepository adalah port persistensi unit organisasi.

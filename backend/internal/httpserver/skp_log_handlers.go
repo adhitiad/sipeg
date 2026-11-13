@@ -108,6 +108,9 @@ func (api directoryAPI) createLogAktivitas(w http.ResponseWriter, r *http.Reques
 		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidJSON)
 		return
 	}
+	if !requireUUID(w, request.UserID) {
+		return
+	}
 
 	tanggal, err := time.Parse("2006-01-02", strings.TrimSpace(request.Tanggal))
 	if err != nil {

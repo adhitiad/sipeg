@@ -117,6 +117,9 @@ func (api directoryAPI) createSKPTarget(w http.ResponseWriter, r *http.Request) 
 		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidJSON)
 		return
 	}
+	if !requireUUID(w, request.UserID, request.SKPPeriodeID) {
+		return
+	}
 
 	principal, _ := auth.PrincipalFromContext(r.Context())
 	target := models.SKPTargetKinerja{
@@ -144,6 +147,9 @@ func (api directoryAPI) updateSKPTarget(w http.ResponseWriter, r *http.Request) 
 	var request skpTargetPatchRequest
 	if err := decodeJSON(w, r, &request); err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidJSON)
+		return
+	}
+	if !requireOptionalUUID(w, request.DinilaiOleh) {
 		return
 	}
 

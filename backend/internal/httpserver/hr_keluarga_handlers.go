@@ -43,7 +43,7 @@ func keluargaDTO(item models.KeluargaPegawai) KeluargaDTO {
 		UserID:           item.UserId,
 		Hubungan:         item.Hubungan,
 		Nama:             item.Nama,
-		NIK:              item.Nik,
+		NIK:              string(item.Nik),
 		TanggalLahir:     timeutil.InLocation(item.TanggalLahir),
 		Pekerjaan:        item.Pekerjaan,
 		StatusTanggungan: item.StatusTanggungan,
@@ -93,6 +93,9 @@ func (api directoryAPI) createKeluarga(w http.ResponseWriter, r *http.Request) {
 	var request keluargaCreateRequest
 	if err := decodeJSON(w, r, &request); err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidJSON)
+		return
+	}
+	if !requireUUID(w, request.UserID) {
 		return
 	}
 	input := domain.CreateKeluargaPegawai{

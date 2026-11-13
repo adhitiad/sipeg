@@ -114,6 +114,10 @@ func (api directoryAPI) recordAuditAccess(ctx context.Context, principal auth.Pr
 // (createdAt ASC, id ASC) dan tidak ada batas jumlah baris. Filter sama
 // dengan endpoint daftar (aksi, search). Ekspor yang berhasil dicatat sebagai
 // aksi audit.exported setelah stream selesai.
+//
+// Header dan status 200 baru dikirim saat baris pertama tiba (atau saat stream
+// selesai tanpa baris). Kegagalan membaca batch pertama karena itu masih dapat
+// dijawab sebagai 500, bukan berkas kosong yang tampak berhasil.
 func (api directoryAPI) exportAuditLogs(w http.ResponseWriter, r *http.Request) {
 	aksi := strings.TrimSpace(r.URL.Query().Get("aksi"))
 	search := strings.TrimSpace(r.URL.Query().Get("search"))
@@ -124,31 +128,36 @@ func (api directoryAPI) exportAuditLogs(w http.ResponseWriter, r *http.Request) 
 
 	principal, _ := auth.PrincipalFromContext(r.Context())
 
-	filename := "audit-log-" + timeutil.InLocation(time.Now()).Format("20060102T150405") + ".csv"
-	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
-	w.WriteHeader(http.StatusOK)
-
-	// BOM UTF-8 agar Microsoft Excel membuka berkas dengan benar.
-	if _, err := w.Write([]byte{0xEF, 0xBB, 0xBF}); err != nil {
-		return
-	}
-
-	writer := csv.NewWriter(w)
-	if err := writer.Write(csvAuditHeader()); err != nil {
-		return
-	}
-	writer.Flush()
-
-	flush := func() {
-		if f, ok := w.(http.Flusher); ok {
-			f.Flush()
+	var (
+		writer  *csv.Writer
+		started bool
+	)
+	start := func() error {
+		filename := "audit-log-" + timeutil.InLocation(time.Now()).Format("20060102T150405") + ".csv"
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+		w.WriteHeader(http.StatusOK)
+		// BOM UTF-8 agar Microsoft Excel membuka berkas dengan benar.
+		if _, err := w.Write([]byte{0xEF, 0xBB, 0xBF}); err != nil {
+			return err
 		}
+		writer = csv.NewWriter(w)
+		if err := writer.Write(csvAuditHeader()); err != nil {
+			return err
+		}
+		writer.Flush()
+		flushResponse(w)
+		started = true
+		return nil
 	}
-	flush()
 
 	count := 0
 	err := api.audits.StreamAuditLogs(r.Context(), principal, listing.Options{Aksi: aksi, Search: search}, func(entry models.AuditLog) error {
+		if !started {
+			if err := start(); err != nil {
+				return err
+			}
+		}
 		count++
 		if err := writer.Write([]string{
 			entry.ID,
@@ -164,15 +173,23 @@ func (api directoryAPI) exportAuditLogs(w http.ResponseWriter, r *http.Request) 
 		}
 		if count%100 == 0 {
 			writer.Flush()
-			flush()
+			flushResponse(w)
 		}
 		return nil
 	})
 	if err != nil {
+		if !started {
+			writeErrorResponse(w, http.StatusInternalServerError, apierror.CodeInternal)
+		}
 		return
 	}
+	if !started {
+		if err := start(); err != nil {
+			return
+		}
+	}
 	writer.Flush()
-	flush()
+	flushResponse(w)
 
 	// Catat ekspor setelah stream selesai; stream yang terputus di tengah
 	// tidak dicatat sebagai ekspor (hanya diagnostics di log aplikasi).
@@ -190,6 +207,13 @@ func (api directoryAPI) exportAuditLogs(w http.ResponseWriter, r *http.Request) 
 		UnitID:  unitID,
 		Note:    &note,
 	})
+}
+
+// flushResponse meneruskan buffer penulis respons bila transport mendukungnya.
+func flushResponse(w http.ResponseWriter) {
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 // csvAuditHeader mengembalikan nama kolom berkas ekspor jejak audit.

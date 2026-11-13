@@ -98,6 +98,9 @@ func (api directoryAPI) createSertifikasi(w http.ResponseWriter, r *http.Request
 		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidJSON)
 		return
 	}
+	if !requireUUID(w, request.UserID) {
+		return
+	}
 	var berlakuSampai *string
 	if request.BerlakuSampai != nil {
 		val := *request.BerlakuSampai

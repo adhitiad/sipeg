@@ -8,6 +8,7 @@ import (
 	"simpeg/backend/internal/apierror"
 	"simpeg/backend/internal/attendance"
 	"simpeg/backend/internal/auth"
+	"simpeg/backend/internal/crypto"
 	"simpeg/backend/internal/models"
 	"simpeg/backend/internal/timeutil"
 )
@@ -32,6 +33,16 @@ type attendanceRecordsResponse struct {
 	TotalPages int                   `json:"totalPages"`
 }
 
+type unitDayRecordDTO struct {
+	ID       string                 `json:"id"`
+	Nama     string                 `json:"nama"`
+	Nip      *string                `json:"nip"`
+	UnitID   *string                `json:"unitId"`
+	UnitName *string                `json:"unitName"`
+	Status   *models.StatusPresensi `json:"status"`
+	Note     *string                `json:"note"`
+}
+
 func RegisterAttendanceReadRoutes(mux *http.ServeMux, resolver auth.SessionResolver, policy auth.Policy, service *attendance.ReadService) {
 	if service == nil {
 		return
@@ -39,6 +50,7 @@ func RegisterAttendanceReadRoutes(mux *http.ServeMux, resolver auth.SessionResol
 	api := attendanceReadAPI{service: service}
 	mux.Handle("GET "+APIPrefix+"/attendance/my-records", auth.Authenticate(resolver)(auth.RequirePermission(policy, "attendance:read:self", http.HandlerFunc(api.myRecords))))
 	mux.Handle("GET "+APIPrefix+"/attendance/unit-summary", auth.Authenticate(resolver)(auth.RequireAnyPermission(policy, []auth.Permission{"attendance:read:any", "attendance:read:homebase"}, http.HandlerFunc(api.unitSummary))))
+	mux.Handle("GET "+APIPrefix+"/attendance/unit-records", auth.Authenticate(resolver)(auth.RequireAnyPermission(policy, []auth.Permission{"attendance:read:any", "attendance:read:homebase"}, http.HandlerFunc(api.unitRecords))))
 }
 
 func (api attendanceReadAPI) myRecords(w http.ResponseWriter, r *http.Request) {
@@ -64,6 +76,29 @@ func (api attendanceReadAPI) myRecords(w http.ResponseWriter, r *http.Request) {
 		Items: items, Page: page.Page, PageSize: page.PageSize,
 		TotalItems: page.TotalItems, TotalPages: page.TotalPages,
 	})
+}
+
+func (api attendanceReadAPI) unitRecords(w http.ResponseWriter, r *http.Request) {
+	date, err := time.Parse("2006-01-02", r.URL.Query().Get("date"))
+	if err != nil {
+		writeValidationError(w)
+		return
+	}
+	principal, _ := auth.PrincipalFromContext(r.Context())
+	rows, err := api.service.UnitDay(r.Context(), principal, timeutil.DateOnly(date))
+	if err != nil {
+		writeAttendanceReadError(w, err)
+		return
+	}
+	items := make([]unitDayRecordDTO, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, unitDayRecordDTO{
+			ID: row.UserID, Nama: row.Nama, Nip: crypto.PtrString(row.Nip),
+			UnitID: row.UnitID, UnitName: row.UnitName,
+			Status: row.Status, Note: row.Note,
+		})
+	}
+	writeJSON(w, http.StatusOK, items)
 }
 
 func (api attendanceReadAPI) unitSummary(w http.ResponseWriter, r *http.Request) {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"simpeg/backend/internal/crypto"
 	"simpeg/backend/internal/models"
 
 	"gorm.io/gorm"
@@ -65,7 +66,13 @@ func seedEmployees(
 			JenisKelamin:      genderFor(index),
 		}
 		if index%2 == 0 {
-			employee.Nip = stringPtr(fmt.Sprintf("NIP%08d", index))
+			nip := fmt.Sprintf("NIP%08d", index)
+			employee.Nip = crypto.PtrEncrypted(&nip)
+			hash, err := crypto.BlindIndexPtr(employee.Nip)
+			if err != nil {
+				return nil, fmt.Errorf("blind index NIP: %w", err)
+			}
+			employee.NipHash = hash
 		}
 		if index%4 == 0 {
 			employee.Nidn = stringPtr(fmt.Sprintf("NIDN%08d", index))

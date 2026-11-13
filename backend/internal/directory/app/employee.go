@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"simpeg/backend/internal/auth"
+	"simpeg/backend/internal/crypto"
 	"simpeg/backend/internal/directory/domain"
 	"simpeg/backend/internal/directory/repository"
 	"simpeg/backend/internal/listing"
@@ -63,6 +64,31 @@ func (s *EmployeeService) List(ctx context.Context, principal auth.Principal, op
 	}, nil
 }
 
+// Summary menghitung ringkasan pegawai dalam cakupan principal.
+// Populasinya mengikuti aturan daftar pegawai: seluruh baris dalam cakupan,
+// termasuk yang nonaktif.
+func (s *EmployeeService) Summary(ctx context.Context, principal auth.Principal) (domain.EmployeeSummary, error) {
+	var options listing.Options
+	switch {
+	case allows(s.policy, principal, "employee:read:any"):
+		// Role global: ringkasan lintas organisasi.
+	case allows(s.policy, principal, "employee:read:homebase"):
+		scope, err := s.scope.resolve(ctx, principal)
+		if err != nil {
+			return domain.EmployeeSummary{}, err
+		}
+		if scope.Empty() {
+			return domain.EmployeeSummary{}, nil
+		}
+		options.ScopeHomebaseIDs = scope.List()
+	case allows(s.policy, principal, "employee:read:self"):
+		options.UserID = principal.UserID
+	default:
+		return domain.EmployeeSummary{}, domain.ErrForbidden
+	}
+	return s.repo.CountEmployeesSummary(ctx, options)
+}
+
 // Get mengembalikan satu pegawai bila principal berhak membacanya.
 func (s *EmployeeService) Get(ctx context.Context, principal auth.Principal, id string) (models.User, error) {
 	needsScope := allows(s.policy, principal, "employee:read:homebase") && !allows(s.policy, principal, "employee:read:any")
@@ -101,7 +127,7 @@ func (s *EmployeeService) Create(ctx context.Context, principal auth.Principal, 
 		Email:             input.Email,
 		EmailVerified:     false,
 		Aktif:             true,
-		Nip:               domain.CleanOptional(input.NIP),
+		Nip:               crypto.PtrEncrypted(domain.CleanOptional(input.NIP)),
 		Nidn:              domain.CleanOptional(input.NIDN),
 		Nidk:              domain.CleanOptional(input.NIDK),
 		KategoriPegawaiId: input.KategoriPegawaiID,

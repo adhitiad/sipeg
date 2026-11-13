@@ -69,11 +69,16 @@ func SortKeys(columns map[string]string) []string {
 }
 
 // OrderClause menyusun klausa ORDER dari allowlist kolom dan arah.
-// Nilai di luar allowlist jatuh ke kolom bawaan.
+// Nilai di luar allowlist jatuh ke kolom bawaan; bila kolom bawaan pun tidak
+// ada pada allowlist, urutan jatuh ke "id" agar klausa ORDER tetap sah dan
+// tidak pernah menjadi " ASC" tanpa kolom.
 func OrderClause(columns map[string]string, requestedSort, requestedOrder, fallback string) string {
 	column, ok := columns[requestedSort]
 	if !ok {
 		column = columns[fallback]
+	}
+	if column == "" {
+		column = `"id"`
 	}
 	direction := "ASC"
 	if strings.EqualFold(requestedOrder, "desc") {

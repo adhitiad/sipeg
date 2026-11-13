@@ -71,6 +71,9 @@ func (api directoryAPI) createOrganization(w http.ResponseWriter, r *http.Reques
 		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidJSON)
 		return
 	}
+	if !requireOptionalUUID(w, request.ParentID) {
+		return
+	}
 
 	jenis := domain.NormalizeOrganizationType(request.Jenis)
 	if jenis == "" {
@@ -103,6 +106,12 @@ func (api directoryAPI) updateOrganization(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		writeValidationError(w)
 		return
+	}
+	if field, ok := fields["parentId"]; ok {
+		if field.Present && !field.Null && !domain.ValidUUID(strings.TrimSpace(field.Value)) {
+			writeValidationError(w)
+			return
+		}
 	}
 
 	principal, _ := auth.PrincipalFromContext(r.Context())

@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"simpeg/backend/internal/apierror"
+	"simpeg/backend/internal/crypto"
 	"simpeg/backend/internal/directory/app"
 	"simpeg/backend/internal/directory/domain"
 	"simpeg/backend/internal/models"
@@ -28,6 +30,7 @@ type directoryAPI struct {
 	audits        *app.AuditService
 	skp           *skpapp.SKPService
 	tridharma     *tridharmaapp.TridharmaService
+	jabatan       *app.JabatanService
 	keluarga      *app.KeluargaService
 	golongan      *app.GolonganService
 	arsip         *app.ArsipService
@@ -53,6 +56,7 @@ type EmployeeDTO struct {
 	JabatanStruktural *string   `json:"jabatanStruktural"`
 	JabatanFungsional *string   `json:"jabatanFungsional"`
 	Aktif             bool      `json:"aktif"`
+	RoleName          *string   `json:"roleName"`
 	CreatedAt         time.Time `json:"createdAt"`
 	UpdatedAt         time.Time `json:"updatedAt"`
 }
@@ -76,6 +80,31 @@ type PageDTO[T any] struct {
 	PageSize   int   `json:"pageSize"`
 	TotalItems int64 `json:"totalItems"`
 	TotalPages int   `json:"totalPages"`
+}
+
+// UnitCountDTO menghitung pegawai pada satu unit organisasi.
+// unitId nil berarti pegawai tanpa unit penugasan.
+type UnitCountDTO struct {
+	UnitID *string `json:"unitId"`
+	Count  int64   `json:"count"`
+}
+
+// JabatanDTO adalah bentuk publik master jabatan.
+type JabatanDTO struct {
+	ID        string    `json:"id"`
+	Nama      string    `json:"nama"`
+	Jenis     string    `json:"jenis"`
+	Aktif     bool      `json:"aktif"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// EmployeeSummaryDTO adalah bentuk publik ringkasan pegawai.
+type EmployeeSummaryDTO struct {
+	Total    int64          `json:"total"`
+	Active   int64          `json:"active"`
+	Inactive int64          `json:"inactive"`
+	ByUnit   []UnitCountDTO `json:"byUnit"`
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, target any) error {
@@ -120,6 +149,33 @@ func validUUID(value string) bool {
 	return domain.ValidUUID(value)
 }
 
+// requireUUID menolak permintaan yang membawa identifier asing bukan UUID
+// dengan 422, sebelum nilai menyentuh SQL (F-08).
+func requireUUID(w http.ResponseWriter, values ...string) bool {
+	for _, value := range values {
+		if !domain.ValidUUID(strings.TrimSpace(value)) {
+			writeValidationError(w)
+			return false
+		}
+	}
+	return true
+}
+
+// requireOptionalUUID memvalidasi identifier asing opsional: nil boleh,
+// nilai kosong atau bukan UUID ditolak (F-08).
+func requireOptionalUUID(w http.ResponseWriter, values ...*string) bool {
+	for _, value := range values {
+		if value == nil {
+			continue
+		}
+		if !domain.ValidUUID(strings.TrimSpace(*value)) {
+			writeValidationError(w)
+			return false
+		}
+	}
+	return true
+}
+
 func textLength(value string) int {
 	return domain.TextLength(value)
 }
@@ -130,11 +186,12 @@ func validateEmail(value string) bool {
 
 func employeeDTO(user models.User) EmployeeDTO {
 	return EmployeeDTO{
-		ID: user.ID, Nama: user.Nama, Email: user.Email, NIP: user.Nip,
+		ID: user.ID, Nama: user.Nama, Email: user.Email, NIP: crypto.PtrString(user.Nip),
 		NIDN: user.Nidn, NIDK: user.Nidk,
 		KategoriPegawaiID: user.KategoriPegawaiId, HomebaseID: user.HomebaseId,
 		JabatanStruktural: user.JabatanStruktural, JabatanFungsional: user.JabatanFungsional,
 		Aktif:     user.Aktif,
+		RoleName:  user.RoleName,
 		CreatedAt: timeutil.InLocation(user.CreatedAt),
 		UpdatedAt: timeutil.InLocation(user.UpdatedAt),
 	}

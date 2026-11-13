@@ -61,7 +61,7 @@ func (s GormStore) UpsertSchedule(ctx context.Context, actorID string, input dom
 		}).Create(&record).Error; err != nil {
 			return fmt.Errorf("save payroll schedule: %w", err)
 		}
-		if err := tx.Where("unitId = ?", input.UnitID).First(&schedule).Error; err != nil {
+		if err := tx.Where(`"unitId" = ?`, input.UnitID).First(&schedule).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return domain.ErrNotFound
 			}
@@ -96,7 +96,7 @@ func (s GormStore) ListSchedules(ctx context.Context, unitIDs []string) ([]model
 	}
 	query := s.DB.WithContext(ctx).Model(&models.JadwalGaji{}).Preload("Unit")
 	if unitIDs != nil {
-		query = query.Where("unitId IN ?", unitIDs)
+		query = query.Where(`"unitId" IN ?`, unitIDs)
 	}
 	var schedules []models.JadwalGaji
 	if err := query.Order("\"unitId\"").Find(&schedules).Error; err != nil {

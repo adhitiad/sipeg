@@ -11,6 +11,7 @@ import (
 	"simpeg/backend/internal/auth"
 	"simpeg/backend/internal/cloudinary"
 	"simpeg/backend/internal/holiday"
+	meapp "simpeg/backend/internal/me/app"
 	"simpeg/backend/internal/observability"
 	"simpeg/backend/internal/payroll/app"
 	"simpeg/backend/internal/qstash"
@@ -38,6 +39,9 @@ type MuxOptions struct {
 	// SLO mendaftarkan endpoint callback pemeriksaan target SLO. Bila nil,
 	// pemeriksaan terjadwal tidak didaftarkan.
 	SLO *SLOOptions
+	// SLODashboard mengaktifkan GET /api/v1/admin/slo/metrics bila tidak nil.
+	// Endpoint bersifat read-only dan dibatasi permission slo:read (admin).
+	SLODashboard SLODashboardReader
 	// SessionRevoker mengaktifkan POST /api/v1/auth/logout bila tidak nil.
 	SessionRevoker auth.SessionRevoker
 	// Cloudinary menyediakan tanda tangan unggah berkas dokumen. Bila nil,
@@ -47,6 +51,10 @@ type MuxOptions struct {
 	// bootstrap) bila tidak nil. Endpoint ini akan digantikan oleh runtime
 	// Better Auth saat tersedia.
 	SessionIssuer auth.SessionIssuer
+	// Me mengaktifkan GET dan PATCH /api/v1/me untuk profil mandiri. Bila
+	// nil, GET /me hanya mengembalikan identitas sesi dan PATCH tidak
+	// didaftarkan.
+	Me *meapp.Service
 	// ReadinessCheckers diperiksa pada GET /ready.
 	ReadinessCheckers []DependencyChecker
 	// ReadinessTimeout membatasi waktu pemeriksaan tiap dependency.
@@ -72,10 +80,13 @@ type QStashOptions struct {
 }
 
 type ProfileResponse struct {
-	UserID     string `json:"userId"`
-	Email      string `json:"email"`
-	RoleName   string `json:"roleName,omitempty"`
-	HomebaseID string `json:"homebaseId,omitempty"`
+	UserID      string   `json:"userId"`
+	Email       string   `json:"email"`
+	RoleName    string   `json:"roleName,omitempty"`
+	HomebaseID  string   `json:"homebaseId,omitempty"`
+	Permissions []string `json:"permissions"`
+	Nama        string   `json:"nama,omitempty"`
+	NoHp        string   `json:"noHp,omitempty"`
 }
 
 // NewMux menyusun mux minimal tanpa modul direktori maupun presensi.
@@ -98,7 +109,10 @@ func NewMuxWithOptions(options MuxOptions) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.Handle("GET /health", http.HandlerFunc(HandleHealth))
 	mux.Handle("GET /ready", NewReadinessHandler(options.ReadinessCheckers, options.ReadinessTimeout))
-	mux.Handle("GET "+APIPrefix+"/me", auth.Authenticate(options.Resolver)(http.HandlerFunc(HandleMe)))
+	mux.Handle("GET "+APIPrefix+"/me", auth.Authenticate(options.Resolver)(HandleMe(options.Policy, options.Me)))
+	if options.Me != nil {
+		mux.Handle("PATCH "+APIPrefix+"/me", auth.Authenticate(options.Resolver)(HandleUpdateMe(options.Me, options.Policy)))
+	}
 	if options.Directory.Employees != nil {
 		RegisterDirectoryRoutes(mux, options.Resolver, options.Policy, options.Directory)
 	}
@@ -120,6 +134,9 @@ func NewMuxWithOptions(options MuxOptions) *http.ServeMux {
 	if options.SLO != nil {
 		RegisterSLORoutes(mux, options.SLO)
 	}
+	if options.SLODashboard != nil {
+		RegisterSLOAdminRoutes(mux, options.Resolver, options.Policy, options.SLODashboard)
+	}
 	RegisterLogoutRoute(mux, options.Resolver, options.SessionRevoker)
 	if options.SessionIssuer != nil {
 		RegisterSessionIssueRoute(mux, options.Resolver, options.Policy, options.SessionIssuer)
@@ -135,17 +152,53 @@ func HandleHealth(w http.ResponseWriter, _ *http.Request) {
 }
 
 // HandleMe mengembalikan profil principal dari sesi terverifikasi.
-func HandleMe(w http.ResponseWriter, r *http.Request) {
-	principal, ok := auth.PrincipalFromContext(r.Context())
-	if !ok {
-		apierror.Write(w, http.StatusUnauthorized, apierror.CodeUnauthorized)
-		return
+// Permission yang dikirim berasal dari policy server sehingga klien tidak
+// perlu menduplikasi matriks akses. Bila layanan profil mandiri tersedia,
+// respons ikut memuat nama dan nomor HP supaya klien bisa menampilkan form
+// profil tanpa panggilan terpisah.
+func HandleMe(policy auth.Policy, me *meapp.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			apierror.Write(w, http.StatusUnauthorized, apierror.CodeUnauthorized)
+			return
+		}
+
+		respondProfile(w, r, principal, policy, me)
+	}
+}
+
+// respondProfile menyusun ProfileResponse dari principal, policy, dan
+// (opsional) record profil terbaru.
+func respondProfile(w http.ResponseWriter, r *http.Request, principal auth.Principal, policy auth.Policy, me *meapp.Service) {
+	permissions := []string{}
+	if lister, ok := policy.(auth.PermissionLister); ok && lister != nil {
+		for _, permission := range lister.List(principal.RoleName) {
+			permissions = append(permissions, string(permission))
+		}
 	}
 
-	writeJSON(w, http.StatusOK, ProfileResponse{
-		UserID:     principal.UserID,
-		Email:      principal.Email,
-		RoleName:   principal.RoleName,
-		HomebaseID: principal.HomebaseID,
-	})
+	response := ProfileResponse{
+		UserID:      principal.UserID,
+		Email:       principal.Email,
+		RoleName:    principal.RoleName,
+		HomebaseID:  principal.HomebaseID,
+		Permissions: permissions,
+	}
+	if me != nil {
+		user, err := me.Get(r.Context(), principal.UserID)
+		if err != nil {
+			writeErrorWith(w, http.StatusInternalServerError, apierror.Payload{
+				Code:    apierror.CodeInternal,
+				Message: "Profil tidak dapat dimuat.",
+			})
+			return
+		}
+		response.Nama = user.Nama
+		if user.NoHp != nil {
+			response.NoHp = *user.NoHp
+		}
+	}
+
+	writeJSON(w, http.StatusOK, response)
 }

@@ -92,6 +92,9 @@ func (api directoryAPI) createGolongan(w http.ResponseWriter, r *http.Request) {
 		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidJSON)
 		return
 	}
+	if !requireUUID(w, request.UserID) {
+		return
+	}
 	input := domain.CreateRiwayatGolongan{
 		UserID:      request.UserID,
 		Golongan:    strings.TrimSpace(request.Golongan),

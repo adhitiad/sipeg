@@ -3,6 +3,8 @@ package models
 import (
 	"time"
 
+	"simpeg/backend/internal/crypto"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -30,10 +32,12 @@ type User struct {
 	EmailVerified     bool
 	Image             *string
 	Nama              string
-	Nik               *string       `gorm:"uniqueIndex"`
-	Nip               *string       `gorm:"uniqueIndex"`
+	Nik               *crypto.Encrypted
+	Nip               *crypto.Encrypted
 	Nidn              *string       `gorm:"uniqueIndex"`
 	Nidk              *string       `gorm:"uniqueIndex"`
+	NikHash           *string       `gorm:"column:nikHash"`
+	NipHash           *string       `gorm:"column:nipHash"`
 	JenisKelamin      *JenisKelamin `gorm:"column:jenis_kelamin"`
 	TanggalLahir      *time.Time    `gorm:"column:tanggal_lahir;type:timestamp(3)"`
 	NoHp              *string       `gorm:"column:no_hp"`
@@ -51,11 +55,13 @@ type User struct {
 	BankAtasNama      *string
 	TanggalMasuk      *time.Time `gorm:"type:timestamp(3)"`
 	GajiPokok         *float64
-	Npwp              *string
+	Npwp              *crypto.Encrypted
+	NpwpHash          *string `gorm:"column:npwpHash"`
 	StatusPtkp        *string
 	NoKk              *string `gorm:"column:no_kk"`
 	NoKkEnc           bool    `gorm:"column:no_kk_encrypted"`
 	RoleId            *string `gorm:"type:uuid"`
+	RoleName          *string `gorm:"->;column:role_name"`
 	HomebaseId        *string `gorm:"type:uuid"`
 	TwoFactorEnabled  *bool
 	Aktif             bool `gorm:"default:true"`
@@ -79,6 +85,16 @@ type Kategori struct {
 	Nama        string
 	UsiaPensiun int
 	Aktif       bool
+}
+
+// Jabatan adalah entitas master jabatan (struktural/fungsional). Master ini
+// belum direferensikan oleh user; kolom jabatanStruktural/jabatanFungsional
+// pada user tetap berupa teks sampai ada keputusan produk.
+type Jabatan struct {
+	BaseModel
+	Nama  string       `gorm:"uniqueIndex"`
+	Jenis JenisJabatan `gorm:"type:JabatanJenis;default:STRUKTURAL"`
+	Aktif bool
 }
 
 type Delegasi struct {
@@ -118,12 +134,14 @@ type RiwayatJabatan struct {
 
 type RiwayatPendidikan struct {
 	BaseModel
-	UserId     string `gorm:"type:uuid;index:riwayat_pendidikan_user_idx"`
-	Jenjang    string
-	Institusi  string
-	Jurusan    *string
-	TahunLulus *int
-	Keterangan *string
+	UserId       string `gorm:"type:uuid;index:riwayat_pendidikan_user_idx"`
+	Jenjang      string
+	Institusi    string
+	Jurusan      *string
+	TahunLulus   *int
+	NoIjazah     *crypto.Encrypted
+	NoIjazahHash *string `gorm:"column:noIjazahHash"`
+	Keterangan   *string
 }
 
 type RiwayatGaji struct {

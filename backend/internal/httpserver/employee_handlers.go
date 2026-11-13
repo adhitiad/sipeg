@@ -38,6 +38,25 @@ func (api directoryAPI) listEmployees(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (api directoryAPI) summaryEmployees(w http.ResponseWriter, r *http.Request) {
+	principal, _ := auth.PrincipalFromContext(r.Context())
+	summary, err := api.employees.Summary(r.Context(), principal)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	byUnit := make([]UnitCountDTO, 0, len(summary.ByUnit))
+	for _, unit := range summary.ByUnit {
+		byUnit = append(byUnit, UnitCountDTO{UnitID: unit.UnitID, Count: unit.Count})
+	}
+	writeJSON(w, http.StatusOK, EmployeeSummaryDTO{
+		Total:    summary.Total,
+		Active:   summary.Active,
+		Inactive: summary.Inactive,
+		ByUnit:   byUnit,
+	})
+}
+
 func (api directoryAPI) getEmployee(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("employeeId")
 	if !validUUID(id) {
@@ -85,6 +104,9 @@ func (api directoryAPI) createEmployee(w http.ResponseWriter, r *http.Request) {
 		JabatanFungsional: request.JabatanFungsional,
 	}
 
+	if !requireOptionalUUID(w, request.KategoriPegawaiID, request.HomebaseID) {
+		return
+	}
 	principal, _ := auth.PrincipalFromContext(r.Context())
 	created, err := api.employees.Create(r.Context(), principal, input)
 	if err != nil {
@@ -105,6 +127,14 @@ func (api directoryAPI) updateEmployee(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeValidationError(w)
 		return
+	}
+	for _, key := range []string{"kategoriPegawaiId", "homebaseId"} {
+		if field, ok := fields[key]; ok {
+			if field.Present && !field.Null && !domain.ValidUUID(strings.TrimSpace(field.Value)) {
+				writeValidationError(w)
+				return
+			}
+		}
 	}
 
 	principal, _ := auth.PrincipalFromContext(r.Context())

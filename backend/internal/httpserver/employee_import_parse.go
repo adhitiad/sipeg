@@ -9,6 +9,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"simpeg/backend/internal/crypto"
 	"simpeg/backend/internal/models"
 )
 
@@ -22,8 +23,8 @@ var employeeImportHeaders = []string{
 }
 
 type employeeImportRow struct {
-	number int
-	user   models.User
+	Number int
+	User   models.User
 }
 
 func parseEmployeeImport(filename string, contents []byte) ([]employeeImportRow, []employeeImportIssue) {
@@ -130,14 +131,14 @@ func validateEmployeeImportRecords(records [][]string) ([]employeeImportRow, []e
 			}
 		}
 		if user.Nip != nil {
-			key := *user.Nip
+			key := string(*user.Nip)
 			if _, exists := nips[key]; exists {
 				issues = append(issues, employeeImportIssue{Row: rowNumber, Field: "nip", Code: "duplicate_in_file"})
 			} else {
 				nips[key] = rowNumber
 			}
 		}
-		rows = append(rows, employeeImportRow{number: rowNumber, user: user})
+		rows = append(rows, employeeImportRow{Number: rowNumber, User: user})
 	}
 	if nonEmptyRows == 0 {
 		issues = append(issues, employeeImportIssue{Row: 2, Field: "row", Code: "empty_file"})
@@ -166,7 +167,8 @@ func employeeImportUserFromValues(row int, values []string) (models.User, []empl
 		EmailVerified: false,
 	}
 	if values[2] != "" {
-		user.Nip = stringPointer(values[2])
+		nip := crypto.Encrypted(values[2])
+		user.Nip = &nip
 	}
 	if values[3] != "" {
 		user.JabatanStruktural = stringPointer(values[3])
@@ -181,7 +183,7 @@ func employeeImportUserFromValues(row int, values []string) (models.User, []empl
 	if !validateEmail(user.Email) {
 		issues = append(issues, employeeImportIssue{Row: row, Field: "email", Code: "invalid_email"})
 	}
-	if user.Nip != nil && textLength(*user.Nip) > 50 {
+	if user.Nip != nil && textLength(string(*user.Nip)) > 50 {
 		issues = append(issues, employeeImportIssue{Row: row, Field: "nip", Code: "too_long"})
 	}
 	for _, field := range []struct {

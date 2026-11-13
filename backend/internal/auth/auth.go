@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sort"
 	"strings"
 
 	"simpeg/backend/internal/apierror"
@@ -27,10 +28,33 @@ type Policy interface {
 	Allows(roleName string, permission Permission) bool
 }
 
+// PermissionLister adalah capability tambahan pada policy yang dapat
+// menampilkan seluruh permission milik sebuah role. Dipakai untuk
+// menyiarkan matriks akses ke klien tanpa menduplikasi aturan di frontend.
+type PermissionLister interface {
+	List(roleName string) []Permission
+}
+
 type StaticPolicy map[string]map[Permission]bool
 
 func (p StaticPolicy) Allows(roleName string, permission Permission) bool {
 	return p[roleName][permission]
+}
+
+// List mengembalikan seluruh permission milik role dalam urutan stabil.
+// Role tanpa grant menghasilkan daftar kosong.
+func (p StaticPolicy) List(roleName string) []Permission {
+	grants := p[roleName]
+	permissions := make([]Permission, 0, len(grants))
+	for permission, allowed := range grants {
+		if allowed {
+			permissions = append(permissions, permission)
+		}
+	}
+	sort.Slice(permissions, func(i, j int) bool {
+		return permissions[i] < permissions[j]
+	})
+	return permissions
 }
 
 type contextKey struct{}

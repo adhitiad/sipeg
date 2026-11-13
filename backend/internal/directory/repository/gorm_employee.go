@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"simpeg/backend/internal/audit"
+	"simpeg/backend/internal/crypto"
 	"simpeg/backend/internal/directory/domain"
 	"simpeg/backend/internal/listing"
 	"simpeg/backend/internal/models"
@@ -22,12 +23,53 @@ type GormStore struct {
 }
 
 // ListEmployees membaca daftar pegawai aktif sesuai filter dan pagination.
+// Peran principal dibaca dari tabel Role lewat LEFT JOIN sehingga antarmuka
+// manajemen akun dapat menampilkan peran saat ini.
 func (s GormStore) ListEmployees(ctx context.Context, options listing.Options) ([]models.User, int64, error) {
-	query := s.DB.WithContext(ctx).Model(&models.User{}).Where("aktif = ?", true)
+	query := s.DB.WithContext(ctx).Model(&models.User{}).Where(`"user"."aktif" = ?`, true)
 	if options.Search != "" {
 		pattern := "%" + escapeLike(options.Search) + "%"
-		query = query.Where("(nama ILIKE ? ESCAPE '\\' OR nip ILIKE ? ESCAPE '\\')", pattern, pattern)
+		// NIP terenkripsi tidak dapat dicocokkan dengan ILIKE; pencarian
+		// pada NIP dilakukan lewat blind index (kesetaraan persis setelah
+		// normalisasi). Kolom nama tetap dicari sebagai substring.
+		nipHash, err := crypto.BlindIndex(options.Search)
+		if err != nil {
+			return nil, 0, fmt.Errorf("blind index pencarian NIP: %w", err)
+		}
+		query = query.Where(`("user"."nama" ILIKE ? ESCAPE '\' OR "user"."nipHash" = ?)`, pattern, nipHash)
 	}
+	if options.HomebaseID != "" {
+		query = query.Where(`"user"."homebaseId" = ?`, options.HomebaseID)
+	}
+	if len(options.ScopeHomebaseIDs) > 0 {
+		query = query.Where(`"user"."homebaseId" IN ?`, options.ScopeHomebaseIDs)
+	}
+	if options.UserID != "" {
+		query = query.Where(`"user"."id" = ?`, options.UserID)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count employees: %w", err)
+	}
+	var employees []models.User
+	order := listing.OrderClause(domain.EmployeeSortColumns, options.Sort, options.Order, "nama")
+	err := query.
+		Select(`"user".*, "Role"."name" AS role_name`).
+		Joins(`LEFT JOIN "Role" ON "Role"."id" = "user"."roleId"`).
+		Order(order).
+		Offset((options.Page - 1) * options.PageSize).
+		Limit(options.PageSize).
+		Find(&employees).Error
+	if err != nil {
+		return nil, 0, fmt.Errorf("list employees: %w", err)
+	}
+	return employees, total, nil
+}
+
+// summaryScopeQuery menyusun pembatas cakupan yang sama dengan daftar pegawai.
+func summaryScopeQuery(db *gorm.DB, options listing.Options) *gorm.DB {
+	query := db.Model(&models.User{})
 	if options.HomebaseID != "" {
 		query = query.Where(`"homebaseId" = ?`, options.HomebaseID)
 	}
@@ -37,18 +79,43 @@ func (s GormStore) ListEmployees(ctx context.Context, options listing.Options) (
 	if options.UserID != "" {
 		query = query.Where("id = ?", options.UserID)
 	}
+	return query
+}
 
+// CountEmployeesSummary menghitung total, aktif/nonaktif, dan jumlah per unit
+// dalam cakupan principal. Populasinya identik dengan daftar pegawai, termasuk
+// baris nonaktif, agar ringkasan selalu konsisten dengan data yang terlihat.
+func (s GormStore) CountEmployeesSummary(ctx context.Context, options listing.Options) (domain.EmployeeSummary, error) {
 	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, fmt.Errorf("count employees: %w", err)
+	if err := summaryScopeQuery(s.DB.WithContext(ctx), options).Count(&total).Error; err != nil {
+		return domain.EmployeeSummary{}, fmt.Errorf("count employees summary: %w", err)
 	}
-	var employees []models.User
-	order := listing.OrderClause(domain.EmployeeSortColumns, options.Sort, options.Order, "nama")
-	err := query.Order(order).Offset((options.Page - 1) * options.PageSize).Limit(options.PageSize).Find(&employees).Error
-	if err != nil {
-		return nil, 0, fmt.Errorf("list employees: %w", err)
+	var active int64
+	if err := summaryScopeQuery(s.DB.WithContext(ctx), options).Where("aktif = ?", true).Count(&active).Error; err != nil {
+		return domain.EmployeeSummary{}, fmt.Errorf("count active employees summary: %w", err)
 	}
-	return employees, total, nil
+	type unitRow struct {
+		UnitID *string `gorm:"column:homebaseId"`
+		Count  int64   `gorm:"column:count"`
+	}
+	var rows []unitRow
+	if err := summaryScopeQuery(s.DB.WithContext(ctx), options).
+		Select(`"homebaseId", count(*) AS count`).
+		Group(`"homebaseId"`).
+		Order("count DESC").
+		Scan(&rows).Error; err != nil {
+		return domain.EmployeeSummary{}, fmt.Errorf("group employees summary by unit: %w", err)
+	}
+	byUnit := make([]domain.UnitCount, 0, len(rows))
+	for _, row := range rows {
+		byUnit = append(byUnit, domain.UnitCount{UnitID: row.UnitID, Count: row.Count})
+	}
+	return domain.EmployeeSummary{
+		Total:    total,
+		Active:   active,
+		Inactive: total - active,
+		ByUnit:   byUnit,
+	}, nil
 }
 
 // GetEmployee membaca satu pegawai aktif.
@@ -65,6 +132,9 @@ func (s GormStore) CreateEmployee(ctx context.Context, actorID string, employee 
 		if err := validateEmployeeReferences(tx, employee); err != nil {
 			return err
 		}
+		if err := setIdentityHashes(&employee); err != nil {
+			return err
+		}
 		if err := tx.Create(&employee).Error; err != nil {
 			return classifyRecordError(err)
 		}
@@ -76,9 +146,12 @@ func (s GormStore) CreateEmployee(ctx context.Context, actorID string, employee 
 // UpdateEmployee memperbarui profil pegawai dan mencatat jejak audit dalam
 // satu transaksi.
 func (s GormStore) UpdateEmployee(ctx context.Context, actorID, id string, patch domain.EmployeePatch) (models.User, error) {
-	updates := employeeColumns(patch)
+	updates, err := employeeColumns(patch)
+	if err != nil {
+		return models.User{}, err
+	}
 	var employee models.User
-	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND aktif = ?", id, true).First(&employee).Error; err != nil {
 			return classifyRecordError(err)
 		}
@@ -165,8 +238,9 @@ func classifyRoleError(err error) error {
 // employeeColumns memetakan patch domain menjadi kolom database.
 //
 // Kolom memakai nama skema acuan; nilai yang dikosongkan pada permintaan
-// disimpan sebagai NULL.
-func employeeColumns(patch domain.EmployeePatch) map[string]any {
+// disimpan sebagai NULL. Kolom terenkripsi (nip) ditulis sebagai ciphertext
+// eksplisit beserta blind index-nya; keduanya selalu diisi berpasangan.
+func employeeColumns(patch domain.EmployeePatch) (map[string]any, error) {
 	updates := make(map[string]any)
 	if patch.Nama.Present {
 		updates["nama"] = strings.TrimSpace(patch.Nama.Value)
@@ -175,8 +249,18 @@ func employeeColumns(patch domain.EmployeePatch) map[string]any {
 		nip := strings.TrimSpace(patch.NIP.Value)
 		if patch.NIP.Null || nip == "" {
 			updates["nip"] = nil
+			updates["nipHash"] = nil
 		} else {
-			updates["nip"] = nip
+			ciphertext, err := crypto.Encrypt(nip)
+			if err != nil {
+				return nil, fmt.Errorf("enkripsi NIP: %w", err)
+			}
+			updates["nip"] = ciphertext
+			hash, err := crypto.BlindIndex(nip)
+			if err != nil {
+				return nil, fmt.Errorf("blind index NIP: %w", err)
+			}
+			updates["nipHash"] = hash
 		}
 	}
 	if patch.NIDN.Present {
@@ -223,7 +307,7 @@ func employeeColumns(patch domain.EmployeePatch) map[string]any {
 			updates["jabatan_fungsional"] = strings.TrimSpace(patch.JabatanFungsional.Value)
 		}
 	}
-	return updates
+	return updates, nil
 }
 
 // validateEmployeeReferences memastikan referensi pegawai menunjuk record aktif.

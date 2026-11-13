@@ -167,6 +167,9 @@ func (api directoryAPI) createCuti(w http.ResponseWriter, r *http.Request) {
 		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidJSON)
 		return
 	}
+	if !requireUUID(w, request.UserID) {
+		return
+	}
 	tanggalMulai, err := time.Parse("2006-01-02", request.TanggalMulai)
 	if err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidQuery)

@@ -85,6 +85,8 @@ var postgresTableNames = map[string]string{
 	"RiwayatPelatihan":    "riwayatPelatihan",
 	"SisterSyncMap":       "sisterSyncMap",
 	"RiwayatPenghargaan":  "riwayatPenghargaan",
+	// Jabatan (migrasi 000024_jabatan.sql).
+	"Jabatan": "Jabatan",
 	// Metrik SLO (migrasi 000017_slo_metric.sql).
 	"SloMetric": "sloMetric",
 }

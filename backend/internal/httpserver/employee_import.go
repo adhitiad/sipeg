@@ -45,7 +45,7 @@ func (api directoryAPI) importEmployees(w http.ResponseWriter, r *http.Request) 
 	users := make([]models.User, 0, len(rows))
 	for _, row := range rows {
 		employees = append(employees, row)
-		users = append(users, row.user)
+		users = append(users, row.User)
 	}
 
 	principal, _ := auth.PrincipalFromContext(r.Context())
@@ -53,7 +53,7 @@ func (api directoryAPI) importEmployees(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		var conflict *domain.EmployeeConflictError
 		if errors.As(err, &conflict) && conflict.Index >= 0 && conflict.Index < len(employees) {
-			issue := employeeImportIssue{Row: employees[conflict.Index].number, Field: conflict.Field, Code: "duplicate"}
+			issue := employeeImportIssue{Row: employees[conflict.Index].Number, Field: conflict.Field, Code: "duplicate"}
 			writeEmployeeImportIssues(w, http.StatusConflict, "identity_conflict", []employeeImportIssue{issue})
 			return
 		}

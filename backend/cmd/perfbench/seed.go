@@ -2,9 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
+	"simpeg/backend/internal/crypto"
 	"simpeg/backend/internal/models"
 	"simpeg/backend/internal/timeutil"
 
@@ -34,9 +38,20 @@ const seedBatchSize = 500
 
 // runSeed mengisi database uji dengan data sintetis yang mewakili skala
 // produksi: pohon unit organisasi, pegawai, slip gaji, dan jejak audit.
+//
+// Seed menulis lewat model GORM; kolom PII (Nip) dienkripsi oleh
+// driver.Valuer, sehingga PII_ENCRYPTION_KEY wajib tersedia.
 func runSeed(ctx context.Context, args []string) error {
 	plan, err := parseSeedPlan(args)
 	if err != nil {
+		return err
+	}
+	piiRaw := os.Getenv("PII_ENCRYPTION_KEY")
+	piiKey, err := base64.StdEncoding.DecodeString(strings.TrimSpace(piiRaw))
+	if err != nil || len(piiKey) != 32 {
+		return fmt.Errorf("PII_ENCRYPTION_KEY wajib diisi dan harus base64 32 byte untuk seed")
+	}
+	if err := crypto.Configure(piiKey); err != nil {
 		return err
 	}
 	db, err := openDB(ctx)

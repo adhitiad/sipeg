@@ -9,6 +9,8 @@ import (
 	"simpeg/backend/internal/directory/domain"
 	"simpeg/backend/internal/listing"
 	"simpeg/backend/internal/models"
+
+	"gorm.io/gorm"
 )
 
 // exportBatchSize adalah jumlah baris yang diambil per batch saat streaming
@@ -20,29 +22,39 @@ const exportBatchSize = 1000
 // satu batch per batch, dalam urutan kronologis naik (createdAt ASC, id ASC).
 // Sort dan pagination diabaikan; filter sama dengan ListAuditLogs.
 func (s GormStore) StreamAuditLogs(ctx context.Context, options listing.Options, fn func(models.AuditLog) error) error {
-	query := s.DB.WithContext(ctx).Model(&models.AuditLog{})
-	if options.Aksi != "" {
-		query = query.Where("aksi = ?", options.Aksi)
-	}
-	if options.Search != "" {
-		pattern := "%" + escapeLike(options.Search) + "%"
-		query = query.Where("(aksi ILIKE ? ESCAPE '\\' OR keterangan ILIKE ? ESCAPE '\\')", pattern, pattern)
-	}
-	if len(options.ScopeHomebaseIDs) > 0 {
-		query = query.Where(`"unitId" IN ?`, options.ScopeHomebaseIDs)
+	// Query dasar dibangun ulang per batch: chaining GORM menumpuk kondisi pada
+	// statement yang sama bila instance-nya dipakai ulang.
+	base := func() *gorm.DB {
+		query := s.DB.WithContext(ctx).Model(&models.AuditLog{})
+		if options.Aksi != "" {
+			query = query.Where("aksi = ?", options.Aksi)
+		}
+		if options.Search != "" {
+			pattern := "%" + escapeLike(options.Search) + "%"
+			query = query.Where("(aksi ILIKE ? ESCAPE '\\' OR keterangan ILIKE ? ESCAPE '\\')", pattern, pattern)
+		}
+		if len(options.ScopeHomebaseIDs) > 0 {
+			query = query.Where(`"unitId" IN ?`, options.ScopeHomebaseIDs)
+		}
+		return query
 	}
 
 	var lastCreated time.Time
 	var lastID string
+	first := true
 	for {
 		var entries []models.AuditLog
-		batch := query.Order(`"createdAt" ASC, "id" ASC`).
-			Where(`("createdAt", "id") > (?, ?)`, lastCreated, lastID).
-			Limit(exportBatchSize).
-			Find(&entries)
+		batch := base().Order(`"createdAt" ASC, "id" ASC`)
+		// Batch pertama tidak memakai predikat keyset: nilai awalnya adalah
+		// zero value, dan string kosong tidak sah sebagai uuid pada kolom "id".
+		if !first {
+			batch = batch.Where(`("createdAt", "id") > (?, ?)`, lastCreated, lastID)
+		}
+		batch = batch.Limit(exportBatchSize).Find(&entries)
 		if batch.Error != nil {
 			return fmt.Errorf("stream audit logs: %w", batch.Error)
 		}
+		first = false
 		if len(entries) == 0 {
 			return nil
 		}

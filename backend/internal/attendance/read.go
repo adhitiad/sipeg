@@ -3,6 +3,7 @@ package attendance
 import (
 	"context"
 	"errors"
+	"time"
 
 	"simpeg/backend/internal/auth"
 	"simpeg/backend/internal/models"
@@ -21,30 +22,55 @@ func (s *ReadService) MyRecords(ctx context.Context, principal auth.Principal, f
 	return newRecordPage(items, total, filter), nil
 }
 
-func (s *ReadService) UnitSummary(ctx context.Context, principal auth.Principal, filter RecordFilter) ([]DailySummary, error) {
-	var homebaseIDs []string
+func (s *ReadService) unitScope(ctx context.Context, principal auth.Principal) ([]string, error) {
 	switch {
 	case s.policy != nil && s.policy.Allows(principal.RoleName, "attendance:read:any"):
+		return nil, nil // nil menandakan lintas organisasi
 	case s.policy != nil && s.policy.Allows(principal.RoleName, "attendance:read:homebase"):
 		if principal.HomebaseID == "" || s.scope == nil {
-			return []DailySummary{}, nil
+			return []string{}, nil
 		}
-		var err error
-		homebaseIDs, err = s.scope.ListUnitScopeIDs(ctx, principal.HomebaseID)
+		ids, err := s.scope.ListUnitScopeIDs(ctx, principal.HomebaseID)
 		if err != nil {
 			return nil, err
 		}
-		if len(homebaseIDs) == 0 {
-			return []DailySummary{}, nil
+		if len(ids) == 0 {
+			return []string{}, nil
 		}
+		return ids, nil
 	default:
 		return nil, ErrForbidden
+	}
+}
+
+func (s *ReadService) UnitSummary(ctx context.Context, principal auth.Principal, filter RecordFilter) ([]DailySummary, error) {
+	homebaseIDs, err := s.unitScope(ctx, principal)
+	if err != nil {
+		return nil, err
+	}
+	if homebaseIDs != nil && len(homebaseIDs) == 0 {
+		return []DailySummary{}, nil
 	}
 	counts, err := s.reader.ListUnitSummary(ctx, homebaseIDs, filter)
 	if err != nil {
 		return nil, err
 	}
 	return aggregateStatusCounts(counts), nil
+}
+
+// UnitDay menampilkan seluruh pegawai aktif dalam cakupan pemohon beserta
+// catatan kehadirannya untuk satu tanggal; pegawai tanpa catatan tampil
+// dengan Status nil. `note` terlihat sesuai keputusan produk 13 November
+// 2026 (DEC-051).
+func (s *ReadService) UnitDay(ctx context.Context, principal auth.Principal, date time.Time) ([]UnitDayRow, error) {
+	homebaseIDs, err := s.unitScope(ctx, principal)
+	if err != nil {
+		return nil, err
+	}
+	if homebaseIDs != nil && len(homebaseIDs) == 0 {
+		return []UnitDayRow{}, nil
+	}
+	return s.reader.ListUnitDay(ctx, homebaseIDs, date)
 }
 
 type DailySummary struct {

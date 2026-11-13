@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"simpeg/backend/internal/auth"
+	"simpeg/backend/internal/crypto"
 	"simpeg/backend/internal/directory/domain"
 	"simpeg/backend/internal/directory/repository"
 	"simpeg/backend/internal/listing"
@@ -98,7 +99,7 @@ func (s *KeluargaService) Create(ctx context.Context, principal auth.Principal, 
 		UserId:           input.UserID,
 		Hubungan:         input.Hubungan,
 		Nama:             input.Nama,
-		Nik:              input.NIK,
+		Nik:              crypto.Encrypted(input.NIK),
 		TanggalLahir:     tanggalLahir,
 		Pekerjaan:        input.Pekerjaan,
 		StatusTanggungan: input.StatusTanggungan,

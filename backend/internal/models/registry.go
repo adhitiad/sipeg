@@ -23,6 +23,6 @@ func All() []any {
 		&TridharmaPengabdian{}, &TridharmaPenunjang{},
 		&KeluargaPegawai{}, &RiwayatGolongan{}, &KomponenTunjangan{}, &KomponenPotongan{},
 		&ArsipDokumenPegawai{}, &RiwayatSertifikasi{}, &RiwayatPelatihan{}, &SisterSyncMap{},
-		&RiwayatPenghargaan{},
+		&RiwayatPenghargaan{}, &Jabatan{},
 	}
 }

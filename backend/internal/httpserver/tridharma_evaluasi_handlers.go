@@ -112,6 +112,9 @@ func (api directoryAPI) createEvaluasiBKD(w http.ResponseWriter, r *http.Request
 		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidJSON)
 		return
 	}
+	if !requireUUID(w, request.UserID, request.PeriodeAkademikID) || !requireOptionalUUID(w, request.DinilaiOleh) {
+		return
+	}
 
 	tanggalEvaluasi, err := time.Parse("2006-01-02", strings.TrimSpace(request.TanggalEvaluasi))
 	if err != nil {
@@ -147,6 +150,9 @@ func (api directoryAPI) updateEvaluasiBKD(w http.ResponseWriter, r *http.Request
 	var request evaluasiBKDPatchRequest
 	if err := decodeJSON(w, r, &request); err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidJSON)
+		return
+	}
+	if !requireOptionalUUID(w, request.DinilaiOleh) {
 		return
 	}
 

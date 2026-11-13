@@ -82,6 +82,9 @@ func SecurityHeadersMiddleware(next http.Handler) http.Handler {
 		header.Set("Referrer-Policy", "no-referrer")
 		header.Set("Cross-Origin-Opener-Policy", "same-origin")
 		header.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		// API hanya mengembalikan JSON; tidak ada dokumen HTML yang boleh
+		// dimuat, sehingga kebijakan paling ketat aman untuk semua rute.
+		header.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'")
 		next.ServeHTTP(w, r)
 	})
 }

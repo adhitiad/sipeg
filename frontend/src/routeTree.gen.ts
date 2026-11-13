@@ -18,6 +18,7 @@ import { Route as TermsRouteImport } from './routes/terms'
 import { Route as TermsOfReferenceRouteImport } from './routes/terms-of-reference'
 import { Route as AppAuditLogsRouteImport } from './routes/_app/audit-logs'
 import { Route as AppCategoriesRouteImport } from './routes/_app/categories'
+import { Route as AppCutiRouteImport } from './routes/_app/cuti'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
 import { Route as AppEmployeesRouteImport } from './routes/_app/employees'
 import { Route as AppJabatanRouteImport } from './routes/_app/jabatan'
@@ -79,6 +80,11 @@ const AppAuditLogsRoute = AppAuditLogsRouteImport.update({
 const AppCategoriesRoute = AppCategoriesRouteImport.update({
   id: '/categories',
   path: '/categories',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppCutiRoute = AppCutiRouteImport.update({
+  id: '/cuti',
+  path: '/cuti',
   getParentRoute: () => AppRoute,
 } as any)
 const AppDashboardRoute = AppDashboardRouteImport.update({
@@ -188,6 +194,7 @@ export interface FileRoutesByFullPath {
   '/terms-of-reference': typeof TermsOfReferenceRoute
   '/audit-logs': typeof AppAuditLogsRoute
   '/categories': typeof AppCategoriesRoute
+  '/cuti': typeof AppCutiRoute
   '/dashboard': typeof AppDashboardRoute
   '/employees': typeof AppEmployeesRouteWithChildren
   '/jabatan': typeof AppJabatanRoute
@@ -216,6 +223,7 @@ export interface FileRoutesByTo {
   '/terms-of-reference': typeof TermsOfReferenceRoute
   '/audit-logs': typeof AppAuditLogsRoute
   '/categories': typeof AppCategoriesRoute
+  '/cuti': typeof AppCutiRoute
   '/dashboard': typeof AppDashboardRoute
   '/employees': typeof AppEmployeesRouteWithChildren
   '/jabatan': typeof AppJabatanRoute
@@ -247,6 +255,7 @@ export interface FileRoutesById {
   '/terms-of-reference': typeof TermsOfReferenceRoute
   '/_app/audit-logs': typeof AppAuditLogsRoute
   '/_app/categories': typeof AppCategoriesRoute
+  '/_app/cuti': typeof AppCutiRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/employees': typeof AppEmployeesRouteWithChildren
   '/_app/jabatan': typeof AppJabatanRoute
@@ -277,6 +286,7 @@ export interface FileRouteTypes {
     | '/terms-of-reference'
     | '/audit-logs'
     | '/categories'
+    | '/cuti'
     | '/dashboard'
     | '/employees'
     | '/jabatan'
@@ -305,6 +315,7 @@ export interface FileRouteTypes {
     | '/terms-of-reference'
     | '/audit-logs'
     | '/categories'
+    | '/cuti'
     | '/dashboard'
     | '/employees'
     | '/jabatan'
@@ -335,6 +346,7 @@ export interface FileRouteTypes {
     | '/terms-of-reference'
     | '/_app/audit-logs'
     | '/_app/categories'
+    | '/_app/cuti'
     | '/_app/dashboard'
     | '/_app/employees'
     | '/_app/jabatan'
@@ -430,6 +442,13 @@ declare module '@tanstack/react-router' {
       path: '/categories'
       fullPath: '/categories'
       preLoaderRoute: typeof AppCategoriesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/cuti': {
+      id: '/_app/cuti'
+      path: '/cuti'
+      fullPath: '/cuti'
+      preLoaderRoute: typeof AppCutiRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/dashboard': {
@@ -595,6 +614,7 @@ const AppPayrollSlipsRouteWithChildren = AppPayrollSlipsRoute._addFileChildren(
 interface AppRouteChildren {
   AppAuditLogsRoute: typeof AppAuditLogsRoute
   AppCategoriesRoute: typeof AppCategoriesRoute
+  AppCutiRoute: typeof AppCutiRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppEmployeesRoute: typeof AppEmployeesRouteWithChildren
   AppJabatanRoute: typeof AppJabatanRoute
@@ -614,6 +634,7 @@ interface AppRouteChildren {
 const AppRouteChildren: AppRouteChildren = {
   AppAuditLogsRoute: AppAuditLogsRoute,
   AppCategoriesRoute: AppCategoriesRoute,
+  AppCutiRoute: AppCutiRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppEmployeesRoute: AppEmployeesRouteWithChildren,
   AppJabatanRoute: AppJabatanRoute,

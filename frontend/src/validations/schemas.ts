@@ -488,3 +488,147 @@ export type UnitDayRecord = z.infer<typeof unitDayRecordSchema>
 export const unitDayRecordListSchema = z.array(unitDayRecordSchema)
 
 export type UnitDayRecordList = z.infer<typeof unitDayRecordListSchema>
+
+/** Satu pengajuan cuti dari GET /api/v1/cuti/{cutiId}. */
+export const cutiSchema = z
+  .object({
+    id: z.uuid(),
+    userId: z.uuid(),
+    jenis: z.enum([
+      'TAHUNAN',
+      'PANJANG',
+      'BERSALIN',
+      'SAKIT',
+      'SAKIT_BERKEPANJANGAN',
+      'IZIN_PENTING',
+      'POLITIK',
+    ]),
+    tanggalMulai: z.string(),
+    tanggalSelesai: z.string(),
+    alamatCuti: z.string().nullable().optional(),
+    alasan: z.string().nullable().optional(),
+    status: z.enum(['MENUNGGU', 'DISETUJUI', 'DITOLAK']),
+    disetujuiBy: z.string().nullable().optional(),
+    catatan: z.string().nullable().optional(),
+    subJenis: z
+      .enum([
+        'MENIKAH',
+        'MELAHIRKAN_ISTRI',
+        'MENIKAHKAN_ANAK',
+        'KELUARGA_INTI',
+        'KELUARGA_LAIN',
+      ])
+      .nullable()
+      .optional(),
+    nomorSurat: z.string().nullable().optional(),
+    tanggalSuratDokter: z.string().nullable().optional(),
+    jenisEviden: z.enum(['SURAT_DOKTER', 'FOTO', 'LAINNYA']).nullable().optional(),
+    fileEvidenUrl: z.string().nullable().optional(),
+    waktuEviden: z.string().nullable().optional(),
+    catatanEviden: z.string().nullable().optional(),
+    persenGaji: z.number().nullable().optional(),
+    untukHaji: z.boolean().nullable().optional(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .loose()
+
+export type Cuti = z.infer<typeof cutiSchema>
+
+export const cutiPageSchema = z.object({
+  items: z.array(cutiSchema),
+  page: z.number(),
+  pageSize: z.number(),
+  totalItems: z.number(),
+  totalPages: z.number(),
+})
+
+export type CutiPage = z.infer<typeof cutiPageSchema>
+
+/** Payload pengajuan cuti baru via POST /api/v1/cuti. */
+export const cutiCreateSchema = z.object({
+  userId: z.uuid(),
+  jenis: z.enum([
+    'TAHUNAN',
+    'PANJANG',
+    'BERSALIN',
+    'SAKIT',
+    'SAKIT_BERKEPANJANGAN',
+    'IZIN_PENTING',
+    'POLITIK',
+  ]),
+  tanggalMulai: z.string().min(1, 'Tanggal mulai wajib diisi'),
+  tanggalSelesai: z.string().min(1, 'Tanggal selesai wajib diisi'),
+  alamatCuti: z.string().max(500).nullable().optional(),
+  alasan: z.string().min(1, 'Alasan wajib diisi').max(1000),
+  subJenis: z
+    .enum([
+      'MENIKAH',
+      'MELAHIRKAN_ISTRI',
+      'MENIKAHKAN_ANAK',
+      'KELUARGA_INTI',
+      'KELUARGA_LAIN',
+    ])
+    .nullable()
+    .optional(),
+  nomorSurat: z.string().max(100).nullable().optional(),
+  tanggalSuratDokter: z.string().nullable().optional(),
+  jenisEviden: z.enum(['SURAT_DOKTER', 'FOTO', 'LAINNYA']).nullable().optional(),
+  fileEvidenUrl: z.string().max(500).nullable().optional(),
+  waktuEviden: z.string().nullable().optional(),
+  catatanEviden: z.string().max(1000).nullable().optional(),
+  persenGaji: z.number().min(0).max(100).nullable().optional(),
+  untukHaji: z.boolean().nullable().optional(),
+})
+
+export type CutiCreate = z.infer<typeof cutiCreateSchema>
+
+/** Payload perubahan pengajuan cuti via PATCH /api/v1/cuti/{cutiId}. */
+export const cutiUpdateSchema = z
+  .object({
+    jenis: z
+      .enum([
+        'TAHUNAN',
+        'PANJANG',
+        'BERSALIN',
+        'SAKIT',
+        'SAKIT_BERKEPANJANGAN',
+        'IZIN_PENTING',
+        'POLITIK',
+      ])
+      .optional(),
+    tanggalMulai: z.string().min(1).optional(),
+    tanggalSelesai: z.string().min(1).optional(),
+    alamatCuti: z.string().max(500).nullable().optional(),
+    alasan: z.string().min(1).max(1000).optional(),
+    subJenis: z
+      .enum([
+        'MENIKAH',
+        'MELAHIRKAN_ISTRI',
+        'MENIKAHKAN_ANAK',
+        'KELUARGA_INTI',
+        'KELUARGA_LAIN',
+      ])
+      .nullable()
+      .optional(),
+    nomorSurat: z.string().max(100).nullable().optional(),
+    tanggalSuratDokter: z.string().nullable().optional(),
+    jenisEviden: z.enum(['SURAT_DOKTER', 'FOTO', 'LAINNYA']).nullable().optional(),
+    fileEvidenUrl: z.string().max(500).nullable().optional(),
+    waktuEviden: z.string().nullable().optional(),
+    catatanEviden: z.string().max(1000).nullable().optional(),
+    persenGaji: z.number().min(0).max(100).nullable().optional(),
+    untukHaji: z.boolean().nullable().optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: 'Minimal satu field harus diisi',
+  })
+
+export type CutiUpdate = z.infer<typeof cutiUpdateSchema>
+
+/** Payload setuju/tolak cuti via POST /api/v1/cuti/{cutiId}|approve|reject. */
+export const cutiActionSchema = z.object({
+  catatan: z.string().max(1000).nullable().optional(),
+})
+
+export type CutiAction = z.infer<typeof cutiActionSchema>

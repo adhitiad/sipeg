@@ -2,6 +2,7 @@ import { Link, useLocation } from '@tanstack/react-router'
 import {
   BarChart3,
   Briefcase,
+  Calendar,
   CalendarClock,
   KeyRound,
   Receipt,
@@ -85,6 +86,11 @@ const categoriesItem: NavItem = {
   key: 'nav.categories',
   icon: <Tags aria-hidden="true" />,
 }
+const cutiItem: NavItem = {
+  to: '/cuti',
+  key: 'nav.cuti',
+  icon: <Calendar aria-hidden="true" />,
+}
 const settingsItem: NavItem = {
   to: '/settings',
   key: 'nav.settings',
@@ -143,6 +149,10 @@ export default function Sidebar({ account }: SidebarProps) {
     permissions.includes('organization:read') ||
     permissions.includes('organization:read:homebase')
   const canReadCategories = permissions.includes('category:read')
+  const canReadCuti =
+    permissions.includes('cuti:read:any') ||
+    permissions.includes('cuti:read:homebase') ||
+    permissions.includes('cuti:read:self')
   const canReadAuditLogs =
     permissions.includes('audit:read') || permissions.includes('audit:read:homebase')
   const canManageRoles = permissions.includes('employee:role:manage')
@@ -165,6 +175,7 @@ export default function Sidebar({ account }: SidebarProps) {
     ...(canReadEmployees ? [employeesItem] : []),
     ...(canReadOrganizations ? [organizationsItem] : []),
     ...(canReadCategories ? [categoriesItem] : []),
+    ...(canReadCuti ? [cutiItem] : []),
     ...(canReadJabatan ? [jabatanItem] : []),
     ...(canReadPayrollSlips ? [payrollSlipsItem] : []),
     ...(canReadPayrollSchedules ? [payrollSchedulesItem] : []),

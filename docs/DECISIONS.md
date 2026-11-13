@@ -1,4 +1,4 @@
-﻿# Log Keputusan SIMPEG
+# Log Keputusan SIMPEG
 
 Catatan keputusan produk dan arsitektur beserta pemilik, tanggal, dan statusnya.
 Decision log ini adalah daftar ringkas; **rincian lengkap ada di `docs/PRD.md` §11**
@@ -55,7 +55,7 @@ produk (belum ditetapkan)".
 - **Pemilik:** Pemilik produk dan pemilik keamanan (belum ditetapkan)
 - **Status:** Disetujui
 - **Rincian:** `docs/PRD.md` §11 "Matriks peran dan cakupan"
-- **Bukti:** `backend/cmd/server/main.go` (matriks `auth.StaticPolicy`), `backend/internal/httpserver/scope_handlers_test.go`, `organization_scope_test.go`
+- **Bukti:** `backend/cmd/server/main.go` (matriks `auth.StaticPolicy`), `backend/tests/httpserver/scope_handlers_test.go`, `backend/tests/httpserver/organization_scope_test.go`
 
 ### DEC-004 — Cakupan operator adalah unit penugasan beserta turunannya
 
@@ -63,7 +63,7 @@ produk (belum ditetapkan)".
 - **Pemilik:** Pemilik produk (belum ditetapkan)
 - **Status:** Disetujui
 - **Rincian:** `docs/PRD.md` §11 "Matriks peran dan cakupan"
-- **Bukti:** `backend/internal/directory/repository/gorm_catalog.go` (recursive CTE pohon `Homebase`), `backend/internal/directory/repository/list_test.go`, `backend/internal/httpserver/scope_handlers_test.go`
+- **Bukti:** `backend/internal/directory/repository/gorm_catalog.go` (recursive CTE pohon `Homebase`), `backend/tests/directory/repository/list_test.go`, `backend/tests/httpserver/scope_handlers_test.go`
 
 ### DEC-005 — Provider autentikasi Better Auth
 
@@ -88,7 +88,7 @@ produk (belum ditetapkan)".
 - **Status:** Disetujui
 - **Rincian:** `docs/PRD.md` §11 "Keputusan autentikasi dan kontrak sesi" serta §8 (Backend). Backend disiapkan groundwork untuk penerbitan sesi sebelum runtime Better Auth tersedia: `auth.SessionIssuer` dengan implementasi GORM (`GormSessionIssuer`) yang menulis baris baru ke tabel `session` dengan token acak dan `expiresAt`; role/homebase diambil dari data server-side (tabel user/role) sehingga tidak dapat digunakan untuk naikkan role. Endpoint bootstrap `POST /api/v1/auth/session` didaftarkan bila resolver dan issuer tersedia, memerlukan sesi yang valid dan permission `auth:session:issue` (saat ini hanya admin). Masa berlaku sesi dikonfigurasi lewat `SESSION_LIFETIME` env (`config.SessionLifetime`, default 23 jam). Nilai final ditetapkan 23 jam oleh pemilik, efektif sejak 2026-11-11.
 - **Catatan:** Endpoint ini akan digantikan oleh flow login OAuth/password milik runtime Better Auth. Penerbitan token JWT tetap menjadi tanggung jawab runtime autentikasi, bukan backend Go.
-- **Bukti:** `backend/internal/auth/session_issuer.go`, `backend/internal/auth/session_issuer_test.go`, `backend/internal/httpserver/auth_handlers.go`, `backend/internal/httpserver/auth_handlers_test.go`, `backend/internal/httpserver/server.go` (`MuxOptions.SessionIssuer`), `backend/cmd/server/main.go`, `backend/internal/config/config.go` (`SESSION_LIFETIME`), `.env.example`
+- **Bukti:** `backend/internal/auth/session_issuer.go`, `backend/tests/auth/session_issuer_test.go`, `backend/internal/httpserver/auth_handlers.go`, `backend/tests/httpserver/auth_handlers_test.go`, `backend/internal/httpserver/server.go` (`MuxOptions.SessionIssuer`), `backend/cmd/server/main.go`, `backend/internal/config/config.go` (`SESSION_LIFETIME`), `.env.example`
 
 ### DEC-007 — Migration runner Goose
 
@@ -96,7 +96,7 @@ produk (belum ditetapkan)".
 - **Pemilik:** Pemilik platform/DB (belum ditetapkan)
 - **Status:** Disetujui
 - **Rincian:** `docs/PRD.md` §11 "Draf migrasi, backup, audit, dan ketersediaan"
-- **Bukti:** `backend/.goose.yaml`, `backend/migrations/`, `backend/internal/database/migrations_test.go`
+- **Bukti:** `backend/.goose.yaml`, `backend/migrations/`, `backend/tests/database/migrations_test.go`
 
 ### DEC-008 — Versi API memakai prefix path `/api/v1`
 
@@ -104,7 +104,7 @@ produk (belum ditetapkan)".
 - **Pemilik:** Pemilik arsitektur (belum ditetapkan)
 - **Status:** Disetujui
 - **Rincian:** `docs/PRD.md` §11 "Keputusan versi API"
-- **Bukti:** `backend/internal/httpserver/version.go`, `docs/openapi.yaml`, `backend/internal/httpserver/version_test.go`
+- **Bukti:** `backend/internal/httpserver/version.go`, `docs/openapi.yaml`, `backend/tests/httpserver/version_test.go`
 
 ### DEC-009 — Bentuk respons error seragam
 
@@ -112,7 +112,7 @@ produk (belum ditetapkan)".
 - **Pemilik:** Pemilik arsitektur (belum ditetapkan)
 - **Status:** Disetujui
 - **Rincian:** `docs/PRD.md` §11 dan `agents/rules/architecture.md`
-- **Bukti:** `backend/internal/apierror/`, `backend/internal/httpserver/errors.go`, `backend/internal/httpserver/health_test.go`
+- **Bukti:** `backend/internal/apierror/`, `backend/internal/httpserver/errors.go`, `backend/tests/httpserver/health_test.go`
 
 ### DEC-010 — Jejak audit append-only dengan akses dibatasi per unit
 
@@ -162,7 +162,7 @@ produk (belum ditetapkan)".
 - **Status:** Disetujui
 - **Rincian:** `docs/PRD.md` §11 "Keputusan mata uang, zona waktu, dan struktur backend"
 - **Catatan:** tampilan dan aturan kalender memakai Asia/Jakarta (WIB) lewat `internal/timeutil`; timestamp disimpan UTC pada kolom `timestamp without time zone` dengan DSN yang dipaksa `timezone=UTC`; kolom `date` ditulis sebagai tengah malam UTC agar tanggal yang dibaca kembali tetap sama.
-- **Bukti:** `backend/internal/timeutil/`, `backend/internal/database/postgres.go`, `backend/internal/database/postgres_test.go`
+- **Bukti:** `backend/internal/timeutil/`, `backend/internal/database/postgres.go`, `backend/tests/database/postgres_test.go`
 
 ### DEC-023 — Struktur backend empat lapis per area bisnis
 
@@ -197,7 +197,7 @@ produk (belum ditetapkan)".
 - **Pemilik:** Pemilik produk (belum ditetapkan)
 - **Status:** Disetujui
 - **Rincian:** `docs/PRD.md` §11 "Keputusan jadwal gajian, pemberitahuan slip H+1, dan kalender hari libur"
-- **Catatan:** tanggal gajian bersifat tetap (1–28) per unit organisasi, diinput lewat `PUT /api/v1/payroll/schedules/{unitId}` dengan permission `payroll:schedule` (admin, seluruh unit) atau `payroll:schedule:homebase` (operator, unitnya beserta turunannya); nilai disimpan di tabel `jadwalGaji` (satu baris per unit). Pemberitahuan ketersediaan slip dikirim H+1 pada **tanggal kalender tetap** — tidak digeser karena akhir pekan atau hari libur nasional, dan tidak maju selama periode berjalan belum lewat jadwalnya. Jenis pesan outbox `email.slip-tersedia` dengan kunci idempotensi `slip-available:{slipId}`; pekerjaan dijalankan lewat job QStash `payroll.notify` (`5 19 * * *` = 02:05 WIB). Isi pesan hanya nama, periode, dan tautan — **tidak memuat nominal gaji dan tidak menyatakan gaji sudah dibayar**; itu pemberitahuan ketersediaan slip, bukan notifikasi gaji terbayar, yang tetap mensyaratkan konfirmasi pembayaran tersimpan.
+- **Catatan:** tanggal gajian bersifat tetap (1–28) per unit organisasi, diinput lewat `PUT /api/v1/payroll/schedules/{unitId}` dengan permission `payroll:schedule` (admin, seluruh unit) atau `payroll:schedule:homebase` (operator, unitnya beserta turunannya); nilai disimpan di tabel `jadwalGaji` (satu baris per unit). Pemberitahuan ketersediaan slip dikirim H+1 pada **tanggal kalender tetap** — tidak digeser karena akhir pekan atau hari libur nasional, dan tidak maju selama periode berjalan belum lewat jadwalnya. Jenis pesan outbox `email.slip-tersedia` dengan kunci idempotensi `slip-available:{slipId}`; pekerjaan dijalankan lewat job `payroll.notify` (`5 19 * * *` = 02:05 WIB) melalui RabbitMQ (self-hosted) atau QStash (cloud alternatif). Isi pesan hanya nama, periode, dan tautan — **tidak memuat nominal gaji dan tidak menyatakan gaji sudah dibayar**; itu pemberitahuan ketersediaan slip, bukan notifikasi gaji terbayar, yang tetap mensyaratkan konfirmasi pembayaran tersimpan.
 - **Bukti:** `backend/internal/payroll/domain/schedule.go`, `backend/internal/payroll/app/schedule.go`, `backend/internal/payroll/repository/schedule.go`, `backend/internal/notify/slip.go`, `backend/internal/httpserver/payroll_schedule_handlers.go`, `backend/migrations/000009_payroll_schedule.sql`
 
 ### DEC-028 — Integrasi kalender hari libur nasional (api.co.id)
@@ -220,7 +220,7 @@ produk (belum ditetapkan)".
 - **Status:** Disetujui
 - **Rincian:** `docs/PRD.md` §11 "Keputusan integrasi layanan pendukung"
 - **Catatan:** Mekanisme SMTP sudah diimplementasikan (`backend/internal/notify`) dan konsisten dengan konfigurasi pada `.env.example` dan `README.md`. Schema menyebut Resend sebagai kandidat lain; Resend juga menyediakan API SMTP sehingga migrasi ke sana tidak memerlukan perubahan kode. **Alamat pengirim ditetapkan: `no-reply@simpeg.unisubang.ac.id`**, dengan origin aplikasi `https://simpeg.unisubang.ac.id`. Backend memvalidasi bentuk alamat pengirim saat start.
-- **Bukti:** `backend/internal/notify/smtp.go`, `backend/internal/notify/notify_test.go`, `backend/internal/notify/deliverer.go`, `backend/internal/config/config_test.go`, `.env.example`
+- **Bukti:** `backend/internal/notify/smtp.go`, `backend/tests/notify/notify_test.go`, `backend/internal/notify/deliverer.go`, `backend/tests/config/config_test.go`, `.env.example`
 
 ### DEC-015 — Use case Redis: cache daftar kategori pegawai
 
@@ -229,7 +229,7 @@ produk (belum ditetapkan)".
 - **Status:** Disetujui
 - **Rincian:** `docs/PRD.md` §11 "Keputusan integrasi layanan pendukung"
 - **Catatan:** use case yang spesifik adalah cache daftar kategori pegawai: data referensi dengan kardinalitas rendah, dibaca setiap kali formulir pegawai dibuka, dan tidak termasuk data sensitif. TTL 5 menit, satu namespace `simpeg`, dan `ReadThrough` memuat ulang dari PostgreSQL saat cache miss atau Redis gagal. **Queue tidak wajib untuk alur kritis** karena durability dijamin outbox di PostgreSQL, bukan oleh Redis. Kunci cache memuat seluruh parameter daftar (page, size, sort, order, pencarian) supaya tiap kombinasi filter punya entri sendiri. Cache sudah disambungkan ke `GET /api/v1/categories`; tanpa Redis konfigurasi pembacaan tetap langsung ke PostgreSQL.
-- **Bukti:** `backend/internal/directory/app/catalog.go`, `backend/internal/directory/app/catalog_test.go`, `backend/internal/cache/`
+- **Bukti:** `backend/internal/directory/app/catalog.go`, `backend/tests/directory/app/catalog_test.go`, `backend/internal/cache/`
 
 ### DEC-016 — S3-compatible storage di luar scope
 
@@ -255,7 +255,7 @@ produk (belum ditetapkan)".
 - **Status:** Disetujui
 - **Rincian:** `docs/PRD.md` §11 "Keputusan fondasi presensi mesin". Endpoint `POST /api/v1/attendance/events` mendukung dua jalur autentikasi: (1) sesi pengguna dengan permission `attendance:event:ingest` (hanya `admin` melalui sesi API), dan (2) autentikasi perangkat melalui header `X-Device-ID` + `Authorization: Bearer <device-token>` yang diverifikasi terhadap tabel `machineCredential` (hash, bukan plaintext). Autentikasi perangkat terpisah dari sesi pengguna dan tidak dapat digunakan untuk mengakses data non-presensi.
 - **Catatan:** Tabel `machineCredential` ditambahkan via migrasi `000011_machine_credential.sql`. Role dan grant untuk autentikasi perangkat masih menunggu kontrak API/SDK vendor (Fingerspot Revo W-230N) — dokumentasi vendor belum tersedia, jadi adapter vendor dan format kredensial produksi belum dibuat.
-- **Bukti:** `backend/internal/attendance/device_auth.go`, `backend/internal/attendance/device_auth_test.go`, `backend/internal/httpserver/attendance_handlers.go`, `backend/internal/httpserver/attendance_handlers_test.go`, `backend/migrations/000011_machine_credential.sql`, `backend/internal/models/models_operations.go`
+- **Bukti:** `backend/internal/attendance/device_auth.go`, `backend/tests/attendance/device_auth_test.go`, `backend/internal/httpserver/attendance_handlers.go`, `backend/tests/httpserver/attendance_handlers_test.go`, `backend/migrations/000011_machine_credential.sql`, `backend/internal/models/models_operations.go`
 
 ### DEC-031 — Kebijakan idempotency key event presensi
 
@@ -264,7 +264,7 @@ produk (belum ditetapkan)".
 - **Status:** Disetujui
 - **Rincian:** `docs/PRD.md` §11 "Keputusan fondasi presensi mesin". Idempotency key harus unik per pasangan `(machineId, tap event)`. Key dipanggil oleh adapter vendor dan dikirim dalam body request. Jika key sama digunakan dengan fakta tap yang berbeda (machinePin atau occurredAt berubah), server menolak dengan `409 Conflict`. Jika key sama dengan fakta tap yang sama, server mengembalikan event yang sama (`duplicate: true`) tanpa duplikasi.
 - **Catatan:** Sumber idempotency key yang dijamin vendor belum ditetapkan; menunggu kontrak API/SDK vendor. Format yang disarankan: UUID v4.
-- **Bukti:** `backend/internal/attendance/store.go`, `backend/internal/attendance/store_test.go`, `backend/internal/httpserver/attendance_handlers.go`, `backend/migrations/000002_attendance_events.sql` (unique index `(machineId, idempotencyKey)`)
+- **Bukti:** `backend/internal/attendance/store.go`, `backend/tests/attendance/store_test.go`, `backend/internal/httpserver/attendance_handlers.go`, `backend/migrations/000002_attendance_events.sql` (unique index `(machineId, idempotencyKey)`)
 
 ### DEC-032 — Retensi event presensi
 
@@ -299,7 +299,7 @@ produk (belum ditetapkan)".
 - **Status:** Disetujui
 - **Rincian:** `docs/PRD.md` §11 "Kebijakan jejak audit"
 - **Catatan:** Ekspor CSV disediakan melalui `GET /api/v1/audit-logs/export` dengan permission `audit:read` (admin, seluruh jejak) atau `audit:read:homebase` (operator, jejak unit penugasannya beserta turunannya). Filter sama dengan endpoint daftar (hanya `aksi` dan `search`); sort dan pagination diabaikan, urutan kronologis naik (`createdAt` ASC, `id` ASC), tanpa batas jumlah baris (streaming per batch via keyset pagination). Berkas dikirim dengan `text/csv; charset=utf-8` dan BOM UTF-8; setiap ekspor yang berhasil dicatat sebagai aksi `audit.exported` dengan jumlah baris. Kewajiban arsip ke media lain dan prosedur pemangkasan di luar retensi otomatis tetap belum ditetapkan. Masa retensi otomatis (90 hari, `AUDIT_RETENTION_DAYS`) dan pekerjaan pembersihan terjadwalnya sudah disetujui terpisah — lihat `DEC-024`.
-- **Bukti:** `backend/internal/audit/audit_test.go` (penjaga append-only), `backend/internal/httpserver/audit_handlers.go` (`exportAuditLogs`), `docs/openapi.yaml`
+- **Bukti:** `backend/tests/audit/audit_test.go` (penjaga append-only), `backend/internal/httpserver/audit_handlers.go` (`exportAuditLogs`), `docs/openapi.yaml`
 
 ### DEC-019 — Paparan Supabase Data API dan kebijakan RLS
 
@@ -308,7 +308,7 @@ produk (belum ditetapkan)".
 - **Status:** Disetujui
 - **Rincian:** `docs/PRD.md` §8 (Backend dan Frontend): aplikasi mengakses database hanya melalui GORM di backend (koneksi server-side dengan TLS, role database berhak minimum); frontend berkomunikasi dengan backend lewat kontrak HTTP API, **bukan** langsung ke database/Supabase Data API.
 - **Catatan:** Keputusan final: **GORM-only, Supabase Data API tidak diekspos** untuk tabel aplikasi, sehingga tidak diperlukan policy RLS per tabel pada waktu ini. RLS default-deny tetap aktif pada seluruh 45 tabel aplikasi sebagai pertahanan dalam-dalam (mengakapi kebocoran bila kebijakan berubah di masa depan). Jika Data API diekspos di masa depan, policy per tabel wajib dibuat dan diuji satu per tabel sebelum tabel diakses melalui Data API.
-- **Bukti:** `docs/PRD.md` §8, `backend/migrations/000004_row_level_security.sql`, `backend/internal/database/migrations_test.go` (`TestRowLevelSecurityMigrationCoversEveryTable`)`
+- **Bukti:** `docs/PRD.md` §8, `backend/migrations/000004_row_level_security.sql`, `backend/tests/database/migrations_test.go` (`TestRowLevelSecurityMigrationCoversEveryTable`)`
 
 ### DEC-020 — Target ketersediaan, RPO, RTO, dan SLO
 
@@ -316,8 +316,8 @@ produk (belum ditetapkan)".
 - **Pemilik:** Pemilik platform/DB dan pemilik operasi (belum ditetapkan)
 - **Status:** Menunggu
 - **Rincian:** `docs/PRD.md` §11 "Draf migrasi, backup, audit, dan ketersediaan"
-- **Catatan:** default `RPO_HOURS` (24 jam), `RTO_HOURS` (4 jam), dan `SLO_TARGET` (`99.9`) sudah dapat dikonfigurasi lewat environment dan dibaca `config.Load()`, tetapi angka final tetap menunggu persetujuan pemilik platform/DB dan pemilik operasi sesuai tier layanan dan anggaran.
-- **Bukti:** `backend/internal/config/`, `backend/internal/config/config_test.go`
+- **Catatan:** default `RPO_HOURS` (24 jam), `RTO_HOURS` (4 jam), dan `SLO_TARGET` (`99.9`) sudah dapat dikonfigurasi lewat environment dan dibaca `config.Load()`, tetapi angka final tetap menunggu persetujuan pemilik platform/DB dan pemilik operasi sesuai tier layanan dan anggaran. Nilai awal 24 jam / 4 jam telah diratifikasi pengguna pada 13 November 2026 (`DEC-050`) — itu ratifikasi nilai awal, bukan penetapan target produksi; final tetap menunggu.
+- **Bukti:** `backend/internal/config/`, `backend/tests/config/config_test.go`
 
 ### DEC-033 — Workflow deployment migrasi Goose
 
@@ -326,7 +326,7 @@ produk (belum ditetapkan)".
 - **Status:** Disetujui
 - **Rincian:** `docs/PRD.md` §8 (Backend) dan `docs/RUNBOOK.md` §7 (Pemulihan setelah penerapan migrasi). Workflow GitHub Actions `.github/workflows/deploy-migrations.yml` dibuat untuk menjalankan migrasi Goose secara terkendali. Workflow dipicu secara manual (`workflow_dispatch`) dengan pilihan environment `staging` atau `production`, bukan berjalan otomatis pada setiap push. Setiap jalankan memverifikasi format, vet, tes, paritas skema, nomor migrasi urut, dan header migrasi sebelum menjalankan `goose status` lalu `goose up` terhadap database target. `DATABASE_URL` disimpan sebagai secret GitHub, tidak ada di repo.
 - **Catatan:** Workflow siap digunakan, tetapi migrasi masih belum pernah diterapkan pada database nyata. Sebelum menjalankan di production, operator wajib mencoba di staging dengan data sintetis dan memastikan backup/restore sudah diuji (lihat `docs/RUNBOOK.md` §7).
-- **Bukti:** `.github/workflows/deploy-migrations.yml`, `backend/.goose.yaml`, `backend/migrations/`, `backend/internal/database/migrations_test.go`, `docs/RUNBOOK.md` §7
+- **Bukti:** `.github/workflows/deploy-migrations.yml`, `backend/.goose.yaml`, `backend/migrations/`, `backend/tests/database/migrations_test.go`, `docs/RUNBOOK.md` §7
 
 ### DEC-034 — Kebijakan akses Google OAuth, allowlist domain, undangan, dan MFA
 
@@ -374,7 +374,7 @@ produk (belum ditetapkan)".
 - **Status:** Disetujui
 - **Rincian:** `qstash.Publisher` menempelkan URL tujuan langsung ke `BaseURL`. Nilai `QSTASH_URL` pada environment adalah root API regional (`https://qstash-us-east-1.upstash.io`), bukan endpoint lengkap, sehingga URL tujuan menjadi `https://qstash-us-east-1.upstash.io/<tujuan>` dan QStash menjawab `404`. Endpoint jadwal juga jatuh ke region global karena `QSTASH_SCHEDULES_URL` kosong.
 - **Catatan:** Publisher kini menambah jalur `/v2/publish` bila `BaseURL` belum memuatnya, dan endpoint jadwal diturunkan dari `BaseURL` yang sama sehingga token, publikasi, dan jadwal berada pada satu region. Nilai `QSTASH_SCHEDULES_URL` yang diisi eksplisit tetap dipakai apa adanya. Pemeriksaan nyata menunjukkan format URL tujuan harus berupa URL mentah pada jalur, bukan ter-encode: QStash menolak bentuk ter-encode dengan "endpoint has invalid scheme".
-- **Bukti:** `backend/internal/qstash/publisher.go`, `backend/internal/qstash/schedule.go`, `backend/internal/qstash/publisher_endpoint_test.go`, `docs/PERFORMANCE-BASELINE.md` §5
+- **Bukti:** `backend/internal/qstash/publisher.go`, `backend/internal/qstash/schedule.go`, `backend/tests/qstash/publisher_endpoint_test.go`, `docs/PERFORMANCE-BASELINE.md` §5
 
 ### DEC-039 — Dukungan STARTTLS pada transport SMTP
 
@@ -383,7 +383,7 @@ produk (belum ditetapkan)".
 - **Status:** Disetujui
 - **Rincian:** `notify.smtpTransport` hanya knewa dua mode: TLS langsung (`UseTLS`) dan koneksi polos tanpa peningkatan. Server submission pada porta 587 menerima koneksi polos lalu menawarkan `STARTTLS`. Dengan `SMTP_HOST=smtp.gmail.com` dan `SMTP_PORT=587`, mode TLS langsung gagal dengan `tls: first record does not look like a TLS handshake`, sehingga tidak ada email yang pernah terkirim.
 - **Catatan:** Transport kini menaikkan koneksi ke TLS otomatis bila server menawarkan `STARTTLS`, dan peningkatan dilakukan sebelum autentikasi karena kredensial tidak boleh dikirim lewat koneksi polos. Penentuan mode dipindah ke `config.SMTPConfig`: `SMTP_SECURE=true` berarti TLS langsung, `SMTP_SECURE=false` berarti koneksi polos yang dinaikkan lewat STARTTLS, dan bila `SMTP_SECURE` tidak disetel, mode ditebak dari porta (465 memakai TLS langsung, porta lain memakai STARTTLS). Nilai bawaan lama `SMTP_SECURE=true` tidak lagi berlaku karena tidak sesuai dengan porta submission.
-- **Bukti:** `backend/internal/notify/smtp.go`, `backend/internal/config/smtp.go`, `backend/internal/notify/smtp_starttls_test.go`, `docs/PERFORMANCE-BASELINE.md` §5
+- **Bukti:** `backend/internal/notify/smtp.go`, `backend/internal/config/smtp.go`, `backend/tests/notify/smtp_starttls_test.go`, `docs/PERFORMANCE-BASELINE.md` §5
 
 ### DEC-040 — Penyimpanan metrik SLO di PostgreSQL dan alert lewat antrean keluar
 
@@ -401,7 +401,7 @@ produk (belum ditetapkan)".
 - **Status:** Disetujui
 - **Rincian:** Bentuk baku RFC 5322 `"Nama Tampilan" <alamat@domain>` ditolak oleh validasi `SMTP_FROM` yang hanya menerima alamat polos. Konsekuensinya backend menolak start dengan `config: SMTP_FROM must be a valid email address`, sehingga layanan tidak dapat dijalankan sama sekali dengan konfigurasi email yang lazim.
 - **Catatan:** Pemisahan alamat kini berada di `notify.SplitAddress`: bentuk polos dikembalikan apa adanya, bentuk nama tampilan menghasilkan alamat polos di dalam kurung sudut. Header `From` memakai nilai yang dikonfigurasi apa adanya, sedangkan perintah SMTP `MAIL FROM` memakai alamat polos karena perintah itu tidak menerima bentuk nama tampilan. Validasi dipindah ke `notify.ValidateAddress` dan menerima kedua bentuk. Bentuk polos tetap menjadi default pada `.env.example`.
-- **Bukti:** `backend/internal/notify/address.go`, `backend/internal/notify/smtp.go`, `backend/internal/config/config.go`, `backend/internal/notify/address_test.go`, `docs/PERFORMANCE-BASELINE.md` §8
+- **Bukti:** `backend/internal/notify/address.go`, `backend/internal/notify/smtp.go`, `backend/internal/config/config.go`, `backend/tests/notify/address_test.go`, `docs/PERFORMANCE-BASELINE.md` §8
 
 ### DEC-042 — RabbitMQ menggantikan QStash sebagai pengangkut pekerjaan terjadwal pada deployment self-hosted
 
@@ -429,7 +429,7 @@ produk (belum ditetapkan)".
 - **Pemilik:** Pemilik produk (belum ditetapkan)
 - **Status:** Disetujui (arah pengguna)
 - **Rincian:** Cuti melahirkan (`BERSALIN`), cuti sakit (`SAKIT` dan `SAKIT_BERKEPANJANGAN`), dan cuti harian (`IZIN_PENTING`) wajib menyertakan eviden saat pengajuan dibuat; pengajuan tanpa eviden ditolak `422`, dan eviden dicek ulang saat persetujuan. Bentuk eviden: `SURAT_DOKTER` (berkas, nomor, tanggal surat dokter wajib) hanya untuk cuti sakit dan melahirkan; `FOTO` (berkas dan waktu tangkap wajib) atau `LAINNYA` (waktu dan keterangan wajib) untuk cuti harian. Metadata disimpan pada kolom baru tabel `Cuti`: `jenisEviden` (enum `SURAT_DOKTER`/`FOTO`/`LAINNYA`), `fileEvidenUrl`, `waktuEviden`, `catatanEviden`. Kolom lama `fileSuratUrl` di-`RENAME` menjadi `fileEvidenUrl` (bukan drop) lewat migrasi `000019_cuti_eviden.sql`.
-- **Bukti:** `backend/migrations/000019_cuti_eviden.sql`, `backend/internal/directory/domain/leave_eviden.go`, `backend/internal/directory/app/leave.go`, `backend/internal/httpserver/hr_leave_handlers.go`, dan tes di `hr_leave_handlers_test.go` serta `leave_eviden_test.go`; kontrak di `docs/openapi.yaml`; kebijakan di `docs/PRD.md` §11.
+- **Bukti:** `backend/migrations/000019_cuti_eviden.sql`, `backend/internal/directory/domain/leave_eviden.go`, `backend/internal/directory/app/leave.go`, `backend/internal/httpserver/hr_leave_handlers.go`, dan tes di `backend/tests/httpserver/hr_leave_handlers_test.go` serta `backend/tests/directory/domain/leave_eviden_test.go`; kontrak di `docs/openapi.yaml`; kebijakan di `docs/PRD.md` §11.
 
 
 ### DEC-045 — Go dinaikkan ke 1.27.4; image container tidak lagi mengandung gosu
@@ -458,4 +458,93 @@ produk (belum ditetapkan)".
 - **Rincian:** Modul arsip dokumen pegawai (`ArsipDokumenPegawai`) sudah ada dan diperluas untuk menampung 11 jenis dokumen pegawai/dosen (KTP, NPWP, Kartu Keluarga, Rekening Bank, SK Pengangkatan Yayasan, SK Mendikbud, Pakta Integritas, Lainnya, Foto, Ijazah Terakhir, SK Kepegawaian/Kontrak, BPJS Ketenagakerjaan, BPJS Kesehatan, Sertifikat Serdos). Setiap jenis memiliki aturan format MIME dan ukuran maksimal yang divalidasi pada metadata berkas (backend tidak menangani unggah berkas; berkas diunggah langsung ke Cloudinary oleh klien, backend hanya menyimpan URL + metadata). Migrasi `000020_arsip_dokumen_tambahan.sql` menambah nilai enum baru pada `JenisDokumenArsip` dan kolom `fileSize`, `mimeType`, `cloudinaryPublicId` pada tabel `arsipDokumenPegawai`. Endpoint: `GET/POST/PATCH/DELETE /api/v1/arsip{...}`. Konfigurasi Cloudinary dibaca dari `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` (`.env.example`). `no_rek` dan `nama_rek` sudah tersedia sebagai `BankRekening` dan `BankAtasNama` pada tabel `user`. Timestamps `createdAt`/`updatedAt` disimpan UTC di database dan ditampilkan Asia/Jakarta.
 - **Bukti:** `backend/migrations/000020_arsip_dokumen_tambahan.sql`, `backend/internal/models/models_hr.go`, `backend/internal/models/enums.go`, `backend/internal/directory/domain/arsip.go`, `backend/internal/directory/app/arsip.go`, `backend/internal/directory/repository/gorm_arsip.go`, `backend/internal/httpserver/hr_arsip_handlers.go`, `backend/internal/config/config.go` (`CloudinaryConfig`), `.env.example`, `docs/openapi.yaml`.
 
+
+### DEC-048 — Fondasi frontend: sesi token di memori, satu lockfile Bun, dan gerbang mutu frontend
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Frontend SIMPEG dibuat di `frontend/` memakai TanStack Start + shadcn/ui dan diintegrasikan ke repo utama (repo Git nested yang kosong di `frontend/` dihapus). Tiga keputusan diambil. (1) Package manager hanya Bun: `frontend/bun.lock` menjadi satu-satunya lockfile; `frontend/package-lock.json` yang tertinggal dari scaffolding awal dihapus karena aturan repo melarang lockfile lain. (2) Sesi dibawa lewat header `Authorization: Bearer <token>` sesuai skema `bearerSession` pada `docs/openapi.yaml`. Token hanya hidup di memori tab (`frontend/src/lib/auth-token.ts`, TanStack Store) dan tidak pernah ditulis ke `localStorage` atau `sessionStorage`, sesuai PRD §11. Request browser ke backend memakai `credentials: 'omit'` karena middleware CORS backend hanya mengirim `Access-Control-Allow-Origin` tanpa `Access-Control-Allow-Credentials`, sehingga request lintas origin dengan cookie akan ditolak browser. Bila deployment nanti memakai cookie lintas origin, backend harus menambah `Access-Control-Allow-Credentials` dan frontend harus beralih ke `credentials: 'include'`. (3) Backend Go tidak menambah endpoint pencatatan masuk; pencatatan masuk tetap milik runtime Better Auth dan dipanggil frontend lewat `VITE_AUTH_BASE_URL`. Halaman masuk menonaktifkan formulir bila runtime belum dikonfigurasi, bukan mengirim permintaan yang pasti gagal. Quality tooling dipasang sejak awal (Vitest + jsdom + Testing Library, ESLint flat config, Prettier, Playwright, Zod) dan dijalankan sebagai gerbang CI pada `.github/workflows/frontend.yml`. Keterbatasan lingkungan dicatat: Vitest 5 menjalankan worker jsdom dengan runtime Node karena runtime Bun 1.4.2 belum dapat menjalankannya (galat `EventTarget` lintas realm). Judul halaman memakai elemen heading semantik karena `CardTitle` shadcn merender `div`.
+- **Bukti:** `frontend/package.json`, `frontend/bun.lock`, `frontend/src/lib/api.ts`, `frontend/src/lib/auth-token.ts`, `frontend/src/lib/session.ts`, `frontend/src/lib/require-auth.tsx`, `frontend/src/features/auth/login-form.tsx`, `frontend/vite.config.ts`, `frontend/eslint.config.js`, `frontend/vitest.config.ts`, `frontend/playwright.config.ts`, `frontend/README.md`, `.github/workflows/frontend.yml`, `backend/internal/httpserver/security.go` (CORS), `docs/openapi.yaml` (`bearerSession`).
+
+### DEC-049 — Runtime autentikasi tertanam di frontend dan pengalaman publik SIMPEG
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Runtime Better Auth dipasang tertanam di server TanStack Start pada `/api/auth/*` (`frontend/src/lib/server/better-auth.ts`, catch-all `frontend/src/routes/api/auth/$.tsx`). Konfigurasi: `pg.Pool` langsung sebagai database adapter (Kysely tidak dipakai), `advanced.database.generateId: () => crypto.randomUUID()` karena tabel auth tidak memiliki DEFAULT pada primary key, `disableSignUp: true` (pendaftaran publik dimatikan; akun dibuat administrator lewat `frontend/scripts/provision-accounts.ts` terhadap database uji sekali pakai di Docker), sesi 7 hari dengan rolling refresh 1 hari, `user.fields.name` dipetakan ke kolom `nama`, `sameSite: 'lax'`/`httpOnly`/`secure` + `useSecureCookies` di produksi, `trustedOrigins` dari `TRUSTED_ORIGINS`, dan plugin `tanstackStartCookies()`. Browser menyimpan token sesi hanya di memori tab dan mengirimnya ke Go API sebagai `Authorization: Bearer <token>`; Go memverifikasi lewat resolver GORM `session`. `/api/v1/me` tidak dipanggil bila tidak ada token di memori (hasil pasti 401 dan hanya membisingkan konsol). `POST /api/auth/sign-out` Better Auth menolak permintaan tanpa `Content-Type: application/json` dan body JSON (`415`); pemanggilan kini mengirim `{}` dengan `Content-Type: application/json`. Pengembangan harian memakai proksi Vite same-origin: `VITE_API_BASE_URL=/api/v1` dan `VITE_API_PROXY_TARGET=http://localhost:8080` pada environment proses dev (`server.proxy` di `frontend/vite.config.ts`), sehingga browser tidak membutuhkan CORS lintas origin. Pengalaman publik dibangun di atasnya: halaman depan publik, header (tombol Masuk saat keluar; avatar inisial + dropdown dengan Ruang kerja/Keluar saat masuk), footer tiga kolom, saklar bahasa Indonesia/English (default `id`) berbasis kamus, tema light bawaan dengan toggle dark (`useSyncExternalStore`), sonner untuk umpan balik masuk/keluar, dan halaman About, Privacy Policy, Terms of Service, Terms of Reference, serta komponen error/loading/not-found global. Seluruh gerbang mutu frontend hijau (format, lint nol galat nol peringatan, `tsc --noEmit`, 27 tes Vitest, build produksi, 12 tes Playwright, dan asap browser langsung: pegawai dan admin masuk, mendarat di `/workspace`, lalu keluar tanpa error konsol). `DESIGN.md` disusun sebagai draf yang **menunggu persetujuan pemilik produk**. Verifikasi memakai database disposable `simpeg-verify-pg` (postgres:16-alpine, porta 55432) dengan migrasi Goose 000001–000020; bukan Supabase production.
+- **Catatan:** Skrip `provision-accounts.ts` mencetak kata sandi sekali pakai dan hanya boleh dijalankan terhadap database uji yang memang sekali pakai; kredensial verifikasi tidak pernah masuk repo dan tidak dicatat di sini. Akun produksi tetap dibuat administrator lewat proses yang disepakati, bukan lewat pendaftaran publik. Klaim "seluruh karyawan dapat masuk" belum terbukti di produksi — yang terverifikasi adalah bahwa jalur masuk/keluar dan kontrak sesi bekerja untuk keempat role pada database uji. Audit visual antislop masih menunggu (lihat `IMPLEMENTATION-PLAN.md`).
+- **Bukti:** `frontend/src/lib/server/better-auth.ts`, `frontend/src/routes/api/auth/$.tsx`, `frontend/scripts/provision-accounts.ts`, `frontend/src/lib/session.ts`, `frontend/src/lib/auth-token.ts`, `frontend/vite.config.ts`, `frontend/.env.example`, `frontend/src/routes/index.tsx`, `frontend/src/routes/{about,privacy,terms,terms-of-reference}.tsx`, `frontend/src/components/{Header,Footer,ThemeToggle,AppToaster,GlobalError,GlobalLoading,GlobalNotFound}.tsx`, `frontend/src/i18n/`, `frontend/src/test/`, `frontend/e2e/app.spec.ts`, `DESIGN.md`, `agents/rules/{project,architecture,backend,frontend}.md`.
+
+### DEC-050 — RPO/RTO awal (24 jam / 4 jam), drill restore lokal, dasbor SLO internal, dan log auth_failed
+
+- **Tanggal:** 2026-11-13
+- **Pemilik:** Pemilik produk/operasi (ratifikasi awal oleh pengguna, belum ada penetapan resmi)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Empat keputusan observability/pemulihan. (1) **RPO/RTO awal diratifikasi 24 jam / 4 jam**, sejalan dengan bawaan `RPO_HOURS`/`RTO_HOURS` (dicocokkan pada 13 November 2026); keduanya baru nilai awal, belum target produksi yang diukur. (2) **Drill backup/restore dijalankan pada database disposable lokal** (`simpeg-verify-pg`, postgres:16-alpine, bukan Supabase production): dump 134.982 byte dalam 0,35 detik; restore ke database `simpeg_restore_drill` dalam 1,36 detik tanpa galat; perbandingan skema hasil restore vs sumber identik (Goose 20 versi, 69 tabel, 181 indeks, 167 constraint, 68 tabel dengan RLS aktif, `user`=4, `session`=8, `account`=4, `auditLog`=8); database drill dihapus setelah verifikasi. PITR (point-in-time recovery) dan restore pada database target produksi **belum pernah diuji**. (3) **Dasbor SLO internal** dibangun sebagai halaman admin di frontend (`/admin/slo`) dengan sumber data `sloMetric` lewat endpoint baru read-only `GET /api/v1/admin/slo/metrics` (permission baru `slo:read`, admin saja, deny-by-default); kontrak di `docs/openapi.yaml`. Cakupan: laju galat dan latensi (rata-rata, p95, p99, maks) per rute + agregat, pada jendela 24 jam atau 7 hari. **Tidak** mencakup saturasi, health dependency, keterlambatan antrean, atau kegagalan notifikasi; **aturan alert belum terpasang pada infrastruktur mana pun** — bagian 7 dan A09 tetap terbuka untuk itu. Selama pengoleki metrik (`SLO_ENABLED`) belum menulis data, halaman menampilkan tabel kosong (respons 200 dengan total nol), bukan klaim "tidak ada lalu lintas". (4) **Login gagal pada lapisan runtime Better Auth (frontend) kini dapat diamati**: hook `after` pada konfigurasi Better Auth menulis satu baris JSON `{ event: 'auth_failed', path, reason, ts }` ke stdout; `reason` hanya kode yang dikenali (huruf/angka/`_.-`, maksimum 64 karakter) atau `http_<status>`; tidak pernah berisi body formulir, email, atau kata sandi. Kegagalan sign-in email terverifikasi pada database uji: respons publik tetap seragam (`401 INVALID_EMAIL_OR_PASSWORD`), sedangkan log internal mencatat alasan spesifik (`reason=INVALID_EMAIL` untuk email tidak dikenal, `reason=INVALID_PASSWORD` untuk kata sandi salah). Ini **bukan** alert dan **bukan** pengganti SIEM; eskalasi otomatis belum ada.
+- **Bukti:** `backend/internal/slo/app/dashboard.go`, `backend/internal/httpserver/slo_dashboard_handlers.go` (+`backend/tests/httpserver/slo_dashboard_handlers_test.go`), `backend/cmd/server/main.go`, `backend/cmd/server/policy.go`, `frontend/src/components/SloMetricsPage.tsx`, `frontend/src/lib/server/better-auth.ts` (`logAuthFailure`), `frontend/src/test/auth-failure-logger.test.ts`, `frontend/src/test/slo-metrics-page.test.tsx`, `frontend/e2e/app.spec.ts`, `docs/RUNBOOK.md` §8E/§9, `docs/openapi.yaml`, `docs/PRD.md` §11.
+
+### DEC-051 — Atasan melihat kehadiran timnya (agregat + detail per pegawai); `note` terlihat dalam cakupan
+
+- **Tanggal:** 2026-11-13
+- **Pemilik:** Pemilik produk (arah langsung dari pengguna, 13 November 2026)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Atasan (`atasan`, termasuk rektor/pimpinan yang ditugaskan pada akar pohon `Homebase`) dan operator melihat kehadiran timnya dalam dua kedalaman, dibatasi cakupan yang sama dengan `attendance:read:homebase` (unit penugasan beserta seluruh turunannya); admin memakai `attendance:read:any` (lintas organisasi): (1) agregat per tanggal (`H/I/S/A/C/LD`) lewat `GET /api/v1/attendance/unit-summary` — sudah ada; (2) detail per pegawai untuk satu tanggal lewat `GET /api/v1/attendance/unit-records?date=YYYY-MM-DD` — semua pegawai **aktif** dalam cakupan ditampilkan (LEFT JOIN ke `Presensi`); pegawai tanpa catatan pada tanggal itu tampil dengan `status` null; artinya "belum tercatat", **bukan** alpa — aturan penurunan status harian belum disetujui. Keterangan (`note`/`keterangan`) presensi **boleh terlihat** oleh atasan yang memegang cakupan (mis. alasan sakit/izin untuk keputusan operasional); karena bisa memuat informasi kesehatan/pribadi, `note` tidak pernah terlihat di luar cakupan atasan (lintas unit hanya lewat `attendance:read:any`, admin). Endpoint **tidak** menambah permission baru; memakai `attendance:read:any` atau `attendance:read:homebase` yang sudah ada. Endpoint tidak menurunkan status dari `AttendanceEvent`; PIN mesin belum dipetakan ke pegawai.
+- **Bukti:** `backend/internal/attendance/{store.go, read.go, gorm_read.go}`, `backend/tests/attendance/read_test.go`, `backend/internal/httpserver/attendance_records_handlers.go` (+`backend/tests/httpserver/attendance_records_handlers_test.go`), `docs/PRD.md` §11, `docs/openapi.yaml`, `frontend/src/routes/_app/attendance/unit-records.tsx`, `frontend/src/components/TeamAttendanceTable.tsx`.
+
+### DEC-052 — NIK, NPWP, nomor ijazah, NIP, NIDN/NIDK unik di level database
+
+- **Tanggal:** 2026-11-13
+- **Pemilik:** Pemilik produk (arah langsung dari pengguna, 13 November 2026)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** NIK, NIP, NIDN, dan NIDK sudah unik (`000001_directory_crud.sql`; NIDN/NIDK di migrasi `000012_nidn_nidk_user.sql`), masing-masing indeks unik parsial `WHERE … IS NOT NULL` bila nullable. Migrasi `000021_npwp_no_ijazah_unique.sql` melengkapi: (1) `user.npwp` dijadikan unik lewat indeks parsial `user_npwp_idx`; string kosong/spasi dinormalkan ke NULL lebih dulu agar tidak menghalangi pembuatan indeks (nilai blank tidak membawa informasi; normalisasi tidak dapat dibalik pada `Down`). (2) Nomor ijazah ditambahkan pada `RiwayatPendidikan."noIjazah"` (kolom baru, `text`, nullable) dengan indeks unik parsial `riwayat_pendidikan_no_ijazah_idx` — uniknya di level **baris**, bukan per pegawai, karena satu pegawai bisa punya beberapa ijazah (S1/S2/S3). Penegakan ada di level database/Goose; API dan DTO saat ini belum mengekspos `npwp` maupun `noIjazah`, jadi tidak ada perubahan kontrak HTTP. Diterapkan pada database Supabase `postgres` dan `simpeg_perf` (13 November 2026, versi Goose 21); pada `simpeg_perf` migrasi diterapkan setelah pra-pemeriksaan read-only (5000 baris user seed sintetis; NPWP 0 terisi/kosong/duplikat, 0 baris `RiwayatPendidikan`), dan verifikasi pasca-migrasi mengonfirmasi indeks `user_npwp_idx`, indeks `riwayat_pendidikan_no_ijazah_idx`, serta kolom `RiwayatPendidikan."noIjazah"` terpasang; `perfbench schema` menyatakan 68 model selaras pada kedua DB. Bila data target nanti berisi NPWP terduplikasi, migrasi gagal dan duplikat harus diselesaikan pemilik data — nilai yang benar tidak boleh ditebak.
+- **Bukti:** `backend/migrations/000021_npwp_no_ijazah_unique.sql`, `backend/internal/models/models.go`, `backend/tests/database/migration_schema_test.go`, `docs/IMPLEMENTATION-PLAN.md`.
+
+### DEC-053 — Kolom identitas PII dienkripsi pada level aplikasi (AES-256-GCM + blind index HMAC)
+
+- **Tanggal:** 2026-11-13
+- **Pemilik:** Pemilik produk (arah langsung dari pengguna, 13 November 2026)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Kolom `user.nik`, `user.nip`, `user.npwp`, dan `RiwayatPendidikan.noIjazah` disimpan terenkripsi pada level aplikasi, **bukan** pada level database/transparent encryption. Format nilai: `enc1:` + base64url(nonce 12 byte ‖ AES-256-GCM(ciphertext ‖ tag)); nonce dibangkitkan acak pada setiap enkripsi sehingga kesamaan plaintext tidak terlihat di database. Untuk keunikan dan kesetaraan (pencarian), setiap kolom plaintext berpasangan dengan kolom blind index `nikHash`/`nipHash`/`npwpHash` (`user`) dan `noIjazahHash` (`RiwayatPendidikan`) berisi HMAC-SHA256 atas bentuk ternormalisasi dari nilai (trim, huruf besar, tanpa spasi/tab/titik/strip/garis bawah). Indeks unik parsial `WHERE "...Hash" IS NOT NULL` pada kolom-kolom itu menggantikan unique index plaintext lama yang dijatuhkan migrasi `000022_pii_identity_encrypt.sql` (`user_nik_key`, `user_nip_key`, `user_npwp_idx`, `riwayat_pendidikan_no_ijazah_idx`). Pencarian pegawai pada NIP menjadi **kesetaraan persis** lewat blind index (bukan substring `ILIKE`); substring `ILIKE` hanya berlaku untuk `nama`. Pengurutan kolom `nip` dihapus dari allowlist (`EMPLOYEE_SORT_FIELDS` di `frontend/src/lib/employees.ts`, `domain.EmployeeSortColumns` di `backend/internal/directory/domain/list.go`); sort `nama`/`createdAt`/`updatedAt` tetap. Kunci berasal dari environment `PII_ENCRYPTION_KEY` (base64, tepat 32 byte / AES-256); kunci blind index diturunkan dari kunci yang sama (HMAC dengan label domain `simpeg/pii-blind-index/v1`), sehingga hanya satu rahasia yang perlu dikelola. Production menolak start bila `PII_ENCRYPTION_KEY` kosong atau tidak valid; di luar production, jalur PII gagal dengan galat eksplisit. `cmd/perfbench seed` mewajibkan kunci yang sama. Enkripsi dan dekripsi terjadi di driver.Valuer/Scanner (`backend/internal/crypto`), sehingga kontrak HTTP tidak berubah: backend mendekripsi sebelum mengirim respons dan mengenkripsi saat menyimpan; plaintext tidak pernah ditulis ke log. Nilai pra-migrasi (plaintext) akan ditolak saat dibaca (prefix wajib `enc1:`) — fail-closed, sengaja. Migrasi `000022` tidak mengenkripsi data lama: database produksi `postgres` kosong; database uji `simpeg_perf` dikosongkan dan diisi ulang (`perfbench seed`: 5000 pegawai sintetis, 2500 dengan NIP, semuanya ciphertext, `nipHash` unik semua). Kehilangan `PII_ENCRYPTION_KEY` berarti data PII tidak dapat dibaca; salinan cadangan wajib dibuat sebelum kunci dipakai untuk data nyata, dan rotasi kunci belum didukung (perubahan kunci harus disertai backfill ulang seluruh kolom PII). Blind index membocorkan **kesetaraan** nilai kepada siapa pun yang memegang database (itu tujuannya) dan tidak melindungi dari penebakan berbasis kamus untuk ruang nilai kecil — keterbatasan inheren blind index, bukan cacat implementasi; pembatasan akses baca kolom PII tetap lewat matriks permission `docs/PRD.md` §11. `KeluargaPegawai.nik` (identitas anggota keluarga/tanggungan) awalnya di luar cakupan; cakupannya diperluas pada `DEC-054` (13 November 2026). Diterapkan 13 November 2026: kedua database pada Goose 22; `perfbench schema` menyatakan 68 model selaras pada keduanya; pada `simpeg_perf` 0 plaintext tersisa (2500 ciphertext, 2500 `nipHash` unik).
+- **Bukti:** `backend/internal/crypto/pii.go` (+`backend/tests/crypto/pii_test.go`), `backend/internal/models/models.go`, `backend/migrations/000022_pii_identity_encrypt.sql`, `backend/internal/config/pii.go`, `backend/internal/config/config.go`, `backend/cmd/server/main.go`, `backend/cmd/perfbench/seed.go` (+`seed_data.go`), `backend/internal/directory/{domain/list.go, app/employee.go, repository/{gorm_employee.go, gorm_import.go, identity_hash.go}}`, `backend/tests/directory/repository/{main_test.go, gorm_store_test.go, gorm_import_test.go, list_test.go}`, `backend/internal/attendance/{store.go, gorm_read.go}`, `backend/internal/httpserver/{directory_types.go, employee_import_parse.go, attendance_records_handlers.go}`, `frontend/src/lib/employees.ts`, `frontend/src/components/EmployeeTable.tsx`, `docs/PRD.md`, `docs/IMPLEMENTATION-PLAN.md`.
+
+### DEC-054 — KeluargaPegawai.nik ikut dienkripsi (memperluas DEC-053)
+
+- **Tanggal:** 2026-11-13
+- **Pemilik:** Pemilik produk (arah langsung dari pengguna, 13 November 2026)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Kolom `KeluargaPegawai.nik` (identitas suami/istri/anak yang ditanggung pegawai, dipakai administrasi BPJS dan tunjangan keluarga) sebelumnya di luar cakupan DEC-053 karena permintaan awal hanya menyebut empat kolom. Atas penegasan pengguna 13 November 2026, kolom ini dienkripsi dengan mekanisme yang sama: nilai tersimpan `enc1:` + base64url(nonce acak 12 byte ‖ AES-256-GCM(ciphertext ‖ tag)), berpasangan dengan blind index HMAC-SHA256 `keluargaPegawai."nikHash"` untuk pencarian **kesetaraan persis** (setelah normalisasi); tidak ada keunikan yang ditegakkan (NIK anggota keluarga tidak diwajibkan unik lintas keluarga), sehingga indeks `nikHash` bersifat non-unik (`keluarga_pegawai_nik_hash_idx`) menggantikan indeks plaintext `keluarga_pegawai_nik_idx` yang dijatuhkan migrasi `000023_keluarga_nik_encrypt.sql`. Pencarian daftar keluarga pada NIK menjadi kesetaraan persis; substring `ILIKE` hanya berlaku untuk `nama`; sort `nik` dihapus dari `domain.KeluargaSortColumns`. NIK keluarga bersifat **wajib** pada formulir (domain `CreateKeluargaPegawai.Validate` menolak kosong/null), sehingga kolom `nik` tetap `NOT NULL` dan patch tidak dapat mengosongkannya (`KeluargaPatch.NIK.Null` ditolak validasi). Enkripsi/dekripsi terjadi di driver.Valuer/Scanner (`backend/internal/crypto`); kontrak HTTP `/api/v1/keluarga` tidak berubah (backend mendekripsi sebelum mengirim). Kedua database (`postgres`, `simpeg_perf`) diverifikasi tidak memiliki baris keluarga saat migrasi diterapkan, sehingga tidak ada data plaintext tertinggal dan tidak ada backfill; migrasi tidak mengenkripsi data lama. Perbaikan kunci sama seperti DEC-053 (`PII_ENCRYPTION_KEY`, wajib pada production); rotasi kunci belum didukung. Diterapkan 13 November 2026: kedua database pada Goose 23; `perfbench schema` menyatakan 68 model selaras pada keduanya.
+- **Bukti:** `backend/migrations/000023_keluarga_nik_encrypt.sql`, `backend/internal/models/models_hr.go`, `backend/internal/directory/{domain/list.go, app/keluarga.go, repository/{gorm_keluarga.go, identity_hash.go}}`, `backend/internal/httpserver/hr_keluarga_handlers.go`, `docs/PRD.md`, `docs/IMPLEMENTATION-PLAN.md`.
+
+### DEC-055 — Endpoint agregat ringkasan pegawai `GET /api/v1/employees/summary`
+
+- **Tanggal:** 2026-11-13
+- **Pemilik:** Pemilik produk (arah pengguna 13 November 2026 menyetujui penambahan endpoint; definisi ringkasan belum diratifikasi secara tertulis)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** PRD FR-05 meminta ringkasan pegawai (jumlah per status dan unit organisasi), sepanjang definisi status serta izin akses telah disepakati. Ringkasan sebelumnya dihitung client-side dengan membaca seluruh halaman daftar (`pageSize=100` berulang), yang tidak cukup untuk dataset besar. Endpoint read-only baru `GET /api/v1/employees/summary` mengembalikan `{total, active, inactive, byUnit:[{unitId,count}]}` dengan cakupan identik daftar pegawai: `employee:read:any` (lintas organisasi), `employee:read:homebase` (unit penugasan beserta turunannya), atau `employee:read:self` (hanya record sendiri). Cakupan dipaksa di lapisan aplikasi (`EmployeeService.Summary`), bukan di transport; deny-by-default untuk permission lain. **Populasi yang diringkas adalah seluruh baris pegawai dalam cakupan, termasuk baris nonaktif** (`user.aktif = false`) — perlu diratifikasi pemilik produk sebagai definisi "status"; bila definisi disepakati lain (mis. hanya aktif), endpoint disesuaikan. Pegawai tanpa unit dikelompokkan dengan `unitId` null. `unitName` sengaja tidak dikemas di endpoint; frontend memetakan `unitId` ke nama lewat daftar organisasi. Kontrak di `docs/openapi.yaml` (`EmployeeSummary`). Sisi frontend, `/dashboard` membaca endpoint ini (`lib/dashboard.ts`). Endpoint tidak menambah permission baru; memakai permission baca yang sudah ada.
+- **Bukti:** `backend/internal/directory/{domain/summary.go, app/employee.go, repository/{repository.go, gorm_employee.go}}`, `backend/internal/httpserver/{directory_api.go, employee_handlers.go, directory_types.go}`, `backend/tests/httpserver/{directory_handlers_test.go, load_test.go}`, `docs/openapi.yaml`, `docs/IMPLEMENTATION-PLAN.md`, `frontend/src/lib/dashboard.ts`, `frontend/src/validations/schemas.ts`, `frontend/src/components/DashboardPage.tsx`.
+
+### DEC-056 — Perbaikan temuan keamanan F-03 sampai F-08 dan sinkronisasi kontrak OpenAPI
+
+- **Tanggal:** 2026-11-13
+- **Pemilik:** Pemilik produk/platform (arah pengguna 13 November 2026 meminta penutupan F-03 sampai F-08, terutama untuk target MVP)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** (1) **F-03:** sembilan rute terdokumentasi menjawab `404` karena struct `directoryAPI` tidak diisi field `keluarga`, `golongan`, `arsip`, `sertifikasi`, `pelatihan`, `sister`, `penghargaan`, `tunjangan`, `potongan` di `RegisterDirectoryRoutes`; seluruh field kini diisi sehingga seluruh rute terdaftar. (2) **F-04:** server dev dan preview frontend mengirim `Content-Security-Policy` enforcing (`default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`; CSP ditegakkan pada dev/preview, sedangkan header pada lapisan deployment produksi menunggu keputusan deployment. (3) **F-05:** kontrak diperbaiki (referensi `CutiDTO`/`ArsipDTO` menunjuk `Cuti`/`Arsip`; parameter `UserID` dan `ArsipId` dideklarasikan; path `DELETE /api/v1/arsip/{arsipId}/archive` digabung menjadi `DELETE /api/v1/arsip/{arsipId}` sesuai pola `DELETE /employees/{employeeId}`); seluruh `$ref` resolve dan tidak ada operasi terdokumentasi yang tidak terdaftar. Sisa drift: 94 penanganan rute terdaftar (modul SKP, tridharma, sebagian absensi internal) belum terdokumentasi; ini didokumentasikan, bukan disembunyikan. (4) **F-06:** setiap respons API mengirim `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'`. (5) **F-08:** validasi identifier asing di lapisan transport (`requireUUID`/`requireOptionalUUID`) menolak identifier bukan UUID dengan `422`; mencakup `tridharma` (5), `skp` (3), modul `hr` (10), pegawai (create/patch), organisasi (create/patch), dan cuti. Verifikasi: `go build`, `go vet`, `go test ./...` lulus (termasuk `backend/tests/httpserver/foreign_id_validation_test.go` dan tes CSP; lihat `backend/tests/httpserver/security_test.go`); tidak diverifikasi terhadap database produksi dan tidak diuji ulang dinamis dengan ZAP.
+- **Bukti:** `backend/internal/httpserver/{directory_api.go, directory_types.go, employee_handlers.go, organization_handlers.go, security.go}`, `backend/tests/httpserver/{security_test.go, foreign_id_validation_test.go}`, `frontend/vite.config.ts`, `docs/openapi.yaml`, `docs/IMPLEMENTATION-PLAN.md`, `docs/SECURITY-TEST-OWASP-2025.md` §11, PRD §11.
+
+### DEC-057 — Master jabatan sebagai entitas (`Jabatan`)
+
+- **Tanggal:** 2026-11-13
+- **Pemilik:** Pemilik produk (arah pengguna 13 November 2026 menyetujui entitas baru beserta permission `jabatan:read` untuk semua role dan `jabatan:manage` untuk admin)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** PRD FR-03 meminta data jabatan dapat dikelola dan penempatan pegawai hanya memakai jabatan yang valid. Entitas baru `Jabatan`: `id` uuid, `nama` unik (indeks unik), `jenis` enum `STRUKTURAL`/`FUNGSIONAL` (default `STRUKTURAL`), `aktif` boolean, `createdAt`/`updatedAt`. Migrasi Goose `000024_jabatan.sql` (type `JabatanJenis`); RLS default deny tanpa policy (jabatan adalah data referensi; backend sebagai pemilik tabel tetap dapat mengakses). Model GORM `models.Jabatan` terdaftar di `models.All()` dan `postgresTableNames`. Endpoint: `GET /api/v1/jabatan` (pencarian/sort `nama|jenis|createdAt|updatedAt`, filter `jenis`, paginasi), `POST /api/v1/jabatan`, `GET/PATCH/DELETE /api/v1/jabatan/{jabatanId}` — baca memakai `jabatan:read` (semua role terautentikasi), tulis memakai `jabatan:manage` (admin saja); arsip bersifat satu arah (konsisten dengan kategori/organisasi). Penempatan pegawai pada jabatan **belum** dipindahkan ke referensi ini: `user.jabatanStruktural/jabatanFungsional` tetap teks bebas sampai ada keputusan produk. Kontrak di `docs/openapi.yaml` (`JabatanPage`). Frontend: halaman `/jabatan` (daftar, pencarian, filter jenis, sort, page size 10/25/50/100, paginasi; dialog tambah/ubah/arsip khusus admin), item sidebar untuk semua role. Migrasi `000024_jabatan.sql` sudah diterapkan pada database disposable lokal `simpeg_verify` (migrasi 000001–000024, 2026-11-13) — `GET /api/v1/jabatan` menjawab 200 dengan daftar kosong. Pada database produksi migrasi **belum** diterapkan (23 versi Goose per 2026-11-13); workflow `.github/workflows/deploy-migrations.yml` menerapkannya setelah persetujuan pemilik (`DEC-033`); verifikasi skema (`perfbench schema`) belum dijalankan.
+- **Bukti:** `backend/migrations/000024_jabatan.sql`, `backend/internal/models/{models.go, enums.go, registry.go}`, `backend/internal/database/postgres.go`, `backend/internal/directory/{domain/jabatan.go, domain/list.go, app/jabatan.go, repository/{repository.go, gorm_jabatan.go}}`, `backend/internal/httpserver/{directory_api.go, directory_types.go, jabatan_handlers.go}`, `backend/tests/httpserver/directory_handlers_test.go`, `backend/cmd/server/{main.go, policy.go}`, `frontend/src/lib/jabatan.ts`, `frontend/src/components/{JabatanPage, JabatanTable, JabatanDialogs}.tsx`, `frontend/src/routes/_app/jabatan.tsx`, `frontend/src/components/Sidebar.tsx`, `frontend/src/validations/schemas.ts`, `frontend/src/i18n/messages/ui.{id,en}.ts`, `docs/openapi.yaml`, `docs/PRD.md` §11.
+
+### DEC-058 — Google OAuth dan MFA TOTP di runtime Better Auth (frontend)
+
+- **Tanggal:** 2026-11-13
+- **Pemilik:** Pemilik produk (arah pengguna 13 November 2026 menyetujui implementasi nomor 7 dari daftar MVP yang tersisa: Google OAuth + MFA; MFA opsional per akun; tampilan URI dan QR)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Runtime Better Auth (`frontend/src/lib/server/better-auth.ts`, `DEC-049`) kini memuat: (1) `socialProviders.google` yang hanya aktif bila `GOOGLE_CLIENT_ID` dan `GOOGLE_CLIENT_SECRET` diisi — kosong berarti tombol Google tetap terlihat tetapi menjawab `PROVIDER_NOT_FOUND` dan antarmuka menampilkan "Masuk dengan Google belum dikonfigurasi oleh administrator." (2) plugin `twoFactor({ issuer: 'SIMPEG' })`; tabel `twoFactor` dan kolom `user.twoFactorEnabled` sudah ada sejak migrasi `000001` (verifikasi `2026-11-13`: skrip enable→verify TOTP, kode cadangan, penguncian akun tersedia di runtime; tidak ada skema baru). Antarmuka: tombol "Masuk dengan Google" pada halaman masuk (memulai `POST /api/auth/sign-in/social` dan mengalihkan ke URL otorisasi Google), halaman tantangan `/mfa` (kode 6 digit TOTP atau kode cadangan), halaman `/account/mfa` (enrollment: scan QR dari URI yang dirender lokal via paket `qrcode`, daftar kode cadangan, verifikasi kode; atau penonaktifan dengan kata sandi), item "Keamanan akun" pada menu akun di header. MFA bersifat **opsional per akun**; tidak ada role yang dipaksa mendaftar. **Belum diverifikasi langsung terhadap penyedia Google nyata maupun terhadap database produksi** — `BETTER_AUTH_SECRET`, `GOOGLE_CLIENT_ID`, dan `GOOGLE_CLIENT_SECRET` pada `.env.example` dibiarkan sebagai placeholder kosong; pada `.env` akar repo ketiganya juga kosong pada saat dicatat. Verifikasi yang sudah dilakukan: build, lint (0 galat), `tsc --noEmit`, 54 tes Vitest, e2e 30/30 (termasuk `e2e/mfa.spec.ts`: tantangan 2FA → verifikasi TOTP/kode cadangan → ruang kerja), dan pengujian header keamanan F-04 pada `bun run preview`. Verifikasi live menunggu pemilik produk mengisi kredensial pada lingkungan yang memakai database disposable dan mendaftarkan redirect URI `<origin>/api/auth/callback/google` di Google Cloud Console.
+- **Bukti:** `frontend/src/lib/server/better-auth.ts`, `frontend/src/lib/session.ts`, `frontend/src/validations/schemas.ts`, `frontend/src/features/auth/login-form.tsx`, `frontend/src/routes/_auth/mfa.tsx`, `frontend/src/routes/_app/account/mfa.tsx`, `frontend/src/routes/_app/account/mfa.tsx`, `frontend/src/components/Header.tsx`, `frontend/e2e/mfa.spec.ts`, `frontend/.env.example`, `frontend/package.json` (dependency `qrcode`, devDependency `@types/qrcode`), `docs/PRD.md` §11, `docs/IMPLEMENTATION-PLAN.md`, `docs/openapi.yaml` (tidak ada perubahan kontrak backend).
 

@@ -27,8 +27,8 @@ updates:
       - dependencies
       - ci
 
-  # Frontend belum dibuat; blokir akan aktif otomatis setelah package.json
-  # dan lockfile frontend tersedia.
+  # Dependency frontend (npm ecosystem dipakai untuk package.json Bun; bun.lock
+  # diperbarui bersamaan di PR dependabot).
   - package-ecosystem: npm
     directory: /frontend
     schedule:

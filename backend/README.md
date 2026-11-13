@@ -1,4 +1,4 @@
-﻿# Backend
+# Backend
 
 Backend SIMPEG menggunakan Go 1.27.4 (lihat `backend/go.mod`), GORM, dan PostgreSQL. `internal/models` memetakan tabel aplikasi yang dibuat oleh migrasi Goose di `migrations/`; migrasi SQL adalah sumber skema yang ditinjau dan diterapkan.
 
@@ -17,7 +17,7 @@ Versi API memakai prefix path: `/api/v1/employees`, `/api/v1/organizations`, dan
 
 Endpoint operasional `/health` dan `/ready` berada di luar prefix versi.
 
-Atur `DATABASE_URL` pada aplikasi yang memanggil backend dan berikan nilainya ke `OpenPostgres`. Migration runner yang dipilih adalah Goose dengan konfigurasi di `.goose.yaml`; workflow deployment tersedia di `.github/workflows/deploy-migrations.yml` (dipicu secara manual via `workflow_dispatch`, `DATABASE_URL` sebagai secret GitHub, belum pernah dijalankan di GitHub karena environment `staging`/`production` dan secret belum dibuat; urutan perintah diuji manual terhadap DB uji). Migrasi telah diterapkan pada database produksi `postgres` dan database uji `simpeg_perf` hingga versi Goose 19. Tinjau dan terapkan melalui proses migrasi yang disetujui sebelum memakai CRUD. Jangan menjalankan `AutoMigrate`.
+Atur `DATABASE_URL` pada aplikasi yang memanggil backend dan berikan nilainya ke `OpenPostgres`. Migration runner yang dipilih adalah Goose dengan konfigurasi di `.goose.yaml`; workflow deployment tersedia di `.github/workflows/deploy-migrations.yml` (dipicu secara manual via `workflow_dispatch`, `DATABASE_URL` sebagai secret GitHub, belum pernah dijalankan di GitHub karena environment `staging`/`production` dan secret belum dibuat; urutan perintah diuji manual terhadap DB uji). Migrasi telah diterapkan pada database produksi `postgres` dan database uji `simpeg_perf` hingga versi Goose 23. Tinjau dan terapkan melalui proses migrasi yang disetujui sebelum memakai CRUD. Jangan menjalankan `AutoMigrate`.
 
 ## Struktur lapisan
 
@@ -38,6 +38,18 @@ Mata uang sistem adalah Rupiah Indonesia (IDR) dan tidak ada konversi antar-mata
 
 Zona waktu operasional adalah Asia/Jakarta (UTC+7, WIB). Penyimpanan timestamp memakai UTC: `database.OpenPostgres` memaksa parameter runtime `timezone=UTC` pada DSN sehingga default `now()` dan nilai yang ditulis GORM memakai basis yang sama. Konversi ke waktu lokal dilakukan saat tampilan dan aturan kalender melalui `internal/timeutil` (`timeutil.InLocation`, `timeutil.FormatDate`). Kolom tanggal pada skema acuan (`date`) menyimpan kalender tanpa jam; nilainya ditulis sebagai tengah malam UTC agar tanggal yang dibaca kembali tetap sama setelah dikonversi.
 
+## Enkripsi kolom PII
+
+Kolom `user.nik`, `user.nip`, `user.npwp`, `RiwayatPendidikan.noIjazah`, dan `KeluargaPegawai.nik` disimpan terenkripsi pada level aplikasi: AES-256-GCM dengan nonce acak per enkripsi, format `enc1:` + base64url. Setiap kolom berpasangan dengan blind index HMAC-SHA256 (`nikHash`, `nipHash`, `npwpHash`, `noIjazahHash`, `keluargaPegawai."nikHash"`) yang menegakkan pencarian kesetaraan (dan keunikan untuk kolom identitas pegawai). Konsekuensi operasional:
+
+- Pencarian pegawai pada NIP dan pencarian keluarga pada NIK adalah **kesetaraan persis** (setelah normalisasi), bukan substring ILIKE; substring hanya berlaku untuk `nama`.
+- Pengurutan kolom `nip`/`nik` tidak tersedia; sort pegawai memakai `nama`, `createdAt`, `updatedAt`, sort keluarga memakai `nama`, `tanggalLahir`, `statusTanggungan`, `createdAt`, `updatedAt`.
+- Backend mendekripsi sebelum mengirim respons dan mengenkripsi saat menyimpan; kontrak HTTP tidak berubah. Tanpa `PII_ENCRYPTION_KEY`, jalur yang menyentuh kolom PII gagal dengan galat eksplisit (bukan nilai kosong).
+- Kehilangan kunci membuat data PII tidak dapat dibaca; rotasi belum didukung. Buat dengan `openssl rand -base64 32` dan simpan salinan cadangan.
+- Pencarian/log tidak pernah memuat nilai PII; blind index tidak dapat dibalik.
+
+Detail: `DEC-053`, `DEC-054`, `docs/PRD.md` (Enkripsi kolom PII), migrasi `000022_pii_identity_encrypt.sql` dan `000023_keluarga_nik_encrypt.sql`.
+
 ## Konfigurasi runtime
 
 | Variabel | Kegunaan |
@@ -46,6 +58,7 @@ Zona waktu operasional adalah Asia/Jakarta (UTC+7, WIB). Penyimpanan timestamp m
 | `APP_ENV` | `development` (default) atau `production`. |
 | `PORT` | Default `8080`. |
 | `BETTER_AUTH_SECRET` | Shared secret verifikasi JWT Better Auth. Wajib pada production, minimal 32 karakter, dan tidak boleh memuat pola bawaan. |
+| `PII_ENCRYPTION_KEY` | Kunci AES-256 (base64, tepat 32 byte) untuk enkripsi kolom PII (`user.nik`, `user.nip`, `user.npwp`, `RiwayatPendidikan.noIjazah`, `KeluargaPegawai.nik`). Wajib pada production; hilangnya kunci berarti data PII tidak dapat dibaca. Buat dengan `openssl rand -base64 32`; simpan salinan cadangan. |
 | `TRUSTED_ORIGINS` | Origin browser yang diizinkan memanggil API (pisahkan dengan koma). Wildcard `*` ditolak. Kosong berarti tidak ada akses lintas origin. Wajib pada production. |
 | `DB_MAX_OPEN_CONNS` | Batas koneksi terbuka, default `10`. Pooler sesi Supabase membatasi jumlah koneksi concurrently per proyek; bila batas ini melampaui batas pooler, PostgreSQL menolak koneksi baru (`EMAXCONNSESSION`) dan backend menjawab `503`. |
 | `DB_MAX_IDLE_CONNS` | Batas koneksi idle, default `5`, tidak boleh melebihi `DB_MAX_OPEN_CONNS`. |
@@ -67,7 +80,7 @@ Zona waktu operasional adalah Asia/Jakarta (UTC+7, WIB). Penyimpanan timestamp m
 | `HOLIDAY_API_URL`, `HOLIDAY_API_KEY` | Penyedia kalender hari libur nasional (api.co.id). Hanya dipakai untuk penyegaran yang dipicu admin; pembacaan kalender selalu dari tabel `HariLibur`. Bila `HOLIDAY_API_KEY` kosong, penyegaran menolak (`503`) dan kalender bersifat baca saja. |
 | `SLO_ENABLED`, `SLO_WINDOW_MINUTES`, `SLO_P95_TARGET_MS`, `SLO_ERROR_RATE_TARGET`, `SLO_MIN_REQUESTS`, `SLO_ALERT_RECIPIENTS`, `SLO_RETENTION_DAYS` | Pemeriksaan target layanan terjadwal. `SLO_ENABLED=false` (default) berarti pengoleki metrik tidak berjalan sama sekali. Bila diaktifkan, backend menulis metrik ke tabel `sloMetric` dan mendaftarkan pemeriksaan berkala `slo.evaluate` melalui QStash. |
 
-Pada `APP_ENV=production` backend menolak start bila secret lemah atau `TRUSTED_ORIGINS` kosong — konfigurasi tidak aman tidak boleh lolos diam-diam.
+Pada `APP_ENV=production` backend menolak start bila `BETTER_AUTH_SECRET` lemah, `TRUSTED_ORIGINS` kosong, atau `PII_ENCRYPTION_KEY` kosong/tidak valid — konfigurasi tidak aman tidak boleh lolos diam-diam.
 
 Batas laju diimplementasikan in-memory per instance. Pada deployment multi-instance, batas efektif menjadi jumlah instance dikalikan batas per instance; batas terdistribusi membutuhkan penyimpanan bersama (misalnya Redis) dan itu bukan use case Redis yang disetujui (`DEC-015` hanya menyetujui cache data referensi).
 
@@ -86,6 +99,8 @@ Belum ada login, OAuth callback, logout, atau penerbitan sesi di backend; endpoi
 `GET /health` adalah liveness: selalu `200` selama proses hidup, dan tidak gagal hanya karena dependency eksternal sedang tidak tersedia. `GET /ready` adalah readiness: memeriksa dependency wajib (saat ini ping PostgreSQL) dengan timeout dan mengembalikan `503` bila belum siap. Detail kegagalan tidak dikembalikan agar tidak membocorkan host, connection string, atau kredensial. Jangan menggabungkan kedua endpoint tersebut.
 
 Log ditulis sebagai JSON satu baris per entri oleh paket `internal/observability`, dengan correlation ID pada header `X-Request-ID`. Request ID dari klien dipakai hanya bila karakternya aman; selain itu digenerate ulang. Header kredensial, body request, dan nilai query string tidak pernah dicatat. Log ditulis ke stdout, jadi pengelolaan dan retensinya mengikuti kebijakan deployment.
+
+`GET /api/v1/admin/slo/metrics` (permission `slo:read`, admin saja, deny-by-default) mengembalikan ringkasan agregat metrik SLO pada jendela 24 jam (bawaan) atau maksimum 168 jam: jumlah permintaan, galat 5xx, laju galat, dan latensi rata-rata/p95/p99/maks, baik agregat maupun per rute. Isinya agregat per rute, bukan metrik mentah per jendela; `sloMetric` kosong (respons 200 dengan total nol) selama `SLO_ENABLED` belum menulis metrik. Halaman admin `/admin/slo` di frontend menampilkan data ini (`DEC-050`, kontrak di `../docs/openapi.yaml`).
 
 ## Keamanan endpoint
 
@@ -127,11 +142,11 @@ Semua endpoint memakai bentuk respons yang sama melalui paket `internal/apierror
 
 CRUD pegawai tersedia di `/api/v1/employees`; organisasi tersedia di `/api/v1/organizations` untuk unit, fakultas, jurusan, biro, dan bagian. Semua jenis menggunakan satu pohon induk-anak fleksibel. `DELETE` mengarsipkan record, tidak menghapus riwayat; organisasi dengan pegawai aktif atau anak aktif tidak dapat diarsipkan. Perubahan direktori dicatat ke `AuditLog` tanpa menyalin nilai profil ke log.
 
-Permission endpoint pegawai adalah `employee:read:any`, `employee:read:homebase`, `employee:read:self`, `employee:create`, `employee:create:homebase`, `employee:update:any`, `employee:update:homebase`, `employee:archive`, `employee:import`, dan `employee:import:homebase`; organisasi memakai `organization:read`, `organization:read:homebase`, `organization:manage`, dan `organization:manage:homebase`; jejak audit memakai `audit:read` dan `audit:read:homebase`; penggajian memakai `payroll:read:any`, `payroll:read:homebase`, `payroll:read:self`, `payroll:manage`, `payroll:schedule`, dan `payroll:schedule:homebase`; kalender hari libur memakai `holiday:read` dan `holiday:manage`. Grant role dikonfigurasi di `cmd/server/main.go` sesuai matriks di `docs/PRD.md` §11.
+Permission endpoint pegawai adalah `employee:read:any`, `employee:read:homebase`, `employee:read:self`, `employee:create`, `employee:create:homebase`, `employee:update:any`, `employee:update:homebase`, `employee:archive`, `employee:import`, dan `employee:import:homebase`; organisasi memakai `organization:read`, `organization:read:homebase`, `organization:manage`, dan `organization:manage:homebase`; jejak audit memakai `audit:read` dan `audit:read:homebase`; penggajian memakai `payroll:read:any`, `payroll:read:homebase`, `payroll:read:self`, `payroll:manage`, `payroll:schedule`, dan `payroll:schedule:homebase`; kalender hari libur memakai `holiday:read` dan `holiday:manage`; dasbor metrik SLO memakai `slo:read`. Grant role dikonfigurasi di `cmd/server/main.go` sesuai matriks di `docs/PRD.md` §11.
 
 Permission berakhiran `:any` berarti akses lintas seluruh organisasi dan hanya diberikan kepada `admin`. Permission berakhiran `:homebase` berarti akses dibatasi pada unit penugasan principal beserta seluruh turunannya pada pohon `Homebase`; `operator` dan `atasan` memakai permission ini. Permission berakhiran `:self` hanya memberi akses ke record milik principal sendiri. Cakupan ditegakkan di lapisan aplikasi: daftar difilter dengan `listing.Options.ScopeHomebaseIDs`, setiap record diperiksa per-pegawai pada use case baca, ubah, dan arsip, unit organisasi diperiksa per-unit, slip gaji diperiksa terhadap unit pegawai pemiliknya, dan pegawai hasil impor operator ditempatkan pada unit penugasannya (template impor tidak memuat kolom unit). Operator hanya dapat membuat unit baru di bawah induk yang sudah berada dalam cakupan; unit akar hanya dapat dibuat oleh `admin`. Principal tanpa penugasan unit tidak melihat data pegawai, unit, slip gaji, maupun jejak audit apa pun.
 
-**Batas yang belum terpenuhi:** jejak audit untuk perubahan role belum ada karena endpoint perubahan role belum dibuat. Ingestion presensi hanya diberikan kepada `admin` dan belum memakai autentikasi perangkat.
+**Batas yang belum terpenuhi:** ingestion presensi menerima sesi pengguna dengan permission `attendance:event:ingest` selain autentikasi perangkat (`X-Device-ID` + bearer token), sehingga endpoint itu belum hanya bisa diakses mesin. Perubahan role pegawai melalui `PUT /api/v1/employees/{id}/role` sudah berjejak audit (`employee.role.updated`).
 
 ## Modul penggajian
 
@@ -163,7 +178,7 @@ Akses dibatasi per unit: `admin` membaca seluruh jejak, `operator` hanya membaca
 
 Kolom `unitId` adalah perubahan skema acuan dan harus selalu diperbarui bersama model GORM dan migrasi (`backend/migrations/000003_audit_log_unit.sql`). Retensi sudah ditetapkan; arsip dan ekspor jejak belum ada.
 
-Schema memerlukan migration SQL [000001_directory_crud.sql](migrations/000001_directory_crud.sql). Migration runner yang dipilih adalah Goose dengan konfigurasi di `.goose.yaml` (direktori `./migrations`, `DATABASE_URL` sebagai env required). Workflow deployment tersedia di `.github/workflows/deploy-migrations.yml` dan diperkuat (`DEC-046`), tetapi belum pernah dijalankan di GitHub. Migrasi telah diterapkan dan diuji terhadap database nyata (`postgres` dan `simpeg_perf`) hingga versi Goose 19. Jangan gunakan `AutoMigrate`; tinjau dan terapkan migration secara terkendali sebelum menjalankan versi backend ini.
+Schema memerlukan migration SQL [000001_directory_crud.sql](migrations/000001_directory_crud.sql). Migration runner yang dipilih adalah Goose dengan konfigurasi di `.goose.yaml` (direktori `./migrations`, `DATABASE_URL` sebagai env required). Workflow deployment tersedia di `.github/workflows/deploy-migrations.yml` dan diperkuat (`DEC-046`), tetapi belum pernah dijalankan di GitHub. Migrasi telah diterapkan dan diuji terhadap database nyata (`postgres` dan `simpeg_perf`) hingga versi Goose 23. Jangan gunakan `AutoMigrate`; tinjau dan terapkan migration secara terkendali sebelum menjalankan versi backend ini.
 
 ## Daftar, filter, dan pengurutan
 
@@ -187,8 +202,8 @@ Benchmark, uji beban burst, dan uji soak memakai repository palsu sehingga tidak
 
 ```bash
 go test -run "^$" -bench "Benchmark" -benchmem ./internal/httpserver/... ./internal/directory/app/...
-go test ./internal/httpserver/... -run TestBurstRequestsRemainStable -v
-SIMPEG_SOAK=1 SIMPEG_SOAK_DURATION=30 SIMPEG_SOAK_STREAMS=16 go test ./internal/httpserver/... -run TestSoakReadPath -v
+go test ./tests/httpserver/... -run TestBurstRequestsRemainStable -v
+SIMPEG_SOAK=1 SIMPEG_SOAK_DURATION=30 SIMPEG_SOAK_STREAMS=16 go test ./tests/httpserver/... -run TestSoakReadPath -v
 ```
 
 Uji soak bersifat opt-in (`SIMPEG_SOAK=1`) agar pipeline CI tetap cepat. Angka hasil pengukuran dan kekurangannya dicatat di `../docs/PERFORMANCE-BASELINE.md`.
@@ -228,4 +243,4 @@ Jalur volume tinggi dijaga jumlah statement-nya oleh pengujian:
 - Jejak audit impor ditulis dengan satu statement multi-row lewat `audit.WriteBatch` (`internal/audit/audit.go`).
 - Notifikasi penggajian diantrekan dengan satu statement lewat `outbox.EnqueueBatch` (`internal/outbox/gorm_store.go`).
 
-Pengujian penjaga jumlah statement ada di `internal/directory/repository/gorm_import_test.go` dan `internal/payroll/repository/schedule_test.go`. Bentrok impor terhadap data yang sudah ada tetap dilaporkan per kolom (`email`, `nip`, `nidn`, `nidk`) beserta indeks baris yang tepat.
+Pengujian penjaga jumlah statement ada di `backend/tests/directory/repository/gorm_import_test.go` dan `backend/tests/payroll/repository/schedule_test.go`. Bentrok impor terhadap data yang sudah ada tetap dilaporkan per kolom (`email`, `nip`, `nidn`, `nidk`) beserta indeks baris yang tepat.

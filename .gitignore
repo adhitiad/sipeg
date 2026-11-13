@@ -22,6 +22,7 @@ coverage/
 
 # Logs and local OS files
 *.log
+/logs/
 .DS_Store
 Thumbs.db
 
@@ -29,4 +30,6 @@ Thumbs.db
 .vscode/
 .idea/
 .serena/
-agents/
+agents/*
+!agents/rules/
+anti-slop/

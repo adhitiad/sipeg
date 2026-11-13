@@ -1,0 +1,57 @@
+name: Frontend
+
+on:
+  push:
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend.yml'
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend.yml'
+
+defaults:
+  run:
+    working-directory: frontend
+
+concurrency:
+  group: frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gerbang:
+    name: Gerbang frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Pasang dependensi
+        run: bun install --frozen-lockfile
+
+      - name: Periksa format
+        run: bun run format:check
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      # Vitest dijalankan dengan runtime Node. Bun 1.4.2 belum dapat menjalankan
+      # worker jsdom milik Vitest 5 (galat EventTarget lintas realm), sehingga
+      # skrip `bun run test` memakai Node lewat shebang.
+      - name: Unit dan komponen test
+        run: bun run test
+
+      - name: Build produksi
+        run: bun --bun run build
+
+      - name: Pasang peramban Playwright
+        run: bunx playwright install --with-deps chromium
+
+      - name: E2E
+        run: bun run e2e

@@ -1,0 +1,24 @@
+# Cross-stack architecture rules
+
+- Keep backend and frontend as separate applications with independent dependency manifests, builds, and tests.
+- Reviewed Goose migrations in `backend/migrations/` define the application schema. They are not proof that the deployed database has been initialized. Backend persistence is implemented with Go/GORM in `backend/`.
+- Base database changes on confirmed requirements and the actual database/migration state. Review their impact on GORM mappings, API behavior, and Goose migrations before implementation.
+- Supabase is the managed PostgreSQL provider. The backend connects to Postgres; the frontend uses the backend API. If Supabase Data API exposes application tables, enable RLS and scope policies to the actual user/organization permissions.
+- Upstash Redis is a supporting service, not a source of truth for personnel, payroll, or payment state. Record its approved use cases and fallback behavior.
+- QStash is a backend-only asynchronous/scheduled delivery mechanism. Verify signed callbacks and make handlers idempotent because retries can repeat delivery attempts.
+- Email delivery is initiated by backend business events. Salary-paid notifications require confirmed payment state, not just an issued payslip; provider selection remains in `docs/PRD.md`.
+- Keep all integration credentials in server-side configuration. Never expose database, Supabase secret/service-role, Redis, QStash, or email credentials to browser code.
+- Keep authentication and authorization distinct: the auth runtime establishes the principal; Go APIs enforce permissions and record scope on every protected request.
+- The auth contract is established and verified: Better Auth is embedded in the TanStack Start server at `/api/auth/*` (pg Pool as the database adapter, `disableSignUp`, session 7 days with 1-day rolling refresh). The browser holds the session token in memory only (never localStorage/sessionStorage) and sends it to the Go API as `Authorization: Bearer <token>`. The Go API verifies opaque tokens through the GORM `session` resolver (JWT verification via `BETTER_AUTH_SECRET` also supported) and derives permissions server-side; `/api/v1/me` returns them. `POST /api/v1/auth/logout` revokes the current session and is idempotent. Do not assume cookies are automatically verifiable by Go or trust identity headers from the browser. The runtime configuration lives in `frontend/src/lib/server/better-auth.ts` and the catch-all route in `frontend/src/routes/api/auth/$.tsx`.
+- Store role and organization access assignments as server-controlled data. Define a role/permission matrix and account provisioning policy before implementing protected business routes.
+- Protect session cookies with HTTPS, `HttpOnly`, appropriate `SameSite`, trusted-origin validation, and CSRF protection. Keep account disablement and session revocation behavior consistent across frontend and backend.
+- If Supabase Auth or its Data API becomes the identity/data path, review token validation and RLS policies against the actual authorization model before use.
+- Keep handwritten source files at or below 387 lines, with an absolute 397-line limit only for a documented cohesion exception. `css`/`scss`/`sass`/`json`/`toml`/`yaml`/`yml`/`md` are exempt from the line limit (see `project.md`).
+- Treat the HTTP API as the contract boundary. Keep request/response schemas, error shapes, pagination, and authentication behavior consistent and documented.
+- Use the OpenAPI 3.1 draft at `docs/openapi.yaml` as the HTTP API contract. Do not generate duplicate client/server schemas until the generation tooling is selected.
+- Proposed initial integration is JSON over HTTP. Authentication provider (Better Auth, embedded in the frontend server), migration tooling (Goose), and API versioning (path prefix `/api/v1`) are decided and recorded in `docs/PRD.md` §11; session transport is `Authorization: Bearer` with in-memory tokens (no browser storage). Deployment topology and contract-generation tooling remain open decisions there.
+- The frontend talks to the backend only through the versioned HTTP contract. Errors use one uniform shape, `{"error": {"code", "message", "requestId", "fields", "rows"}}`, produced by the shared `backend/internal/apierror` package; keep it that way across both stacks.
+- Enforce authentication and authorization on the backend. Frontend route guards improve navigation but do not grant access.
+- Make cross-stack changes together when needed: update the API contract, backend implementation, frontend types/queries, and relevant tests in the same change.
+- Avoid direct database access from the frontend and avoid coupling the backend to TanStack-specific concepts.
+- Document any change that affects data ownership, personal-data exposure, role permissions, or compatibility between frontend and backend.

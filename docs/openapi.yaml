@@ -1,4 +1,4 @@
-﻿openapi: 3.1.0
+openapi: 3.1.0
 info:
   title: SIMPEG API
   version: 0.1.0
@@ -36,6 +36,8 @@ tags:
     description: Slip gaji, konfirmasi pembayaran, dan jadwal gajian per unit.
   - name: Holidays
     description: Kalender hari libur nasional Indonesia; diisi dari penyedia dan disimpan di tabel lokal.
+  - name: Admin
+    description: Ringkasan operasional internal untuk administrator (agregat saja, bukan metrik mentah).
 paths:
   /health:
     get:
@@ -84,19 +86,71 @@ paths:
       operationId: getCurrentAccount
       x-implementation-status: implemented
       summary: Membaca identitas pengguna dari sesi aktif
+      description: >-
+        Mengembalikan identitas, role, unit penugasan, dan daftar permission
+        milik role. Permission berasal dari matriks akses pada server sehingga
+        frontend tidak perlu menduplikasi aturan otorisasi.
       security:
         - bearerSession: []
       responses:
         "200":
-          description: Identitas dan cakupan dasar principal terautentikasi.
+          description: Identitas, cakupan dasar, dan permission principal terautentikasi.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/CurrentAccount"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "500":
+          description: Record profil tidak dapat dimuat dari database.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+    patch:
+      tags: [Account]
+      operationId: updateCurrentAccountProfile
+      x-implementation-status: implemented
+      summary: Memperbarui profil mandiri pengguna dari sesi aktif
+      description: >-
+        Mengubah nama dan/atau nomor HP milik principal yang sedang masuk.
+        Principal hanya dapat mengubah profilnya sendiri; identifier record
+        selalu berasal dari sesi terverifikasi, bukan dari body permintaan.
+        Perubahan dan jejak audit (`profile.updated`) disimpan dalam satu
+        transaksi; jejak tidak memuat nilai, hanya nama kolom yang berubah.
+        Perubahan lain (email, NIP, PII terenkripsi, role, unit) tidak dapat
+        dilakukan lewat endpoint ini.
+      security:
+        - bearerSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProfileRequest"
+      responses:
+        "200":
+          description: Profil tersimpan; respons memuat keadaan kanonik setelah normalisasi.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentAccount"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          description: Profil tidak dapat disimpan.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/auth/logout:
     post:
       tags: [Account]
@@ -217,6 +271,50 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AttendanceRecordsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/attendance/unit-records:
+    get:
+      tags: [Attendance]
+      operationId: listUnitAttendanceRecords
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: attendance:read:any, attendance:read:homebase
+      summary: Membaca kehadiran tim per pegawai untuk satu tanggal
+      description: >-
+        Menampilkan seluruh pegawai aktif dalam cakupan pemohon untuk satu
+        tanggal (LEFT JOIN ke tabel Presensi). Pegawai tanpa catatan pada
+        tanggal itu tampil dengan `status` null, artinya belum tercatat —
+        bukan alpa; aturan penurunan status harian belum disetujui. Admin
+        mendapat cakupan global; operator dan atasan hanya mendapat unit
+        penugasan beserta turunannya. `note` (keterangan presensi) dapat
+        terlihat sesuai keputusan produk 13 November 2026 (DEC-051). Data
+        AttendanceEvent mentah tidak digunakan.
+      security:
+        - bearerSession: []
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Seluruh pegawai aktif dalam cakupan beserta catatan presensinya (bisa kosong).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UnitDayRecord"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -349,6 +447,36 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "422":
           $ref: "#/components/responses/ValidationError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/employees/summary:
+    get:
+      tags: [Employees]
+      operationId: summaryEmployees
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: employee:read:any | employee:read:homebase | employee:read:self
+      summary: Ringkasan jumlah pegawai dalam cakupan pemohon
+      description: >-
+        Mengembalikan total, jumlah aktif/nonaktif, dan jumlah per unit untuk
+        seluruh pegawai dalam cakupan pemohon (employee:read:any: seluruh
+        organisasi; employee:read:homebase: unit penugasan beserta turunannya;
+        employee:read:self: hanya record sendiri). Populasinya identik dengan
+        daftar pegawai, termasuk baris nonaktif; pegawai tanpa unit
+        dikelompokkan dengan unitId null. Definisi ringkasan berada di
+        DEC-055; perubahan definisi memerlukan keputusan pemilik produk.
+      security:
+        - bearerSession: []
+      responses:
+        "200":
+          description: Ringkasan pegawai dalam cakupan pemohon.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmployeeSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/employees/{employeeId}:
@@ -899,7 +1027,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CutiDTO"
+                $ref: "#/components/schemas/Cuti"
         "400":
           $ref: "#/components/responses/BadRequest"
         "422":
@@ -929,7 +1057,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CutiDTO"
+                $ref: "#/components/schemas/Cuti"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -967,7 +1095,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CutiDTO"
+                $ref: "#/components/schemas/Cuti"
         "400":
           $ref: "#/components/responses/BadRequest"
         "422":
@@ -1007,7 +1135,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CutiDTO"
+                $ref: "#/components/schemas/Cuti"
         "400":
           $ref: "#/components/responses/BadRequest"
         "422":
@@ -1047,7 +1175,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CutiDTO"
+                $ref: "#/components/schemas/Cuti"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -1121,7 +1249,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ArsipDTO"
+                $ref: "#/components/schemas/Arsip"
         "400":
           $ref: "#/components/responses/BadRequest"
         "422":
@@ -1142,14 +1270,14 @@ paths:
       security:
         - bearerSession: []
       parameters:
-        - $ref: "#/components/parameters/ID"
+        - $ref: "#/components/parameters/ArsipId"
       responses:
         "200":
           description: Detail arsip dokumen pegawai.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ArsipDTO"
+                $ref: "#/components/schemas/Arsip"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -1173,7 +1301,7 @@ paths:
       security:
         - bearerSession: []
       parameters:
-        - $ref: "#/components/parameters/ID"
+        - $ref: "#/components/parameters/ArsipId"
       requestBody:
         required: true
         content:
@@ -1186,7 +1314,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ArsipDTO"
+                $ref: "#/components/schemas/Arsip"
         "400":
           $ref: "#/components/responses/BadRequest"
         "422":
@@ -1199,7 +1327,6 @@ paths:
           $ref: "#/components/responses/NotFound"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
-  /api/v1/arsip/{arsipId}/archive:
     delete:
       tags: [Arsip]
       operationId: archiveArsip
@@ -1209,7 +1336,7 @@ paths:
       security:
         - bearerSession: []
       parameters:
-        - $ref: "#/components/parameters/ID"
+        - $ref: "#/components/parameters/ArsipId"
       responses:
         "204":
           description: Entri arsip dokumen diarsipkan.
@@ -1279,6 +1406,170 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/jabatan:
+    get:
+      tags: [Jabatan]
+      operationId: listJabatans
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: jabatan:read
+      summary: Membaca daftar master jabatan
+      description: >-
+        Membutuhkan jabatan:read (semua role yang terautentikasi). Master
+        jabatan tidak bercakupan unit.
+      security:
+        - bearerSession: []
+      parameters:
+        - $ref: "#/components/parameters/Search"
+        - name: jenis
+          in: query
+          schema:
+            type: string
+            enum: [STRUKTURAL, FUNGSIONAL]
+          description: Menyaring jenis jabatan.
+        - $ref: "#/components/parameters/Sort"
+        - $ref: "#/components/parameters/Order"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Halaman master jabatan aktif.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JabatanPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      tags: [Jabatan]
+      operationId: createJabatan
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: jabatan:manage
+      summary: Membuat master jabatan
+      description: Membutuhkan jabatan:manage (admin).
+      security:
+        - bearerSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JabatanCreate"
+      responses:
+        "201":
+          description: Master jabatan berhasil dibuat.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Jabatan"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/jabatan/{jabatanId}:
+    parameters:
+      - name: jabatanId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Jabatan]
+      operationId: getJabatan
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: jabatan:read
+      summary: Membaca satu master jabatan
+      security:
+        - bearerSession: []
+      responses:
+        "200":
+          description: Detail master jabatan.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Jabatan"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    patch:
+      tags: [Jabatan]
+      operationId: updateJabatan
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: jabatan:manage
+      summary: Mengubah master jabatan
+      description: Membutuhkan jabatan:manage (admin).
+      security:
+        - bearerSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JabatanPatch"
+      responses:
+        "200":
+          description: Master jabatan berhasil diperbarui.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Jabatan"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    delete:
+      tags: [Jabatan]
+      operationId: archiveJabatan
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: jabatan:manage
+      summary: Mengarsipkan (menonaktifkan) master jabatan
+      description: Membutuhkan jabatan:manage (admin).
+      security:
+        - bearerSession: []
+      responses:
+        "204":
+          description: Master jabatan diarsipkan.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/payroll/slips:
@@ -1608,6 +1899,48 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/admin/slo/metrics:
+    get:
+      tags: [Admin]
+      operationId: getSLOMetrics
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: slo:read
+      summary: Ringkasan metrik SLO untuk halaman admin internal
+      description: >-
+        Membutuhkan permission slo:read (admin). Respons hanya memuat agregat
+        per rute: jumlah permintaan, galat 5xx, laju galat, dan latensi
+        (rata-rata, p95, p99, maksimum) dalam milidetik. Metrik mentah per
+        jendela tidak pernah keluar dari server. Rentang bawaan 24 jam;
+        maksimum 168 (7 hari). Selama pengoleki metrik (SLO_ENABLED) belum
+        menulis data, tabel sloMetric kosong dan respons tetap 200 dengan
+        total nol.
+      security:
+        - bearerSession: []
+      parameters:
+        - name: hours
+          in: query
+          required: false
+          description: Umur jendela pembacaan dalam jam (1 sampai 168). Bawaan 24.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 168
+            default: 24
+      responses:
+        "200":
+          description: Ringkasan metrik agregat pada rentang waktu.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SLOMetricsSnapshot"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 components:
   headers:
     APIVersion:
@@ -1635,7 +1968,12 @@ components:
     Search:
       name: search
       in: query
-      description: Pencarian parsial tanpa membedakan kapital pada nama atau NIP.
+      description: >-
+        Tanpa membedakan kapital. Pada pegawai: substring pada nama, atau
+        kesetaraan persis NIP (setelah normalisasi) karena NIP disimpan
+        terenkripsi; pada keluarga: substring pada nama, atau kesetaraan
+        persis NIK (setelah normalisasi) karena NIK disimpan terenkripsi;
+        pada resource lain: substring pada kolom teks.
       schema:
         type: string
         maxLength: 100
@@ -1676,6 +2014,20 @@ components:
         type: string
         format: uuid
       description: ID pengajuan cuti.
+    ArsipId:
+      name: arsipId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: ID entri arsip dokumen.
+    UserID:
+      name: userId
+      in: query
+      schema:
+        type: string
+        format: uuid
     Sort:
       name: sort
       in: query
@@ -1687,7 +2039,6 @@ components:
         enum:
           [
             nama,
-            nip,
             createdAt,
             updatedAt,
             name,
@@ -1833,7 +2184,7 @@ components:
           enum: [ok, ready]
     CurrentAccount:
       type: object
-      required: [userId, email]
+      required: [userId, email, permissions]
       properties:
         userId:
           type: string
@@ -1846,6 +2197,41 @@ components:
         homebaseId:
           type: string
           format: uuid
+        permissions:
+          type: array
+          description: >-
+            Permission milik role principal sesuai matriks akses pada server.
+            Daftar kosong berarti role tidak memiliki grant apa pun.
+          items:
+            type: string
+        nama:
+          type: string
+          description: >-
+            Nama lengkap principal. Hanya dikembalikan bila layanan profil
+            mandiri tersedia pada deployment.
+        noHp:
+          type: string
+          description: >-
+            Nomor HP principal. Dihilangkan bila belum diisi. Hanya
+            dikembalikan bila layanan profil mandiri tersedia pada deployment.
+    UpdateProfileRequest:
+      type: object
+      description: >-
+        Minimal satu kolom harus dikirim. `noHp` berisi teks kosong untuk
+        mengosongkan nomor HP tersimpan.
+      properties:
+        nama:
+          type: string
+          minLength: 1
+          maxLength: 200
+        noHp:
+          type: string
+          maxLength: 20
+          description: >-
+            Nomor Indonesia dengan awalan 0 atau 62 (opsional tanda +),
+            diikuti 8 sampai 15 digit. Spasi, titik, dan tanda hubung diabaikan.
+            Teks kosong mengosongkan nomor HP tersimpan.
+      additionalProperties: false
     ReadinessStatus:
       type: object
       required: [status, checks]
@@ -1927,6 +2313,28 @@ components:
           type: integer
         totalPages:
           type: integer
+    UnitDayRecord:
+      type: object
+      required: [id, nama, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        nama:
+          type: string
+        nip:
+          type: [string, "null"]
+        unitId:
+          type: [string, "null"]
+          format: uuid
+        unitName:
+          type: [string, "null"]
+        status:
+          type: [string, "null"]
+          enum: [H, I, S, A, C, LD, null]
+          description: Null berarti belum tercatat pada tanggal itu.
+        note:
+          type: [string, "null"]
     AttendanceDailySummary:
       type: object
       required: [date, counts]
@@ -1966,6 +2374,10 @@ components:
         jabatanFungsional:
           type: [string, "null"]
           maxLength: 200
+        roleName:
+          type: [string, "null"]
+          enum: [admin, operator, atasan, pegawai, "null"]
+          description: Nama peran dari tabel Role; null bila pegawai belum memiliki role.
         createdAt:
           type: string
           format: date-time
@@ -2041,6 +2453,32 @@ components:
         roleName:
           type: string
           enum: [admin, operator, atasan, pegawai]
+    EmployeeSummary:
+      type: object
+      required: [total, active, inactive, byUnit]
+      properties:
+        total:
+          type: integer
+          format: int64
+        active:
+          type: integer
+          format: int64
+        inactive:
+          type: integer
+          format: int64
+        byUnit:
+          type: array
+          items:
+            type: object
+            required: [unitId, count]
+            properties:
+              unitId:
+                type: [string, "null"]
+                format: uuid
+                description: Unit penugasan; null untuk pegawai tanpa unit.
+              count:
+                type: integer
+                format: int64
     EmployeePage:
       type: object
       required: [items, page, pageSize, totalItems, totalPages]
@@ -2428,6 +2866,66 @@ components:
               type: object
               additionalProperties:
                 type: string
+    Jabatan:
+      type: object
+      required: [id, nama, jenis, aktif, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        nama:
+          type: string
+        jenis:
+          type: string
+          enum: [STRUKTURAL, FUNGSIONAL]
+        aktif:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    JabatanPage:
+      type: object
+      required: [items, page, pageSize, totalItems, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Jabatan"
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        totalItems:
+          type: integer
+        totalPages:
+          type: integer
+    JabatanCreate:
+      type: object
+      additionalProperties: false
+      required: [nama]
+      properties:
+        nama:
+          type: string
+          minLength: 1
+          maxLength: 200
+        jenis:
+          type: string
+          enum: [STRUKTURAL, FUNGSIONAL]
+          description: Bawaan STRUKTURAL bila tidak disebutkan.
+    JabatanPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        nama:
+          type: string
+          minLength: 1
+          maxLength: 200
+        jenis:
+          type: string
+          enum: [STRUKTURAL, FUNGSIONAL]
     Cuti:
       type: object
       required: [id, userId, jenis, tanggalMulai, tanggalSelesai, status, createdAt]
@@ -2687,3 +3185,70 @@ components:
           type: string
         resourceType:
           type: string
+    SLORouteMetric:
+      type: object
+      required: [route, method, requests, errors, errorRate, avgMs, p95Ms, p99Ms, maxMs]
+      properties:
+        route:
+          type: string
+          description: Pola rute, bukan path mentah.
+        method:
+          type: string
+        requests:
+          type: integer
+          format: int64
+        errors:
+          type: integer
+          format: int64
+        errorRate:
+          type: number
+          description: Pecahan 0 sampai 1 (galat 5xx permintaan).
+        avgMs:
+          type: number
+          description: Rata-rata latensi dalam milidetik.
+        p95Ms:
+          type: integer
+          format: int64
+          description: Latensi persentil 95 dalam milidetik.
+        p99Ms:
+          type: integer
+          format: int64
+          description: Latensi persentil 99 dalam milidetik.
+        maxMs:
+          type: integer
+          format: int64
+          description: Latensi maksimum dalam milidetik.
+    SLOMetricsSnapshot:
+      type: object
+      required: [windowStart, windowEnd, requests, errors, errorRate, avgMs, p95Ms, p99Ms, maxMs, routes]
+      properties:
+        windowStart:
+          type: string
+          description: Awal jendela agregasi dalam Asia/Jakarta.
+        windowEnd:
+          type: string
+          description: Akhir jendela agregasi dalam Asia/Jakarta.
+        requests:
+          type: integer
+          format: int64
+        errors:
+          type: integer
+          format: int64
+        errorRate:
+          type: number
+        avgMs:
+          type: number
+        p95Ms:
+          type: integer
+          format: int64
+        p99Ms:
+          type: integer
+          format: int64
+        maxMs:
+          type: integer
+          format: int64
+        routes:
+          type: array
+          items:
+            $ref: "#/components/schemas/SLORouteMetric"
+          description: Agregat per kombinasi rute dan metode, diurutkan dari p95 tertinggi. Kosong bila pengoleki belum menulis metrik.

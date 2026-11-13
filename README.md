@@ -9,20 +9,21 @@ Repo ini masih berupa fondasi proyek, belum aplikasi yang siap dijalankan end-to
 - Backend Go/GORM dan pemetaan model tersedia di `backend/`.
 - Skema database ditentukan oleh migrasi SQL Goose di `backend/migrations/`; backend menggunakan GORM.
 - Database target adalah Supabase PostgreSQL, tetapi koneksi belum dapat digunakan sampai `DATABASE_URL` disediakan.
-- Frontend TanStack Start belum dibuat.
-- API HTTP menyediakan health check, identitas sesi sementara, CRUD direktori, endpoint impor pegawai, serta daftar audit log dan kategori. Seluruh endpoint data berada di bawah prefix versi `/api/v1`; path tanpa versi ditolak dengan 400. Grant role statis sudah dikonfigurasi sesuai matriks di `docs/PRD.md` §11; operator dan atasan sudah punya cakupan baca per unit beserta turunannya pada data pegawai, unit organisasi, dan jejak audit. Login/OAuth belum tersedia. Baca `AGENTS.md`, `docs/PRD.md` §11, serta status implementasi di `backend/README.md` sebelum mengubah atau membuka akses.
-- Jejak audit bersifat append-only dan aksesnya dibatasi per unit. Jejak untuk perubahan role dan pembayaran belum ada karena endpoint/modulnya belum dibuat; masa retensi dan prosedur arsip belum ditetapkan.
+- Frontend TanStack Start tersedia di `frontend/` (Bun): halaman depan publik, About/Privacy/Terms/Terms-of-Reference, masuk/keluar lewat Better Auth tertanam di server frontend pada `/api/auth/*` (pendaftaran publik dimatikan; akun dibuat administrator), bilingual Indonesia/English, tema light/dark (bawaan light), sonner untuk umpan balik. Verifikasi end-to-end masuk/keluar terhadap database uji ada di `DEC-049`; desain UI masih draf menunggu persetujuan produk (`DESIGN.md`).
+- API HTTP menyediakan health check, identitas sesi, CRUD direktori, endpoint impor pegawai, serta daftar audit log dan kategori. Seluruh endpoint data berada di bawah prefix versi `/api/v1`; path tanpa versi ditolak dengan 400. Grant role statis sudah dikonfigurasi sesuai matriks di `docs/PRD.md` §11; operator dan atasan punya cakupan baca per unit beserta turunannya pada data pegawai, unit organisasi, dan jejak audit. Login tersedia lewat runtime Better Auth tertanam di frontend (kata sandi); Google OAuth dan MFA belum dikonfigurasi. Baca `AGENTS.md`, `docs/PRD.md` §11, serta status implementasi di `backend/README.md` sebelum mengubah atau membuka akses.
+- Jejak audit bersifat append-only dan aksesnya dibatasi per unit. Perubahan role (`employee.role.updated`) sudah berjejak audit; masa retensi bawaan 90 hari (`AUDIT_RETENTION_DAYS`).
 - `/health` (liveness) dan `/ready` (readiness, memeriksa dependency dengan timeout) sudah dipisahkan. Log ditulis sebagai JSON terstruktur dengan correlation ID `X-Request-ID`; kredensial, body, dan nilai query string tidak pernah dicatat.
-- Migration SQL direktori tersedia dan migration runner dipilih (Goose, konfigurasi `backend/.goose.yaml`); workflow deployment tersedia di `.github/workflows/deploy-migrations.yml` tetapi proses penerapan migrasi belum diuji pada database nyata.
-- Environment deployment pertama ditetapkan sebagai Supabase PostgreSQL production. Prasyarat sebelum deploy (migration diterapkan, runner punya workflow, backup/restore teruji) sebagian telah terpenuhi (workflow tersedia), tetapi migration belum pernah dijalankan terhadap database nyata dan backup/restore belum diuji.
-- Integrasi email/cache/queue belum tersedia sebagai alur aplikasi lengkap.
+- Metrik SLO disimpan di PostgreSQL; halaman admin `/admin/slo` menampilkan agregat per rute (permission `slo:read`, admin saja, `DEC-050`). Login gagal pada lapisan runtime Better Auth tercatat sebagai `{ event: 'auth_failed', path, reason }` tanpa kredensial. RPO/RTO awal diratifikasi 24 jam / 4 jam; drill backup/restore dijalankan terhadap database disposable lokal (PITR dan restore produksi belum diuji) — `DEC-050`, `docs/RUNBOOK.md` §8E.
+- Migration SQL sampai versi 000023 (`000023_keluarga_nik_encrypt.sql`) sudah diterapkan pada database Supabase `postgres` dan database uji `simpeg_perf` (Goose 23). Workflow deployment tersedia di `.github/workflows/deploy-migrations.yml`; eksekusi di GitHub menunggu environment/secret `DATABASE_URL` (lihat `docs/IMPLEMENTATION-PLAN.md` bagian 2 dan `DEC-046`). Kolom identitas PII (`user.nik`, `user.nip`, `user.npwp`, `RiwayatPendidikan.noIjazah`, `KeluargaPegawai.nik`) disimpan terenkripsi (AES-256-GCM) dengan `PII_ENCRYPTION_KEY`; lihat `DEC-053` dan `DEC-054`.
+- Uji dinamis OWASP Top 10:2025 dengan ZAP 2.17.0 pada infrastruktur disposable lokal selesai; tidak ada temuan kritis atau tinggi, tetapi ada cacat query yang membuat sebagian endpoint gagal `5xx`, sembilan rute terdokumentasi yang belum terdaftar, dan header keamanan frontend yang belum ditetapkan — `docs/SECURITY-TEST-OWASP-2025.md`.
+- Integrasi email/cache/queue sudah diimplementasikan di backend (worker outbox SMTP bila SMTP dikonfigurasi, cache Redis untuk kategori, RabbitMQ/QStash untuk pekerjaan terjadwal), tetapi belum dipakai oleh alur lengkap end-to-end dan pengiriman nyata ke kotak masuk belum terukur (SMTP Google Workspace menolak kredensial; butuh *app password*) — lihat `docs/IMPLEMENTATION-PLAN.md` bagian 5.
 - Tujuan produk, ruang lingkup MVP, dan keputusan yang masih terbuka ada di `docs/PRD.md`.
 
 ## Stack
 
 - Backend: versi Go yang tercantum di `backend/go.mod` dan GORM.
 - Database: PostgreSQL terkelola melalui Supabase.
-- Frontend yang direncanakan: TanStack Start, shadcn/ui, TanStack Store, TanStack Table, dan TanStack Query.
+- Frontend: TanStack Start, shadcn/ui, TanStack Store, TanStack Table, dan TanStack Query (folder `frontend/`).
 - Layanan pendukung yang direncanakan/dikonfigurasi: Upstash Redis, QStash, SMTP email, Google OAuth, serta penyimpanan objek kompatibel S3.
 
 Status konfigurasi layanan eksternal tidak berarti integrasinya sudah dipakai oleh aplikasi. Baca PRD dan aturan agent sebelum mengimplementasikannya.
@@ -42,7 +43,7 @@ go build ./...
 go mod verify
 ```
 
-GitHub Actions menjalankan pemeriksaan format, verifikasi dependency, vet, test, dan build backend pada push dan pull request. Frontend belum tersedia, sehingga workflow frontend belum dapat ditambahkan.
+GitHub Actions menjalankan pemeriksaan format, verifikasi dependency, vet, test, dan build backend pada push dan pull request. Untuk perubahan di `frontend/`, `.github/workflows/frontend.yml` menjalankan format, lint, typecheck, unit test, build produksi, dan E2E.
 
 Paket database menyediakan `OpenPostgres(dsn)` untuk membuka koneksi GORM dengan pemetaan nama tabel dan kolom sesuai schema referensi. Isi `DATABASE_URL` dengan connection string Supabase PostgreSQL di lingkungan backend sebelum menghubungkan aplikasi. Jangan menaruh nilainya di README atau commit ke Git.
 

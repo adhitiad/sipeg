@@ -59,7 +59,7 @@ jobs:
           fi
 
       - name: Uji keselarasan model GORM dengan skema migrasi
-        run: go test ./internal/database/...
+        run: go test ./tests/database/...
 
       - name: Status migrasi sebelum diterapkan
         env:

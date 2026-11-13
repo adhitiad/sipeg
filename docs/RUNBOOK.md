@@ -1,4 +1,4 @@
-﻿# Runbook insiden SIMPEG
+# Runbook insiden SIMPEG
 
 Dokumen ini berisi tindakan yang harus dilakukan operator ketika ada gangguan.
 Setiap bagian memuat: gejala, diagnosis, tindakan, dan hal yang **tidak** boleh
@@ -170,7 +170,7 @@ Gejala: query gagal dengan `column "..." does not exist`, atau tes paritas skema
 gagal.
 
 **Diagnosis:** periksa status dan urutan Goose migrations, lalu jalankan
-`go test ./internal/database/...` untuk memeriksa keberadaan tabel model,
+`go test ./tests/database/...` untuk memeriksa keberadaan tabel model,
 indeks jalur query kritis, dan cakupan migrasi RLS. Tes ini tidak membuktikan
 bahwa migrasi sudah diterapkan atau seluruh kolom GORM cocok dengan database.
 
@@ -207,29 +207,43 @@ pindahkan ke pooler transaksi yang melakukan multiplexing pada porta 6543.
 Bawaan repository adalah 10 koneksi, yang memberi ruang di bawah batas
 pooler tanpa menurunkan throughput pada beban wajar.
 
-### 8.2 Publikasi dan jadwal QStash ditolak
+### 8.2 Publikasi dan jadwal pekerjaan ditolak (RabbitMQ self-hosted / QStash cloud)
 
-Gejala: log `qstash_schedule_failed` atau `qstash_job_payload_failed`, dengan
-pesan `404` atau `400 invalid destination url`.
+Gejala: pekerjaan terjadwal tidak dieksekusi, atau antrean `simpeg.jobs.dead`
+berisi pesan yang gagal diproses.
 
-**Diagnosis:** bentuk endpoint QStash harus sesuai. `QSTASH_URL` boleh diisi
-root API regional (misalnya `https://qstash-us-east-1.upstash.io`) atau
-endpoint lengkap; jalur `/v2/publish` dan `/v2/schedules` ditambahkan
-otomatis bila belum ada. Endpoint jadwal diturunkan dari `QSTASH_URL` bila
-`QSTASH_SCHEDULES_URL` kosong, sehingga token, publikasi, dan jadwal berada
-pada satu region.
+**Diagnosis:** bentuk transport tergantung pada deployment:
 
-Periksa daftar jadwal yang benar-benar terdaftar:
+- **Self-hosted (docker/podman):** `RABBITMQ_URL` terisi, pekerjaan terjadwal
+  dipindahkan ke RabbitMQ (`DEC-042`). Penjadwal `cmd/jobsched` menerbitkan
+  pesan ke exchange `simpeg.jobs`, server mengonsumsi antrean `simpeg.jobs`.
+  Periksa antrean dead-letter:
 
-```bash
-curl -H "Authorization: Bearer $QSTASH_TOKEN" \
-  https://qstash-us-east-1.upstash.io/v2/schedules
-```
+  ```bash
+  docker compose -f rabbitmq/docker-compose.yml exec rabbitmq \
+    rabbitmqctl list_queues name messages
+  docker compose logs backend | grep mq_job_failed
+  ```
 
-**Tindakan:** jalankan ulang backend setelah konfigurasi diperbaiki. Backend
-mendaftarkan jadwal secara idempoten, sehingga penyalaan ulang tidak membuat
-jadwal ganda. Bila jadwal lama menunjuk tujuan yang sudah tidak dipakai,
-hapus lewat `DELETE /v2/schedules/{scheduleId}`.
+- **Cloud (QStash):** `RABBITMQ_URL` kosong, pekerjaan terjadwal melalui
+  QStash. Bentuk endpoint QStash harus sesuai (`/v2/publish` dan
+  `/v2/schedules` ditambahkan otomatis). Periksa daftar jadwal:
+
+  ```bash
+  curl -H "Authorization: Bearer $QSTASH_TOKEN" \
+    https://qstash-us-east-1.upstash.io/v2/schedules
+  ```
+
+**Tindakan:**
+- RabbitMQ: bila `simpeg.jobs.dead` berisi pesan, periksa log `mq_job_failed`
+  untuk penyebabnya, perbaiki, lalu jalankan ulang pekerjaannya dengan
+  `jobsched publish <kind>`. Pesan dead-letter tidak kembali otomatis karena
+  tick cron berikutnya memicu eksekusi baru. Pekerjaan idempoten sehingga
+  pengulangan aman.
+- QStash: jalankan ulang backend setelah konfigurasi diperbaiki. Backend
+  mendaftarkan jadwal secara idempoten, sehingga penyalaan ulang tidak membuat
+  jadwal ganda. Bila jadwal lama menunjuk tujuan yang sudah tidak dipakai,
+  hapus lewat `DELETE /v2/schedules/{scheduleId}`.
 
 ### 8.3 Email tidak terkirim
 
@@ -285,7 +299,11 @@ psql "$DATABASE_URL" -c \
 **Tindakan:** metrik disimpan di PostgreSQL, bukan Redis. Bila tabel
 `sloMetric` kosong, pengoleki tidak berjalan: periksa `SLO_ENABLED` dan log
 slo_metric_flush_failed. Bila metrik terkumpul tetapi alert tidak dikirim,
-periksa antrean keluar (outboxMessage) dan status pengiriman email.
+periksa antrean keluar (outboxMessage) dan status pengiriman email. Untuk
+melihat ringkasan agregat tanpa SQL, gunakan halaman admin `/admin/slo`
+(`GET /api/v1/admin/slo/metrics`, permission `slo:read`, admin saja);
+halaman menampilkan agregat per rute pada jendela 24 jam atau 7 hari, bukan
+data mentah per jendela.
 
 ## 8B. Pekerjaan terjadwal RabbitMQ (self-hosted)
 
@@ -326,8 +344,13 @@ kredensial `RABBITMQ_URL` dan jaringan antar container.
 | Sumber | Isi | Dipakai untuk |
 |--------|-----|---------------|
 | Log keamanan (`msg`: `auth_failed`, `access_denied`, `rate_limited`) | `client_ip`, `path`, `status`, `request_id`, `user_id`, `role` | Deteksi volume dan korelasi cepat |
+| Log `auth_failed` runtime Better Auth (frontend) | `path`, `reason`, `ts` (tanpa `client_ip`/kredensial, `DEC-050`) | Menelusuri kegagalan login email/OAuth, termasuk Google OAuth |
 | Jejak audit aksi `authz.denied` | aktor, unit cakupan, izin diminta, pola route | Menelusuri pihak yang mencoba akses di luar haknya |
 | Log keamanan `webhook_signature_rejected` | `job`, `path`, `request_id` | Mendeteksi callback QStash yang tidak sah |
+
+Kolom `client_ip` hanya tersedia pada log keamanan backend; aturan alert per
+IP (lihat tabel ambang di bawah) berlaku untuk log backend. Log `auth_failed`
+runtime frontend dapat dihitung per `path`/`reason`, bukan per IP.
 
 `user_id` dan `role` hanya ada pada peristiwa yang terjadi setelah autentikasi
 berhasil. Kegagalan autentikasi (`auth_failed`) tidak memuat aktor karena belum
@@ -367,3 +390,169 @@ belum berdasarkan baseline volume:
 **Jangan:** menganggap `access_denied` sebagai bug. `403` pada endpoint
 terlindungi adalah hasil yang benar untuk role yang tidak memegang izin, dan
 perlu diperlakukan sebagai bukti percobaan akses, bukan tanda gangguan layanan.
+
+## 8C. Pantauan Redis Upstash (cache data referensi)
+
+**Gejala:** pembacaan kategori pegawai pada `GET /api/v1/categories` lebih
+lambat dari biasanya, atau log `redis_cache_miss` berulang.
+
+**Diagnosis:** tiga komponen:
+
+1. Koneksi: `UPSTASH_REDIS_REST_URL` dan `UPSTASH_REDIS_REST_TOKEN` terisi,
+   dan `RedisEnabled()` mengembalikan `true` pada production.
+2. Respons: `GET {UPSTASH_REDIS_REST_URL}/ping` mengembalikan `PONG`.
+3. Hit/miss: metrik cache (jika diinstrumenkan) menunjukkan rasio hit yang
+   menurun secara tajam.
+
+```bash
+curl -H "Authorization: Bearer $UPSTASH_REDIS_REST_TOKEN" \
+  "$UPSTASH_REDIS_REST_URL/ping"
+```
+
+**Tindakan:** bila Redis gagal, backend tetap membaca dari PostgreSQL lewat
+`ReadThrough` (cache-saja, bukan sumber kebenaran). Tidak ada gangguan
+layanan, hanya penurunan performa pembacaan referensi. Periksa status instance
+Upstash pada dashboard penyedia.
+
+## 8D. Timeout, retry, dan circuit breaker pada dependency eksternal
+
+**Gejala:** permintaan ke QStash, SMTP, atau penyedia hari libur menyebabkan
+timeout berulang, dan antrean keluar (outbox) menumpuk.
+
+**Diagnosis:**
+- QStash: periksa `qstash_schedule_failed` dan `qstash_job_payload_failed`
+  (bagian 8.2).
+- SMTP: periksa log `smtp` pada pesan galat worker outbox (bagian 8.3).
+- Penyedia hari libur: kalender dibaca dari tabel `HariLibur` lokal, tidak
+  bergantung pada penyedia runtime; penyegaran hanya dipicu admin.
+
+**Tindakan:** backend menggunakan outbox persisten di PostgreSQL sehingga
+pesan tidak hilang saat dependency eksternal down. Worker mencoba ulang
+dengan backoff eksponensial yang dibatasi; setelah jumlah percobaan maksimum,
+pesan pindah ke status `FAILED` sebagai dead-letter. Circuit breaker belum
+diimplementasikan pada rilis ini karena integrasi eksternal (QStash, SMTP,
+API hari libur) belum semua diimplementasikan production. Tambahkan circuit
+breaker saat integrasi tersebut dipakai pada production.
+
+## 8E. Uji backup dan restore database
+
+**Gejala:** tidak ada bukti bahwa backup dapat dipulihkan dalam waktu yang
+ditentukan.
+
+**Diagnosis:**
+- `RPO_HOURS` (bawaan 24 jam) dan `RTO_HOURS` (bawaan 4 jam) dikonfigurasi
+  melalui `.env` dan divalidasi `config.Load()`. Nilai awal diratifikasi
+  24 jam / 4 jam pada 13 November 2026 (`DEC-050`); keduanya belum diukur
+  terhadap produksi.
+- Backup dan PITR (point-in-time recovery) dijalankan melalui tier Supabase
+  yang dipilih, bukan melalui skrip backend.
+
+**Bukti drill (13 November 2026, `DEC-050`):** drill dijalankan terhadap
+database disposable lokal `simpeg-verify-pg` (postgres:16-alpine), **bukan**
+Supabase production:
+
+- `pg_dump` dari `postgres`: 134.982 byte, 0,35 detik;
+- restore ke database baru `simpeg_restore_drill`: 1,36 detik, tanpa galat
+  (`ON_ERROR_STOP=1`);
+- perbandingan sumber vs hasil identik: Goose 20 versi, 69 tabel, 181
+  indeks, 167 constraint, 68 tabel dengan RLS aktif, `user`=4, `session`=8,
+  `account`=4, `auditLog`=8;
+- database `simpeg_restore_drill` dihapus setelah verifikasi;
+- **belum diuji:** PITR, restore pada tier Supabase berbayar, dan restore
+  pada database target produksi. Uji di lingkungan terpisah tetap wajib
+  dilakukan sebelum klaim RTO 4 jam dianggap terpenuhi untuk produksi.
+
+**Tindakan:** uji backup/restore pada database terpisah dengan data sintetis,
+catat waktu yang dibutuhkan untuk pulihkan ke titik waktu tertentu, dan
+bandingkan dengan `RPO_HOURS` dan `RTO_HOURS`. Dokumentasikan hasil uji pada
+catatan operasi. Jangan gunakan data pegawai produksi untuk uji restore.
+
+## 9. Dashboard dan alert
+
+**Gejala:** operator tidak mengetahui layanan mana yang gagal, dampak ke
+pengguna, atau langkah pemulihannya.
+
+**Diagnosis:** backend menyediakan log terstruktur JSON satu baris per entri
+dengan correlation ID (`X-Request-ID`), dan metrik SLO disimpan di PostgreSQL
+(`sloMetric`) dan ditampilkan pada halaman admin `/admin/slo` (backend:
+`GET /api/v1/admin/slo/metrics`, permission `slo:read`, admin saja,
+baca-saja, lihat `DEC-050`). Halaman ini mencakup error rate, latency
+(rata-rata/p95/p99/maks) per rute, dan jendela 24 jam atau 7 hari —
+**tidak** mencakup saturasi, health dependency, keterlambatan antrean, atau
+kegagalan notifikasi, dan **aturan alert belum terpasang pada
+infrastruktur mana pun** pada rilis ini. Tanpa `SLO_ENABLED=true` pada
+backend, `sloMetric` kosong dan halaman menampilkan total nol.
+
+**Tindakan:** dasbor internal adalah titik awal yang sudah ada, bukan
+platform monitoring. Pasang aturan alert pada platform monitoring yang
+dipakai organisasi (atau scraper sederhana yang membaca
+`GET /api/v1/admin/slo/metrics`) dengan metrik berikut sebagai titik awal:
+
+| Metrik | Sumber | Ambang alert awal |
+|--------|--------|-------------------|
+| Error rate API | `sloMetric.errorCount / requestCount` | > 1% dalam 5 menit |
+| Latency p95 | histogram bucket pada `sloMetric` (dihitung oleh evaluasi `slo.evaluate`, bukan kolom tunggal) | > 800 ms dalam 5 menit |
+| Koneksi pool PostgreSQL | `DB_MAX_OPEN_CONNS` vs aktif | > 80% batas pooler |
+| Antrean keluar (outbox) | `outboxMessage` status `FAILED` | > 0 pesan |
+| Pesan gagal QStash | `qstash_job_payload_failed` | > 3 dalam 10 menit |
+| Email gagal | `outbox` worker error SMTP | > 0 pesan permanen |
+
+Jenis alert:
+- **Kritis:** API error rate > 5%, koneksi pool > 90%, outbox dead-letter > 10
+  pesan.
+- **Peringatan:** API error rate > 1%, latency p95 > 800 ms, email gagal
+  permanen.
+
+Log keamanan (`auth_failed`, `access_denied`, `rate_limited`) dan jejak audit
+(`authz.denied`) juga boleh diekspor ke SIEM untuk deteksi insiden keamanan
+(bagian 9).
+
+## 10. Autentikasi dan Sesi
+
+### 10.1 Model sesi yang didukung
+
+Backend mendukung dua jenis sesi:
+
+| Jenis | Penyimpanan | Revokasi | Keterangan |
+|-------|-------------|----------|------------|
+| JWT Better Auth | Better Auth runtime (frontend) | Milik runtime Better Auth | Verifikasi via `BETTER_AUTH_SECRET` dengan `golang-jwt/jwt/v5` |
+| Sesi opaque GORM | Tabel `session` di PostgreSQL | `POST /api/auth/logout` menghapus baris `session` | Resolusi via `auth.CombinedSessionResolver` |
+
+**Penting:** runtime Better Auth **terpasang tertanam di server frontend** pada `/api/auth/*` (lihat `DEC-049`): sesi 7 hari dengan rolling refresh 1 hari, pendaftaran publik dimatikan, akun dibuat administrator. Masuk/keluar terverifikasi terhadap database uji disposable untuk seluruh role; logout di frontend memanggil `POST /api/v1/auth/logout` (mencabut sesi opaque) dan `POST /api/auth/sign-out` (mencabut sesi runtime Better Auth). Google OAuth dan MFA TOTP diimplementasikan 2026-11-13 (`DEC-058`); verifikasi live menunggu kredensial Google Workspace dan redirect URI yang terdaftar.
+
+### 10.2 Logout dan pencabutan sesi
+
+**Gejala:** sesi tetap dapat digunakan setelah `POST /api/auth/logout`, atau token JWT tetap valid setelah dicabut.
+
+**Diagnosis:**
+- `POST /api/auth/logout` (daftarkan via `httpserver.RegisterLogoutRoute`) **hanya mencabut sesi opaque GORM** (menghapus baris `session` di PostgreSQL). Penrevokasi token JWT tetap menjadi tanggung jawab runtime Better Auth, bukan backend Go.
+- Role dibaca dari tabel `Role` pada setiap permintaan, sehingga perubahan role berlaku tanpa sesi baru.
+- Akun nonaktif (`aktif = false`) dan baris `session` yang dihapus ditolak sebagai `401`.
+
+**Tindakan:**
+1. Untuk sesi opaque: panggil `POST /api/auth/logout`, lalu verifikasi permintaan berikutnya dengan token yang sama menerima `401`.
+2. Untuk token JWT: cabut melalui runtime Better Auth (`POST /api/auth/sign-out`; runtime terpasang tertanam di server frontend sejak `DEC-049`).
+3. Jika akun dicurigai berbahaya: nonaktifkan akun (`aktif = false`) pada tabel `user`, lalu sesi berikutnya akan ditolak.
+
+### 10.3 Kegagalan resolver sesi
+
+**Gejala:** permintaan menerima `503` dengan kode `service_unavailable` saat memeriksa sesi.
+
+**Diagnosis:** resolver sesi tidak dapat terhubung ke database PostgreSQL. Periksa `DATABASE_URL` dan koneksi pooler.
+
+**Tindakan:** verifikasi koneksi database:
+```bash
+cd backend
+export DATABASE_URL="postgres://<user>:<sandi>@<host>:5432/<database>?sslmode=require"
+go run ./cmd/migrate status
+```
+
+### 10.4 Pemilihan permission dan cakupan
+
+**Gejala:** endpoint menerima `403` meski payload dan token valid.
+
+**Diagnosis:** grant statis dikonfigurasi di `backend/cmd/server/main.go` (matriks disetujui di `docs/PRD.md` §11). Role atau izin yang tidak tercantum tetap ditolak (deny-by-default). Permission berakhiran `:any` = lintas seluruh organisasi (khusus `admin`); `:homebase` = dibatasi pada unit penugasan principal beserta seluruh turunannya (`operator`, `atasan`); `:self` = hanya record milik principal sendiri (`pegawai`).
+
+**Tindakan:** verifikasi grant pada role principal melalui `GET /api/v1/me` dan cek matriks izin di `docs/PRD.md` §11. Jangan memperluas grant tanpa memverifikasi route dan query.
+
+

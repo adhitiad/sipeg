@@ -1,4 +1,4 @@
-﻿# Baseline Performa dan Kapasitas SIMPEG
+# Baseline Performa dan Kapasitas SIMPEG
 
 Tanggal: 2026-11-12
 Status: Baseline unit-level **dan** pengukuran nyata terhadap PostgreSQL, Redis, QStash, dan SMTP pada database staging Supabase. Semua angka di bawah berasal dari pengukuran yang dapat direproduksi memakai `backend/cmd/perfbench`.
@@ -18,8 +18,8 @@ go test -run "^$" -bench "Benchmark" -benchmem -count=1 ./internal/httpserver/..
 Uji beban dan soak:
 
 ```bash
-go test ./internal/httpserver/... -run TestBurstRequestsRemainStable -v
-SIMPEG_SOAK=1 SIMPEG_SOAK_DURATION=30 SIMPEG_SOAK_STREAMS=16 go test ./internal/httpserver/... -run TestSoakReadPath -v
+go test ./tests/httpserver/... -run TestBurstRequestsRemainStable -v
+SIMPEG_SOAK=1 SIMPEG_SOAK_DURATION=30 SIMPEG_SOAK_STREAMS=16 go test ./tests/httpserver/... -run TestSoakReadPath -v
 ```
 
 ### 1.2 Lapis nyata (staging Supabase)
@@ -418,7 +418,7 @@ Target SLO p95 bawaan yang dipakai job pemeriksaan adalah **800 ms** dengan tole
 
 - Tidak mencakup latensi jaringan antara frontend dan backend; semua pengukuran dilakukan dari mesin developers.
 - Tidak mencakup beban import/ekspor Excel (menggunakan pustaka eksternal, lebih mahal).
-- Tidak ada uji beban UI karena frontend belum dibuat.
+- Tidak ada uji beban UI; frontend sudah tersedia di `frontend/` tetapi pengukuran beban UI belum dijalankan.
 - Uji beban SMTP berhenti pada autentikasi karena kredensial pada `.env` ditolak oleh Google Workspace; jalur kode terverifikasi sampai autentikasi, tetapi pengiriman nyata ke kotak masuk belum terukur.
 - Skala data pengukuran (5.000 pegawai) masih kecil dibanding kapasitas produksi. Kesimpulan tentang indeks (`Seq Scan` pada `aktif`, `nama`, dan `homebaseId`) berdasarkan plan pada 5.000 baris dan harus diulang pada skala lebih besar.
 - Semua angka berasal dari satu mesin developers, satu proyek Supabase, dan satu region. Angka belum merupakan bukti lintas lingkungan.
@@ -445,16 +445,16 @@ Target SLO p95 bawaan yang dipakai job pemeriksaan adalah **800 ms** dengan tole
 - `backend/internal/httpserver/slo_handlers.go` — callback pemeriksaan SLO terjadwal
 - `backend/migrations/000016_payment_updated_at.sql` — perbaikan skema `pembayaran`
 - `backend/migrations/000017_slo_metric.sql` — tabel metrik SLO
-- `backend/internal/httpserver/benchmark_test.go` — kode benchmark jalur HTTP
-- `backend/internal/httpserver/load_test.go` — uji beban burst
-- `backend/internal/httpserver/soak_test.go` — uji soak opt-in
-- `backend/internal/directory/app/catalog_benchmark_test.go` — benchmark dampak cache
-- `backend/internal/directory/repository/gorm_import_test.go` — penjaga jumlah statement impor
-- `backend/internal/payroll/repository/schedule_test.go` — penjaga jumlah statement notifikasi
-- `backend/internal/qstash/publisher_endpoint_test.go` — penjaga bentuk endpoint QStash
-- `backend/internal/notify/smtp_starttls_test.go` — penjaga peningkatan STARTTLS
-- `backend/internal/notify/address_test.go` — penjaga bentuk alamat email
-- `backend/internal/slo/domain/slo_test.go` — penjaga perhitungan persentil dan evaluasi target
-- `backend/internal/slo/app/service_test.go` — penjaga use case pemeriksaan dan alert
+- `backend/tests/httpserver/benchmark_test.go` — kode benchmark jalur HTTP
+- `backend/tests/httpserver/load_test.go` — uji beban burst
+- `backend/tests/httpserver/soak_test.go` — uji soak opt-in
+- `backend/tests/directory/app/catalog_benchmark_test.go` — benchmark dampak cache
+- `backend/tests/directory/repository/gorm_import_test.go` — penjaga jumlah statement impor
+- `backend/tests/payroll/repository/schedule_test.go` — penjaga jumlah statement notifikasi
+- `backend/tests/qstash/publisher_endpoint_test.go` — penjaga bentuk endpoint QStash
+- `backend/tests/notify/smtp_starttls_test.go` — penjaga peningkatan STARTTLS
+- `backend/tests/notify/address_test.go` — penjaga bentuk alamat email
+- `backend/tests/slo/domain/slo_test.go` — penjaga perhitungan persentil dan evaluasi target
+- `backend/tests/slo/app/service_test.go` — penjaga use case pemeriksaan dan alert
 - `docs/DECISIONS.md` DEC-036 hingga DEC-041 — keputusan yang lahir dari pengukuran ini
 - `docs/RUNBOOK.md` §8 — prosedur pemeriksaan dan pemulihan

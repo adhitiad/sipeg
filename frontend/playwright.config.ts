@@ -29,7 +29,9 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     env: {
-      VITE_API_BASE_URL: 'http://localhost:8080/api/v1',
+      // API memakai path same-origin agar tidak melanggar CSP `connect-src 'self'`.
+      // Semua panggilan API disimulasikan page.route, jadi backend nyata tidak perlu hidup.
+      VITE_API_BASE_URL: '/api/v1',
     },
   },
 })

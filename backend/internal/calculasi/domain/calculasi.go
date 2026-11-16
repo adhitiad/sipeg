@@ -98,17 +98,18 @@ func ComputeBpjs(rate BpjsRate, gajiPokok, bruto float64) (pegawai, pemberiKerja
 	return pegawai, pemberiKerja
 }
 
-// PtkpToTer memetakan status PTKP ke kategori TER (PMK 168/2023):
-// A = TK/0, TK/1, TK/2, TK/3
-// B = K/0, K/1, K/2, K/3
-// C = K/I/0, K/I/1, K/I/2, K/I/3
+// PtkpToTer memetakan status PTKP ke kategori TER (PMK 168/2023,
+// Lampiran PP 58/2023 huruf A):
+// A = TK/0, TK/1, K/0, K/I/0 (PTKP 54–58,5 juta)
+// B = TK/2, TK/3, K/1, K/2, K/I/1, K/I/2 (PTKP 63–67,5 juta)
+// C = K/3, K/I/3 (PTKP 72 juta)
 func PtkpToTer(ptkp string) string {
 	switch ptkp {
-	case "TK/0", "TK/1", "TK/2", "TK/3":
+	case "TK/0", "TK/1", "K/0", "K/I/0":
 		return "A"
-	case "K/0", "K/1", "K/2", "K/3":
+	case "TK/2", "TK/3", "K/1", "K/2", "K/I/1", "K/I/2":
 		return "B"
-	case "K/I/0", "K/I/1", "K/I/2", "K/I/3":
+	case "K/3", "K/I/3":
 		return "C"
 	default:
 		return "A"

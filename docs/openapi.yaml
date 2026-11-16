@@ -699,6 +699,43 @@ paths:
                 $ref: "#/components/schemas/EmployeeImportIssueResponse"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/employees/export:
+    get:
+      tags:
+        - Employees
+      operationId: exportEmployees
+      x-implementation-status: implemented-deny-by-default
+      x-required-permission: employee:export
+      summary: Mengekspor daftar pegawai ke berkas CSV
+      description: >-
+        Membutuhkan permission employee:export (admin-only). Ekspor di-stream sebagai berkas CSV dengan BOM UTF-8 agar
+        Microsoft Excel membuka berkas dengan benar, memakai header yang sama dengan template impor
+        (nama,email,nip,jabatanStruktural,jabatanFungsional) sehingga berkas hasil ekspor dapat langsung diedit lalu
+        diimpor ulang. Kolom NIK, NPWP, dan rekening bank tidak disertakan. Filter search dan homebaseId mengikuti
+        endpoint daftar; sort, order, page, dan pageSize diabaikan sehingga seluruh baris yang cocok selalu dikirim
+        tanpa batas, berurutan nama naik lalu id naik (keyset pagination per batch). Hanya pegawai aktif yang
+        diekspor. Setiap ekspor yang berhasil dicatat kembali sebagai aksi employee.exported.
+      security:
+        - bearerSession: []
+      parameters:
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/HomebaseFilter"
+      responses:
+        "200":
+          description: Berkas CSV pegawai aktif dalam cakupan pemohon.
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/organizations:
     get:
       tags:

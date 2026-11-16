@@ -9,9 +9,9 @@ import (
 
 func TestPtkpToTer(t *testing.T) {
 	cases := map[string]string{
-		"TK/0": "A", "TK/1": "A", "TK/2": "A", "TK/3": "A",
-		"K/0": "B", "K/1": "B", "K/2": "B", "K/3": "B",
-		"K/I/0": "C", "K/I/1": "C", "K/I/2": "C", "K/I/3": "C",
+		"TK/0": "A", "TK/1": "A", "TK/2": "B", "TK/3": "B",
+		"K/0": "A", "K/1": "B", "K/2": "B", "K/3": "C",
+		"K/I/0": "A", "K/I/1": "B", "K/I/2": "B", "K/I/3": "C",
 		"unknown": "A",
 	}
 	for ptkp, ter := range cases {

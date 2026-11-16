@@ -65,3 +65,31 @@ export async function downloadEmployeeImportTemplate(): Promise<void> {
   anchor.remove()
   URL.revokeObjectURL(url)
 }
+
+/** Mengunduh ekspor CSV pegawai dari GET /api/v1/employees/export. */
+export async function downloadEmployeeExport(): Promise<void> {
+  const headers: Record<string, string> = {}
+  const token = getAuthToken()
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+  const response = await fetch(`${API_BASE_URL}/employees/export`, {
+    headers,
+  })
+  if (!response.ok) {
+    throw new ApiError({
+      status: response.status,
+      code: 'internal_error',
+      message: `Ekspor gagal diunduh (${response.status})`,
+    })
+  }
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = 'employees-export.csv'
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}

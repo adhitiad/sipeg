@@ -36,6 +36,8 @@ func main() {
 		err = runSLO(ctx, os.Args[2:])
 	case "schedule":
 		err = runSchedule(ctx, os.Args[2:])
+	case "importexport":
+		err = runImportExport(ctx, os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -59,6 +61,7 @@ Pakai:
   perfbench e2e      [--duration=60s] [--streams=16]
   perfbench deps     [--redis] [--qstash] [--smtp] [--count=100]
   perfbench slo      [--url=http://127.0.0.1:8080]
+  perfbench importexport [--import-rows=1000] [--import-runs=1] [--export-runs=5]
   perfbench schedule [--create --destination=URL --cron=...] [--delete=ID]
 
 Kredensial dibaca dari environment: DATABASE_URL, UPSTASH_REDIS_REST_URL,

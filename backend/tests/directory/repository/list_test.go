@@ -234,3 +234,95 @@ func TestAuditLogStreamOmitsKeysetOnFirstBatch(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestEmployeeStreamStreamsAllBatches(t *testing.T) {
+	db, mock := newListStore(t)
+
+	mock.ExpectQuery(regexp.QuoteMeta(`ORDER BY "user"."nama" ASC, "user"."id" ASC`)).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nama"}).
+			AddRow("user-1", "Agus").
+			AddRow("user-2", "Budi"))
+	// Batch berikutnya kosong menandai akhir stream.
+	mock.ExpectQuery(regexp.QuoteMeta(`ORDER BY "user"."nama" ASC, "user"."id" ASC`)).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nama"}))
+
+	var streamed []string
+	err := (GormStore{DB: db}).StreamEmployees(context.Background(), listing.Options{}, func(user models.User) error {
+		streamed = append(streamed, user.Nama)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(streamed) != 2 || streamed[0] != "Agus" || streamed[1] != "Budi" {
+		t.Fatalf("unexpected streamed names: %v", streamed)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestEmployeeStreamOmitsKeysetOnFirstBatch memastikan batch pertama tidak
+// memakai predikat keyset. Nilai awal keyset adalah zero value, dan string
+// kosong ditolak PostgreSQL sebagai uuid.
+func TestEmployeeStreamOmitsKeysetOnFirstBatch(t *testing.T) {
+	db, mock := newListStore(t)
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "user" WHERE "user"."aktif" = $1 ORDER BY "user"."nama" ASC, "user"."id" ASC LIMIT $2`)).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nama"}).AddRow("user-1", "Agus"))
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "user" WHERE "user"."aktif" = $1 AND ("user"."nama", "user"."id") > ($2, $3) ORDER BY "user"."nama" ASC, "user"."id" ASC LIMIT $4`)).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nama"}))
+
+	err := (GormStore{DB: db}).StreamEmployees(context.Background(), listing.Options{}, func(models.User) error {
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestEmployeeStreamIgnoresSortAndPaging memastikan opsi urutan dan halaman
+// tidak menembus ekspor: urutan selalu nama naik lalu id naik, tanpa OFFSET.
+func TestEmployeeStreamIgnoresSortAndPaging(t *testing.T) {
+	db, mock := newListStore(t)
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "user" WHERE "user"."aktif" = $1 ORDER BY "user"."nama" ASC, "user"."id" ASC LIMIT $2`)).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nama"}))
+
+	err := (GormStore{DB: db}).StreamEmployees(context.Background(), listing.Options{
+		Sort: `nama; DROP TABLE "user"`, Order: "desc", Page: 9, PageSize: 5,
+	}, func(models.User) error {
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestEmployeeStreamAppliesScopeFilter memastikan cakupan unit diteruskan ke
+// predikat IN dengan kolom berkutip ganda.
+func TestEmployeeStreamAppliesScopeFilter(t *testing.T) {
+	db, mock := newListStore(t)
+
+	mock.ExpectQuery(regexp.QuoteMeta(`"user"."homebaseId" IN`)).
+		WithArgs(true, "unit-a", "unit-a-child", 1000).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "nama"}))
+
+	err := (GormStore{DB: db}).StreamEmployees(context.Background(), listing.Options{
+		ScopeHomebaseIDs: []string{"unit-a", "unit-a-child"},
+	}, func(models.User) error {
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -34,6 +34,11 @@ func (s *loadStore) ListEmployees(_ context.Context, _ listing.Options) ([]model
 	return s.employees, int64(len(s.employees)), nil
 }
 
+func (s *loadStore) StreamEmployees(_ context.Context, _ listing.Options, _ func(models.User) error) error {
+	s.calls.Add(1)
+	return nil
+}
+
 func (s *loadStore) GetEmployee(context.Context, string) (models.User, error) {
 	return models.User{}, domain.ErrNotFound
 }

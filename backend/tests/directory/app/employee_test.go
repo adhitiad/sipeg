@@ -26,6 +26,16 @@ func (r *fakeEmployeeRepository) ListEmployees(_ context.Context, options listin
 	return r.employees, int64(len(r.employees)), nil
 }
 
+func (r *fakeEmployeeRepository) StreamEmployees(_ context.Context, options listing.Options, fn func(models.User) error) error {
+	r.lastOptions = options
+	for _, employee := range r.employees {
+		if err := fn(employee); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *fakeEmployeeRepository) GetEmployee(_ context.Context, id string) (models.User, error) {
 	for _, employee := range r.employees {
 		if employee.ID == id {
@@ -138,6 +148,88 @@ func TestEmployeeListRejectsRoleWithoutReadPermission(t *testing.T) {
 	principal := auth.Principal{UserID: "guest-1", RoleName: "tamu"}
 	if _, err := service.List(context.Background(), principal, listing.Options{Page: 1, PageSize: 20}); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("err = %v, want forbidden", err)
+	}
+}
+
+func TestEmployeeStreamLimitsOperatorToUnitScope(t *testing.T) {
+	repo := &fakeEmployeeRepository{employees: []models.User{
+		{BaseModel: models.BaseModel{IDModel: models.IDModel{ID: "user-1"}}, Nama: "Dalam Unit"},
+	}}
+	scope := &fakeScopeRepository{unitIDs: []string{"unit-a", "unit-a-child"}}
+	service := NewEmployeeService(repo, operatorPolicy(), scope)
+
+	var streamed []string
+	err := service.Stream(context.Background(), operatorPrincipal(), listing.Options{}, func(user models.User) error {
+		streamed = append(streamed, user.Nama)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(repo.lastOptions.ScopeHomebaseIDs) != 2 {
+		t.Fatalf("scope = %v, want 2 units", repo.lastOptions.ScopeHomebaseIDs)
+	}
+	if len(streamed) != 1 {
+		t.Fatalf("streamed = %v, want 1 employee", streamed)
+	}
+}
+
+func TestEmployeeStreamWithoutUnitAssignmentStreamsNothing(t *testing.T) {
+	repo := &fakeEmployeeRepository{employees: []models.User{
+		{BaseModel: models.BaseModel{IDModel: models.IDModel{ID: "user-1"}}, Nama: "Dalam Unit"},
+	}}
+	scope := &fakeScopeRepository{}
+	service := NewEmployeeService(repo, operatorPolicy(), scope)
+
+	principal := operatorPrincipal()
+	principal.HomebaseID = ""
+	var streamed int
+	if err := service.Stream(context.Background(), principal, listing.Options{}, func(models.User) error {
+		streamed++
+		return nil
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if streamed != 0 {
+		t.Fatalf("streamed = %d rows, want 0", streamed)
+	}
+	if repo.lastOptions.ScopeHomebaseIDs != nil {
+		t.Fatal("repository must not be queried outside the assigned scope")
+	}
+}
+
+func TestEmployeeStreamRejectsRoleWithoutReadPermission(t *testing.T) {
+	repo := &fakeEmployeeRepository{}
+	service := NewEmployeeService(repo, operatorPolicy(), &fakeScopeRepository{})
+
+	principal := auth.Principal{UserID: "guest-1", RoleName: "tamu"}
+	if err := service.Stream(context.Background(), principal, listing.Options{}, func(models.User) error {
+		return nil
+	}); !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("err = %v, want forbidden", err)
+	}
+}
+
+func TestEmployeeStreamSelfScopeUsesUserID(t *testing.T) {
+	repo := &fakeEmployeeRepository{employees: []models.User{
+		{BaseModel: models.BaseModel{IDModel: models.IDModel{ID: "pegawai-1"}}, Nama: "Saya"},
+	}}
+	scope := &fakeScopeRepository{}
+	service := NewEmployeeService(repo, operatorPolicy(), scope)
+
+	principal := auth.Principal{UserID: "pegawai-1", RoleName: "pegawai"}
+	var streamed int
+	if err := service.Stream(context.Background(), principal, listing.Options{}, func(models.User) error {
+		streamed++
+		return nil
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if repo.lastOptions.UserID != "pegawai-1" {
+		t.Fatalf("userId filter = %q, want pegawai-1", repo.lastOptions.UserID)
+	}
+	if streamed != 1 {
+		t.Fatalf("streamed = %d rows, want 1", streamed)
 	}
 }
 

@@ -77,6 +77,7 @@ func RegisterDirectoryRoutes(mux *http.ServeMux, resolver auth.SessionResolver, 
 
 	mux.Handle("GET "+APIPrefix+"/audit-logs", protectedAny([]auth.Permission{"audit:read", "audit:read:homebase"}, http.HandlerFunc(api.listAuditLogs)))
 	mux.Handle("GET "+APIPrefix+"/audit-logs/export", protectedAny([]auth.Permission{"audit:read", "audit:read:homebase"}, http.HandlerFunc(api.exportAuditLogs)))
+	mux.Handle("GET "+APIPrefix+"/employees/export", protected("employee:export", http.HandlerFunc(api.exportEmployees)))
 	mux.Handle("GET "+APIPrefix+"/categories", protected("category:read", http.HandlerFunc(api.listCategories)))
 
 	if api.jabatan != nil {

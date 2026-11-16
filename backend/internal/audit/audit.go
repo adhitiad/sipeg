@@ -63,7 +63,8 @@ const (
 
 	// ActionAuditExported menandai ekspor jejak audit ke berkas CSV.
 	// Jejak hanya memuat aktor dan jumlah baris, bukan isi jejak yang diekspor.
-	ActionAuditExported = "audit.exported"
+	ActionAuditExported    = "audit.exported"
+	ActionEmployeeExported = "employee.exported"
 
 	// ActionSLOEvaluated menandai hasil pemeriksaan target SLO terjadwal.
 	ActionSLOEvaluated = "slo.evaluated"

@@ -65,7 +65,7 @@ func (s *fakeDirectoryStore) ListEmployees(_ context.Context, options listing.Op
 	s.listHomebaseID = options.HomebaseID
 	s.listOptions = options
 	items := s.employees
-	if len(items) == 0 {
+	if len(items) == 0 && s.employees == nil {
 		items = []models.User{s.employee}
 	}
 	if options.HomebaseID != "" {
@@ -78,6 +78,32 @@ func (s *fakeDirectoryStore) ListEmployees(_ context.Context, options listing.Op
 		items = filterByUserID(items, options.UserID)
 	}
 	return items, int64(len(items)), s.err
+}
+
+func (s *fakeDirectoryStore) StreamEmployees(_ context.Context, options listing.Options, fn func(models.User) error) error {
+	s.streamOptions = options
+	if s.err != nil {
+		return s.err
+	}
+	items := s.employees
+	if len(items) == 0 && s.employees == nil {
+		items = []models.User{s.employee}
+	}
+	if options.HomebaseID != "" {
+		items = filterByHomebase(items, options.HomebaseID)
+	}
+	if len(options.ScopeHomebaseIDs) > 0 {
+		items = filterByScope(items, options.ScopeHomebaseIDs)
+	}
+	if options.UserID != "" {
+		items = filterByUserID(items, options.UserID)
+	}
+	for _, user := range items {
+		if err := fn(user); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func filterByHomebase(items []models.User, homebaseID string) []models.User {

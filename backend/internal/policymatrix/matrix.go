@@ -13,6 +13,7 @@ func Matrix() map[string]map[string]bool {
 			"employee:archive":                true,
 			"employee:role:manage":            true,
 			"employee:import":                 true,
+			"employee:export":                 true,
 			"organization:read":               true,
 			"organization:manage":             true,
 			"attendance:event:ingest":         true,

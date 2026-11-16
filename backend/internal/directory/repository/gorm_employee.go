@@ -67,6 +67,70 @@ func (s GormStore) ListEmployees(ctx context.Context, options listing.Options) (
 	return employees, total, nil
 }
 
+// StreamEmployees mengirimkan seluruh pegawai aktif yang cocok filter ke fn,
+// satu batch per batch, memakai keyset pagination agar memori terkontrol
+// tanpa batas jumlah baris keseluruhan. Urutan selalu nama naik lalu id naik;
+// sort, page, dan pageSize dari opsi diabaikan. Filter sama dengan
+// ListEmployees (search, homebaseId, cakupan unit, userId).
+func (s GormStore) StreamEmployees(ctx context.Context, options listing.Options, fn func(models.User) error) error {
+	base := func() (*gorm.DB, error) {
+		query := s.DB.WithContext(ctx).Model(&models.User{}).Where(`"user"."aktif" = ?`, true)
+		if options.Search != "" {
+			pattern := "%" + escapeLike(options.Search) + "%"
+			// NIP terenkripsi tidak dapat dicocokkan dengan ILIKE; pencarian
+			// pada NIP dilakukan lewat blind index (kesetaraan persis setelah
+			// normalisasi). Kolom nama tetap dicari sebagai substring.
+			nipHash, err := crypto.BlindIndex(options.Search)
+			if err != nil {
+				return nil, fmt.Errorf("blind index pencarian NIP: %w", err)
+			}
+			query = query.Where(`("user"."nama" ILIKE ? ESCAPE '\' OR "user"."nipHash" = ?)`, pattern, nipHash)
+		}
+		if options.HomebaseID != "" {
+			query = query.Where(`"user"."homebaseId" = ?`, options.HomebaseID)
+		}
+		if len(options.ScopeHomebaseIDs) > 0 {
+			query = query.Where(`"user"."homebaseId" IN ?`, options.ScopeHomebaseIDs)
+		}
+		if options.UserID != "" {
+			query = query.Where(`"user"."id" = ?`, options.UserID)
+		}
+		return query, nil
+	}
+
+	var lastNama string
+	var lastID string
+	first := true
+	for {
+		query, err := base()
+		if err != nil {
+			return err
+		}
+		batch := query.Order(`"user"."nama" ASC, "user"."id" ASC`)
+		// Batch pertama tidak memakai predikat keyset: nilai awalnya adalah
+		// zero value, dan string kosong tidak sah sebagai uuid pada kolom "id".
+		if !first {
+			batch = batch.Where(`("user"."nama", "user"."id") > (?, ?)`, lastNama, lastID)
+		}
+		var employees []models.User
+		result := batch.Limit(exportBatchSize).Find(&employees)
+		if result.Error != nil {
+			return fmt.Errorf("stream employees: %w", result.Error)
+		}
+		first = false
+		if len(employees) == 0 {
+			return nil
+		}
+		for _, employee := range employees {
+			if err := fn(employee); err != nil {
+				return err
+			}
+			lastNama = employee.Nama
+			lastID = employee.ID
+		}
+	}
+}
+
 // summaryScopeQuery menyusun pembatas cakupan yang sama dengan daftar pegawai.
 func summaryScopeQuery(db *gorm.DB, options listing.Options) *gorm.DB {
 	query := db.Model(&models.User{})

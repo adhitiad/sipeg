@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ShieldAlert, Upload } from 'lucide-react'
+import { Download, ShieldAlert, Upload } from 'lucide-react'
 import EmployeeImportDialog from '@/components/EmployeeImportDialog'
 import EmployeeTable, { type EmployeePageSize } from '@/components/EmployeeTable'
 import LoadingRadar from '@/components/LoadingRadar'
 import RetryButton from '@/components/RetryButton'
 import { Button } from '@/components/ui/button'
 import { useLocale, useMessages } from '@/i18n/locale-context'
+import { toast } from 'sonner'
+import { ApiError } from '@/lib/api'
+import { downloadEmployeeExport } from '@/lib/employee-import'
 import {
   EMPLOYEE_SORT_FIELDS,
   useEmployees,
@@ -41,6 +44,7 @@ export default function EmployeeManagementPage() {
   const canImport =
     permissions.includes('employee:import') ||
     permissions.includes('employee:import:homebase')
+  const canExport = permissions.includes('employee:export')
 
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
@@ -142,6 +146,19 @@ export default function EmployeeManagementPage() {
     controls.applySort(field, next)
   }
 
+  async function handleExport() {
+    try {
+      await downloadEmployeeExport()
+      toast.success(t('employees.exportSuccess'))
+    } catch (error: unknown) {
+      toast.error(
+        error instanceof ApiError && error.status === 403
+          ? t('employees.exportForbidden')
+          : t('employees.exportError'),
+      )
+    }
+  }
+
   return (
     <div className="page-wrap px-4 py-10 sm:py-14">
       <p className="island-kicker mb-3">{t('employees.kicker')}</p>
@@ -155,17 +172,30 @@ export default function EmployeeManagementPage() {
         <p className="m-0 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--kicker)]">
           {scopeLabel}
         </p>
-        {canImport ? (
-          <Button
-            type="button"
-            variant="outline"
-            className="gap-2 self-start sm:self-auto"
-            onClick={() => setIsImportOpen(true)}
-          >
-            <Upload className="h-4 w-4" aria-hidden="true" />
-            {t('employees.import')}
-          </Button>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          {canImport ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="gap-2"
+              onClick={() => setIsImportOpen(true)}
+            >
+              <Upload className="h-4 w-4" aria-hidden="true" />
+              {t('employees.import')}
+            </Button>
+          ) : null}
+          {canExport ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="gap-2"
+              onClick={() => void handleExport()}
+            >
+              <Download className="h-4 w-4" aria-hidden="true" />
+              {t('employees.export')}
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       {query.isPending ? (

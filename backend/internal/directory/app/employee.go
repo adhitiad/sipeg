@@ -64,6 +64,31 @@ func (s *EmployeeService) List(ctx context.Context, principal auth.Principal, op
 	}, nil
 }
 
+// Stream mengirimkan seluruh pegawai aktif dalam cakupan principal ke fn,
+// satu batch per batch. Dipakai oleh ekspor CSV; urutan selalu nama naik
+// lalu id naik, tanpa batas jumlah baris.
+func (s *EmployeeService) Stream(ctx context.Context, principal auth.Principal, options listing.Options, fn func(models.User) error) error {
+	switch {
+	case allows(ctx, s.policy, principal, "employee:read:any"):
+		// Role global: filter unit tetap opsional lewat query param.
+	case allows(ctx, s.policy, principal, "employee:read:homebase"):
+		scope, err := s.scope.resolve(ctx, principal)
+		if err != nil {
+			return err
+		}
+		if scope.Empty() {
+			// Tanpa penugasan unit tidak ada data yang boleh terlihat.
+			return nil
+		}
+		options.ScopeHomebaseIDs = scope.List()
+	case allows(ctx, s.policy, principal, "employee:read:self"):
+		options.UserID = principal.UserID
+	default:
+		return domain.ErrForbidden
+	}
+	return s.repo.StreamEmployees(ctx, options, fn)
+}
+
 // Summary menghitung ringkasan pegawai dalam cakupan principal.
 // Populasinya mengikuti aturan daftar pegawai: seluruh baris dalam cakupan,
 // termasuk yang nonaktif.

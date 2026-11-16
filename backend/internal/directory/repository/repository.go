@@ -19,6 +19,7 @@ import (
 // EmployeeRepository adalah port persistensi data pegawai.
 type EmployeeRepository interface {
 	ListEmployees(context.Context, listing.Options) ([]models.User, int64, error)
+	StreamEmployees(context.Context, listing.Options, func(models.User) error) error
 	GetEmployee(context.Context, string) (models.User, error)
 	CreateEmployee(context.Context, string, models.User) (models.User, error)
 	CreateEmployees(context.Context, string, []models.User) ([]models.User, error)

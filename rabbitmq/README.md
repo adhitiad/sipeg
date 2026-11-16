@@ -1,9 +1,6 @@
 # RabbitMQ untuk SIMPEG
 
-Folder ini memuat stack broker RabbitMQ yang berdiri sendiri dan mengambil
-peran QStash pada deployment self-hosted (docker/podman). Topologi dan jadwal
-tidak disimpan di sini — semuanya dideklarasikan dan dijalankan oleh kode
-backend agar tidak bisa menyimpang dari konstanta program.
+Folder ini memuat stack broker RabbitMQ yang berdiri sendiri — **satu-satunya transport pekerjaan terjadwal** (`DEC-102`; QStash tidak dipakai pada deployment mana pun). Topologi dan jadwal tidak disimpan di sini — semuanya dideklarasikan dan dijalankan oleh kode backend agar tidak bisa menyimpang dari konstanta program.
 
 ## Isi folder
 
@@ -63,8 +60,7 @@ hanya bila `SLO_EVALUATE_ENABLED=true` pada penjadwal).
 
 - `cmd/jobsched` adalah penjadwal: tick cron dalam UTC menerbitkan satu
   pesan per tick dengan publisher confirm.
-- Server (`cmd/server`) mengonsumsi antrean, menjalankan pekerjaan yang sama
-  dengan callback QStash, lalu mengakui pesan hanya setelah sukses. Pesan
+- Server (`cmd/server`) mengonsumsi antrean, menjalankan logika pekerjaan yang sama seperti callback legacy, lalu mengakui pesan hanya setelah sukses. Pesan
   gagal pindah ke `simpeg.jobs.dead`.
 - Pekerjaan idempoten, jadi redelivery tidak menghasilkan efek ganda.
 

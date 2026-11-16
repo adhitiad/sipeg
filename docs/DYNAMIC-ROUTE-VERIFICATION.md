@@ -3,7 +3,7 @@
 - **Tanggal:** 2026-11-14
 - **Ruang lingkup:** seluruh rute terdaftar pada backend, matriks peran (`admin`, `operator`, `atasan`, `pegawai`), skenario IDOR/cakupan lintas unit, versioning, logout/pencabutan sesi, dan penolakan akun nonaktif.
 - **Lingkungan (bukan produksi):** PostgreSQL 18.4 lokal (`localhost:5432`), database disposable `simpeg_dynverify` (dibuat dan **dihapus setelah selesai**), migrasi Goose `000001`–`000024`, data sintetis (6 akun `@example.test`, 4 unit pohon `Homebase`, 2 slip gaji `TERBIT`), backend dev di port `8099` (`APP_ENV=development`).
-- **Yang tidak diverifikasi di sini:** autentikasi perangkat presensi dengan kredensial nyata, pengiriman SMTP nyata, alur Better Auth sungguhan (runtime frontend), callback QStash secara dinamis (instance tanpa kredensial QStash → rute tidak terdaftar, `404`), dan database target produksi/Supabase.
+- **Yang tidak diverifikasi di sini:** autentikasi perangkat presensi dengan kredensial nyata, pengiriman SMTP nyata, alur Better Auth sungguhan (runtime frontend), callback legacy `internal/qstash/*` secara dinamis (tidak dipanggil pada deployment mana pun sejak `DEC-102`; rute tetap ada dengan autentikasi signature — diverifikasi unit test), dan database target produksi/Supabase.
 
 > **Catatan pembaruan (2026-11-16):** verifikasi ini mencakup migrasi `000001`–`000024` dan rute yang ada per 14 November 2026. Rute & modul yang menyusul — RBAC admin (`/api/v1/admin/rbac/*`), master pensiun (`/api/v1/pensiun/*`), THR, presensi, cuti lanjutan, kontrak/pesangon, dan HR — **belum termasuk sapuan ini**; bukti terpisah ada di `docs/DECISIONS.md` (`DEC-083`–`DEC-090`) dan pemindaian ulang menyeluruh (ZAP + IDOR) pada cakupan final tetap menjadi item terbuka di `docs/IMPLEMENTATION-PLAN.md` §6–§7.
 
@@ -18,7 +18,7 @@
 | -------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------- |
 | `GET /health`, `GET /ready` (publik)                                       | 2      | `200`                                                                                                             |
 | Rute terproteksi tanpa token                                               | 142    | `401`                                                                                                             |
-| `POST /api/v1/internal/qstash/{payroll/notify,audit/cleanup,slo/evaluate}` | 3      | `404` (tidak terdaftar: instance tanpa QStash; autentikasi signature menunggu kredensial, diverifikasi unit test) |
+| `POST /api/v1/internal/qstash/{payroll/notify,audit/cleanup,slo/evaluate}` | 3      | `404` (tidak terdaftar: instance tanpa QStash) — callback legacy, tidak dipanggil sejak `DEC-102`; signature diverifikasi unit test                                            |
 
 Tidak ada rute terproteksi yang dapat diakses tanpa sesi.
 
@@ -69,7 +69,7 @@ Legenda: `200` sesuai kewenangan; `403` ditolak deny-by-default/cakupan; `503` l
 1. **Dokumen menyatakan `pegawai` memiliki `category:read`, tetapi `policy.go` tidak memberikannya** → pegawai `403` pada `GET /api/v1/categories`. Perbaiki dokumen (PRD) atau tetapkan grant dengan persetujuan pemilik; jangan ubah policy tanpa keputusan.
 2. **`docs/openapi.yaml` belum mendokumentasikan** `PATCH /api/v1/me`, `GET /api/v1/admin/ops/status`, `GET /api/v1/admin/slo/metrics`, `POST /api/v1/auth/session` (bootstrap) — drift yang konsisten dengan DEC-056 (rute terdaftar belum seluruhnya terdokumentasi).
    **Status pembaruan (2026-11-14):** semua item tersebut sudah terdokumentasi setelah penutupan drift rute pada `DEC-066`; item ini ditindaklanjuti sebagai catatan historis dan ketidaksempurnaan tersebut sudah ditutup. `POST /api/v1/auth/session` pada waktu itu juga masih menggambarkan perilaku cookie yang tidak ada; kontrak dikoreksi pada `DEC-069` dan perilaku aktual sesuai handler backend.
-3. Rute internal QStash diverifikasi hanya sampai "tidak terdaftar tanpa kredensial" (`404`); autentikasi signature (HS256 raw body) ditutup oleh unit test, bukan uji dinamis di sini.
+3. Rute internal (legacy) `internal/qstash/*` diverifikasi hanya sampai "tidak terdaftar tanpa kredensial" (`404`); autentikasi signature (HS256 raw body) ditutup oleh unit test, bukan uji dinamis di sini. Sejak `DEC-102` rute ini tidak dipanggil pada deployment mana pun; transport pekerjaan terjadwal adalah RabbitMQ.
 4. `my-records`/`unit-summary` mewajibkan `from`/`to`, `unit-records` mewajibkan `date`; tanpa parameter → `422`. Sesuai kontrak dan kini **dideklarasikan `required: true`** di OpenAPI; ketidakdokumentasian tersebut ditutup pada penutupan drift rute 2026-11-14 (`DEC-066`).
 5. `Jabatan`/`Category`: pegawai tidak diberi `category:read` (lihat #1); `jabatan:read` diberikan ke semua role (terverifikasi `200`).
 

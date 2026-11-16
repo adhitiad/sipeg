@@ -115,14 +115,13 @@ persona yang dinonaktifkan masih aktif.
 **Jangan:** mengedit baris `user.roleId` atau `user.aktif` langsung di database.
 Perubahan role harus melalui endpoint yang berjejak audit.
 
-## 6. Gangguan integrasi eksternal (Redis, QStash, SMTP, S3)
+## 6. Gangguan integrasi eksternal (Redis, SMTP)
 
-Integrasi tersebut belum diimplementasikan. Bila integrasi sudah aktif:
+Integrasi dukungan di repo ini membatasi diri pada interface terkontrol: Redis **cache saja**, RabbitMQ (self-hosted) untuk pekerjaan terjadwal, SMTP untuk notifikasi. QStash tidak dipakai pada deployment manapun (`DEC-042`, `DEC-102`). Aturan integrasi eksternal:
 
-1.Setiap integrasi wajib punya fallback ke sumber kebenaran di PostgreSQL.
+1. Setiap integrasi wajib punya fallback ke sumber kebenaran di PostgreSQL.
 Redis dan queue **tidak boleh** menjadi sumber kebenaran untuk data pegawai,
-payroll, atau pembayaran. 2. Callback QStash diverifikasi signature-nya terhadap raw request body sebelum
-diproses, dan handler harus idempoten karena retry dapat mengulang delivery. 3. Notifikasi gaji hanya dikirim setelah konfirmasi pembayaran tersimpan sebagai
+payroll, atau pembayaran. 2. Pekerjaan yang dijadwalkan lewat RabbitMQ mengakhiri siklusnya di `simpeg.jobs` / `simpeg.jobs.dead`; bila pekerjaan terjadwal gagal berulang, periksa antrean dan `jobsched`. 3. Notifikasi gaji hanya dikirim setelah konfirmasi pembayaran tersimpan sebagai
 terkonfirmasi, bukan saat slip diterbitkan.
 
 ## 7. Pemulihan setelah penerapan migrasi
@@ -274,44 +273,21 @@ pindahkan ke pooler transaksi yang melakukan multiplexing pada porta 6543.
 Bawaan repository adalah 10 koneksi, yang memberi ruang di bawah batas
 pooler tanpa menurunkan throughput pada beban wajar.
 
-### 8.2 Publikasi dan jadwal pekerjaan ditolak (RabbitMQ self-hosted / QStash cloud)
+### 8.2 Publikasi dan jadwal pekerjaan ditolak (RabbitMQ self-hosted)
 
-Gejala: pekerjaan terjadwal tidak dieksekusi, atau antrean `simpeg.jobs.dead`
-berisi pesan yang gagal diproses.
+Gejala: pekerjaan terjadwal tidak dieksekusi, atau antrean `simpeg.jobs.dead` berisi pesan yang gagal diproses.
 
-**Diagnosis:** bentuk transport tergantung pada deployment:
+**Transport aktif:** self-hosted docker/podman — `RABBITMQ_URL` terisi, `cmd/jobsched` menerbitkan pesan ke exchange `simpeg.jobs`, dan server mengonsumsi antrean yang sama (`DEC-042`). **QStash tidak dipakai** (`DEC-102`). Periksa antrean dead-letter:
 
-- **Self-hosted (docker/podman):** `RABBITMQ_URL` terisi, pekerjaan terjadwal
-  dipindahkan ke RabbitMQ (`DEC-042`). Penjadwal `cmd/jobsched` menerbitkan
-  pesan ke exchange `simpeg.jobs`, server mengonsumsi antrean `simpeg.jobs`.
-  Periksa antrean dead-letter:
-
-  ```bash
-  docker compose -f rabbitmq/docker-compose.yml exec rabbitmq \
-    rabbitmqctl list_queues name messages
-  docker compose logs backend | grep mq_job_failed
-  ```
-
-- **Cloud (QStash):** `RABBITMQ_URL` kosong, pekerjaan terjadwal melalui
-  QStash. Bentuk endpoint QStash harus sesuai (`/v2/publish` dan
-  `/v2/schedules` ditambahkan otomatis). Periksa daftar jadwal:
-
-  ```bash
-  curl -H "Authorization: Bearer $QSTASH_TOKEN" \
-    https://qstash-us-east-1.upstash.io/v2/schedules
-  ```
+```bash
+docker compose -f rabbitmq/docker-compose.yml exec rabbitmq \
+  rabbitmqctl list_queues name messages
+docker compose logs backend | grep mq_job_failed
+```
 
 **Tindakan:**
 
-- RabbitMQ: bila `simpeg.jobs.dead` berisi pesan, periksa log `mq_job_failed`
-  untuk penyebabnya, perbaiki, lalu jalankan ulang pekerjaannya dengan
-  `jobsched publish <kind>`. Pesan dead-letter tidak kembali otomatis karena
-  tick cron berikutnya memicu eksekusi baru. Pekerjaan idempoten sehingga
-  pengulangan aman.
-- QStash: jalankan ulang backend setelah konfigurasi diperbaiki. Backend
-  mendaftarkan jadwal secara idempoten, sehingga penyalaan ulang tidak membuat
-  jadwal ganda. Bila jadwal lama menunjuk tujuan yang sudah tidak dipakai,
-  hapus lewat `DELETE /v2/schedules/{scheduleId}`.
+- RabbitMQ: bila `simpeg.jobs.dead` berisi pesan, periksa log `mq_job_failed` untuk penyebabnya, perbaiki, lalu jalankan ulang pekerjaannya dengan `jobsched publish <kind>`. Pesan dead-letter tidak kembali otomatis karena tick cron berikutnya memicu eksekusi baru. Pekerjaan idempoten sehingga pengulangan aman.
 
 ### 8.3 Email tidak terkirim
 
@@ -327,9 +303,10 @@ menyebut `smtp` pada pesan galat.
 | `SMTP_SECURE` kosong | Mode ditebak dari porta: 465 memakai TLS langsung, porta lain memakai STARTTLS | —           |
 
 Galat `tls: first record does not look like a TLS handshake` berarti mode TLS
-langsung dipakai pada porta submission. Galat `535` dari Google Workspace
-berarti kredensial ditolak; Google Workspace menuntut _app password_, bukan
-sandi akun biasa.
+langsung dipakai pada porta submission. Galat `535` (atau `534`) dari Google
+Workspace berarti kredensial ditolak; Workspace menuntut _app password_
+(dengan 2FA), bukan sandi akun biasa — pada percobaan 2026-11-16 Gmail
+menjawab `534 5.7.9 Application-specific password required`.
 
 Bentuk `SMTP_FROM` boleh berupa alamat polos maupun bentuk baku
 `"Nama Tampilan" <alamat@domain>`. Bentuk kedua dipakai apa adanya pada
@@ -345,12 +322,8 @@ tidak wajar.
 
 **Diagnosis:** tiga hal harus benar:
 
-1. `SLO_ENABLED=true` mengaktifkan pengoleki metrik dan mendaftarkan
-   pemeriksaan terjadwal.
-2. Jadwal `slo.evaluate` terdaftar pada QStash (periksa daftar jadwal seperti
-   pada bagian 8.2), atau pada mode self-hosted: `SLO_EVALUATE_ENABLED=true`
-   pada penjadwal RabbitMQ dan pesan `slo.evaluate` mengalir setiap 5 menit
-   (bagian 8B).
+1. `SLO_ENABLED=true` mengaktifkan pengoleki metrik di dalam proses backend.
+2. Pemeriksaan `slo.evaluate` dijadwalkan lewat RabbitMQ (`cmd/jobsched` → antrean `simpeg.jobs`): `SLO_EVALUATE_ENABLED=true` pada penjadwal dan pesan `slo.evaluate` mengalir setiap 5 menit (bagian 8B); tidak ada pendaftaran cron eksternal (QStash tidak dipakai, `DEC-102`).
 3. `SLO_ALERT_RECIPIENTS` berisi alamat penerima yang sah.
 
 ```bash
@@ -414,7 +387,7 @@ kredensial `RABBITMQ_URL` dan jaringan antar container.
 | Log keamanan (`msg`: `auth_failed`, `access_denied`, `rate_limited`) | `client_ip`, `path`, `status`, `request_id`, `user_id`, `role`   | Deteksi volume dan korelasi cepat                             |
 | Log `auth_failed` runtime Better Auth (frontend)                     | `path`, `reason`, `ts` (tanpa `client_ip`/kredensial, `DEC-050`) | Menelusuri kegagalan login email/OAuth, termasuk Google OAuth |
 | Jejak audit aksi `authz.denied`                                      | aktor, unit cakupan, izin diminta, pola route                    | Menelusuri pihak yang mencoba akses di luar haknya            |
-| Log keamanan `webhook_signature_rejected`                            | `job`, `path`, `request_id`                                      | Mendeteksi callback QStash yang tidak sah                     |
+| Log keamanan `webhook_signature_rejected`                            | `job`, `path`, `request_id`                                      | Mendeteksi callback tidak sah (transport lama QStash — tidak dipakai)  |
 
 Kolom `client_ip` hanya tersedia pada log keamanan backend; aturan alert per
 IP (lihat tabel ambang di bawah) berlaku untuk log backend. Log `auth_failed`
@@ -442,8 +415,7 @@ psql "$DATABASE_URL" -c "select \"createdAt\", \"aktorId\", \"unitId\", \"ketera
    sah. Batas yang ada memperlambat credential stuffing.
 4. Cabut sesi yang dicurigai melalui `POST /api/v1/auth/logout`, nonaktifkan akun
    bila perlu, lalu catat kronologi insiden.
-5. Jika `webhook_signature_rejected` muncul berulang, periksa konfigurasi
-   signing key QStash dan penjadwal, bukan isi log signature.
+5. Jika `webhook_signature_rejected` muncul berulang, periksa konfigurasi penjadwalan RabbitMQ/dead-letter; tidak ada callback QStash yang harus diuji karena tidak dipakai (`DEC-102`).
 
 **Ambang alert awal.** Nilai berikut adalah titik awal untuk disetel operator,
 belum berdasarkan baseline volume:
@@ -484,16 +456,15 @@ Upstash pada dashboard penyedia.
 
 ## 8D. Timeout, retry, dan circuit breaker pada dependency eksternal
 
-**Gejala:** permintaan ke QStash, SMTP, atau penyedia hari libur menyebabkan
+**Gejala:** permintaan ke penyedia hari libur, Redis, atau SMTP menyebabkan
 timeout berulang, dan antrean keluar (outbox) menumpuk.
 
 **Diagnosis:**
 
-- QStash: periksa `qstash_schedule_failed` dan `qstash_job_payload_failed`
-  (bagian 8.2).
-- SMTP: periksa log `smtp` pada pesan galat worker outbox (bagian 8.3).
-- Penyedia hari libur: kalender dibaca dari tabel `HariLibur` lokal, tidak
+- API hari libur: kalender dibaca dari tabel `HariLibur` lokal, tidak
   bergantung pada penyedia runtime; penyegaran hanya dipicu admin.
+- SMTP: periksa log `smtp` pada pesan galat worker outbox (bagian 8.3).
+- RabbitMQ / antrean pekerjaan terjadwal: lihat bagian 8.2/8B.
 - Status antrean keluar (agregat, tanpa payload/identitas): `GET /api/v1/admin/ops/status`
   (permission `ops:read`, admin) mengembalikan jumlah pesan per status
   (`PENDING`/`PROCESSING`/`DONE`/`FAILED`), usia pesan tertua yang belum
@@ -504,9 +475,9 @@ timeout berulang, dan antrean keluar (outbox) menumpuk.
 pesan tidak hilang saat dependency eksternal down. Worker mencoba ulang
 dengan backoff eksponensial yang dibatasi; setelah jumlah percobaan maksimum,
 pesan pindah ke status `FAILED` sebagai dead-letter. Circuit breaker belum
-diimplementasikan pada rilis ini karena integrasi eksternal (QStash, SMTP,
-API hari libur) belum semua diimplementasikan production. Tambahkan circuit
-breaker saat integrasi tersebut dipakai pada production.
+diimplementasikan pada rilis ini karena integrasi eksternal (RabbitMQ, SMTP,
+API hari libur) belum semuanya teruji pada produksi. Tambahkan circuit
+breaker saat integrasi tersebut dipakai pada produksi.
 
 ## 8E. Uji backup dan restore database
 
@@ -599,8 +570,8 @@ pengguna, atau langkah pemulihannya.
   kegagalan notifikasi/pengiriman asinkron (`DEC-065`).
 
 Dasbor internal adalah titik awal, bukan platform monitoring penuh; cakupan
-saturasi, health dependency eksternal, metrik Redis/QStash/SMTP/storage, dan
-backlog broker RabbitMQ memerlukan pengumpulan di infrastruktur.
+saturasi, health dependency eksternal, metrik Redis/SMTP/storage (bukan QStash/S3 — keduanya tidak dipakai), dan backlog broker RabbitMQ memerlukan
+pengumpulan di infrastruktur.
 
 **Stack monitoring/alerting yang dipilih (`DEC-065`, target: Docker + RabbitMQ
 self-hosted + stdout JSON + Supabase):** observability self-hosted berbasis
@@ -630,7 +601,7 @@ kegagalan per jenis; payload, dedupe key, dan penerima tidak pernah diekspos.
 | Pool/koneksi PostgreSQL     | metrik pool aplikasi/DB Supabase                                   | > 80% batas (kritikal > 90%)                                  |
 | Antrean keluar (outbox)     | `GET /api/v1/admin/ops/status` atau query `outboxMessage`          | `FAILED` > 0 (kritikal > 10); `PENDING`/usia tertua meningkat |
 | Antrean broker              | metrik RabbitMQ (`simpeg.jobs`, `simpeg.jobs.dead`)                | pesan di dead-letter > 0; backlog bertumbuh                   |
-| Kegagalan notifikasi/QStash | `FAILED` outbox per kind `email.*`, log `qstash_*`/`smtp`          | > 0 pesan permanen; `qstash_job_payload_failed` > 3/10 menit  |
+| Kegagalan notifikasi/SMTP   | `FAILED` outbox per kind `email.*`, log `smtp`                    | > 0 pesan permanen                             |
 | Health dependency           | probe `/ready`, blackbox/health Redis/RabbitMQ/Supabase            | tidak sehat/timeout berulang                                  |
 
 Log keamanan (`auth_failed`, `access_denied`, `rate_limited`, `webhook_signature_rejected`)

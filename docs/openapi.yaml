@@ -1853,12 +1853,14 @@ paths:
         - Internal
       operationId: qstashPayrollNotify
       x-implementation-status: implemented-signature-authenticated
+      x-deprecated: true
       summary: Menjalankan pemberitahuan ketersediaan slip gaji H+1
       description: >-
-        Endpoint callback yang dipanggil QStash sesuai jadwal harian (cron 5 19 * * * = 02:05 WIB). Autentikasi memakai
-        signature QStash yang diverifikasi terhadap raw body, bukan sesi bearer. Pemberitahuan berisi nama, periode, dan
-        tautan ke halaman penggajian — tidak pernah memuat nominal gaji dan bukan bukti pembayaran. Pekerjaan idempoten
-        lewat kunci slip-available per slip sehingga percobaan ulang QStash tidak menghasilkan pemberitahuan ganda.
+        **DEPRECATED (DEC-102) — callback legacy, tidak dipanggil pada deployment mana pun.** Pekerjaan `payroll.notify`
+        dijalankan lewat RabbitMQ self-hosted (`cmd/jobsched` → antrean `simpeg.jobs`). Endpoint ini dipertahankan di kode
+        hanya untuk kompatibilitas; autentikasi tetap signature QStash bagi pemanggilan yang sah, bukan sesi bearer.
+        Pemberitahuan berisi nama, periode, dan tautan ke halaman penggajian — tidak pernah memuat nominal gaji dan bukan
+        bukti pembayaran. Pekerjaan idempoten lewat kunci slip-available per slip.
       security:
         - qstashSignature: []
       requestBody:
@@ -1898,11 +1900,13 @@ paths:
         - Internal
       operationId: qstashAuditCleanup
       x-implementation-status: implemented-signature-authenticated
+      x-deprecated: true
       summary: Menjalankan pembersihan jejak audit yang kedaluwarsa
       description: >-
-        Endpoint callback yang dipanggil QStash sesuai jadwal harian. Autentikasi memakai signature QStash yang
-        diverifikasi terhadap raw body, bukan sesi bearer. Pekerjaan ini idempoten sehingga percobaan ulang QStash tidak
-        mengubah hasil.
+        **DEPRECATED (DEC-102) — callback legacy, tidak dipanggil pada deployment mana pun.** Retensi audit berjalan lewat
+        RabbitMQ self-hosted (`cmd/jobsched` → antrean `simpeg.jobs`). Endpoint ini dipertahankan di kode hanya untuk
+        kompatibilitas; autentikasi tetap signature QStash, bukan sesi bearer. Pekerjaan ini idempoten sehingga
+        percobaan ulang tidak mengubah hasil.
       security:
         - qstashSignature: []
       requestBody:
@@ -5965,19 +5969,63 @@ paths:
       tags:
         - Internal
       operationId: postInternalQstashSloEvaluate
-      summary: Buat/proses internal/qstash/slo/evaluate
+      x-implementation-status: implemented-signature-authenticated
+      x-deprecated: true
+      summary: Menjalankan pemeriksaan target SLO pada jendela terakhir
+      description: >-
+        **DEPRECATED (DEC-102) — callback legacy, tidak dipanggil pada deployment mana pun.** Pemeriksaan `slo.evaluate`
+        dijadwalkan lewat RabbitMQ self-hosted (`cmd/jobsched` → antrean `simpeg.jobs`). Endpoint ini dipertahankan di kode
+        hanya untuk kompatibilitas; autentikasi tetap signature QStash terhadap raw body, bukan sesi bearer. Pekerjaan
+        idempoten: alert diantrekan dengan kunci idempotensi yang memuat awal jendela.
+      security:
+        - qstashSignature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - kind
+              properties:
+                kind:
+                  type: string
+                  enum:
+                    - slo.evaluate
       responses:
         "200":
-          description: Berhasil.
-        "201":
-          description: Berhasil dibuat.
+          description: Hasil evaluasi jendela terakhir, termasuk jumlah permintaan, galat, rasio galat, persentil p95/p99, dan apakah alert diantrekan.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  windowStart:
+                    type: string
+                    format: date-time
+                  windowEnd:
+                    type: string
+                    format: date-time
+                  requests:
+                    type: integer
+                  errors:
+                    type: integer
+                  errorRate:
+                    type: number
+                  p95Ms:
+                    type: integer
+                  p99Ms:
+                    type: integer
+                  breaches:
+                    type: integer
+                  alerted:
+                    type: boolean
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
-      security: []
   /api/v1/payroll/thr/config:
     get:
       tags:
@@ -6124,8 +6172,9 @@ components:
       in: header
       name: Upstash-Signature
       description: >-
-        Signature HS256 QStash atas raw body permintaan. Callback QStash tidak memakai sesi bearer; subjek signature
-        harus cocok dengan URL tujuan yang dikonfigurasi.
+        Signature HS256 QStash atas raw body permintaan (callback legacy). Tidak memakai sesi bearer; subjek signature
+        harus cocok dengan URL tujuan yang dikonfigurasi. **QStash tidak dipakai pada deployment mana pun (DEC-102)** —
+        transport pekerjaan terjadwal adalah RabbitMQ self-hosted; skema ini hanya untuk kompatibilitas.
   parameters:
     Search:
       name: search

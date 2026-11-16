@@ -6,7 +6,7 @@ Rujukan: `docs/RUNBOOK.md`, `docs/IMPLEMENTATION-PLAN.md` (§6, §7, §9), `docs
 
 ## 0. Prasyarat lingkungan
 
-- [ ] Environment GitHub (`staging`, `production`) dengan secret terpisah: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `PII_ENCRYPTION_KEY`, `TRUSTED_ORIGINS`, `APP_BASE_URL`, kredensial SMTP/QStash/Redis (bila dipakai), `CLOUDINARY_*` (bila dipakai).
+- [ ] Environment GitHub (`staging`, `production`) dengan secret terpisah: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `PII_ENCRYPTION_KEY`, `TRUSTED_ORIGINS`, `APP_BASE_URL`, kredensial RabbitMQ/Redis bila dipakai, kredensial SMTP (`SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASS`/`SMTP_FROM`, dari `.env` — tanpa default di kode), `CLOUDINARY_*` (bila dipakai). **QStash tidak dipakai** (`DEC-102`); `AWS_*`/S3 tidak didukung (`DEC-016`, `DEC-102`) — jangan disiapkan.
 - [ ] `APP_ENV=production` mem-validasi secret produksi (menolak start bila `BETTER_AUTH_SECRET`/`PII_ENCRYPTION_KEY` kosong/tidak valid; `TRUSTED_ORIGINS` wajib).
 - [ ] DNS, TLS (sertifikat valid, HSTS), dan domain aplikasi disepakati; origin browser terdaftar di `TRUSTED_ORIGINS`.
 - [ ] Backup & PITR diaktifkan dan **di-restore-drill** pada database target (bukan hanya disposable lokal, lihat `DEC-050`); salinan `PII_ENCRYPTION_KEY` tersimpan di vault; rotasi/backfill direncanakan bila kunci diganti.
@@ -19,7 +19,7 @@ Rujukan: `docs/RUNBOOK.md`, `docs/IMPLEMENTATION-PLAN.md` (§6, §7, §9), `docs
 - [ ] CORS hanya untuk origin di `TRUSTED_ORIGINS`; wildcard tidak dipakai; kredensial lintas origin diputuskan sadar.
 - [ ] Rate limit, rai batas body, dan `DB_STATEMENT_TIMEOUT` diverifikasi pada konfigurasi produksi; batas pool < batas pooler Supabase.
 - [ ] Rotasi semua kredensial yang pernah dibagikan/terekspos; verifikasi tidak ada rahasia di repo/bundle klien; Dependabot/govulncheck terpantau.
-- [ ] Ulangi pemindaian OWASP (ZAP full/active) terhadap staging; triage temuan terbuka; risiko residual diterima tertulis oleh pemilik (termasuk F-09 CSP `unsafe-inline`).
+- [ ] Ulangi pemindaian OWASP (ZAP full/active) terhadap staging; triage temuan terbuka; risiko residual diterima tertulis oleh pemilik (termasuk F-09 CSP `unsafe-inline`, residual `CSP: Failure to Define Directive with No Fallback` 2026-11-16 — **CSP frontend dan HSTS/TLS pada lapisan deployment produksi belum terverifikasi**). Hasil ZAP terautentikasi modul baru 2026-11-16 (`DEC-103`): hanya 2 tipe alert — CSP no-fallback (residual) dan Information Disclosure pada URL (`arsip?search=ZAP`, `surat-keputusan?search=ZAP&userId=`, false positive); tidak ada SQLi/XSS/path traversal/SSRF/command injection pada cakupan GET/HEAD/OPTIONS terautentikasi. Endpoint tulis (POST/PATCH/DELETE) dan role atasan/operator/pegawai belum dipindai ZAP — tetap wajib sebelum rilis.
 - [ ] RLS default-deny diverifikasi pada database target (bukan hanya `simpeg_perf`/uji lokal); policy RLS yang menambah cakupan hanya dengan persetujuan.
 - [ ] `BETTER_AUTH_SECRET` produksi terpisah dari semua environment lain; sesi Better Auth dan resolusi GORM backend selaras (DEC-049); pencabutan dicoba nyata.
 
@@ -46,7 +46,8 @@ Rujukan: `docs/RUNBOOK.md`, `docs/IMPLEMENTATION-PLAN.md` (§6, §7, §9), `docs
 
 - [ ] `SLO_ENABLED` diputuskan; dashboard `/admin/slo` kosong ≠ tidak ada trafik — bandingkan dengan jumlah permintaan nyata; alert dipasang pada infrastruktur (bukan hanya ambang runbook); pemilik menerima notifikasi uji.
 - [ ] Log JSON terkirim ke agregator; tidak memuat kredensial/body/nilai query; `X-Request-ID` konsisten end-to-end; retensi log produksi ditetapkan.
-- [ ] `AUDIT_RETENTION_DAYS` diputuskan; `audit.Cleaner` terjadwal via QStash/RabbitMQ sesuai mode; ekspor audit dicoba dan tercatat sebagai `audit.exported`.
+- [ ] Kredensial SMTP produksi diisi lewat `.env`/secret manager (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`) dan didaftarkan ke environment deployment. Google Workspace menolak sandi akun biasa dengan `535 5.7.8` — gunakan **app password** (akun dengan 2FA). Uji pengiriman ke mailbox nyata; notifikasi gaji tidak pernah memuat nominal dan hanya dikirim setelah pembayaran terkonfirmasi.
+- [ ] `AUDIT_RETENTION_DAYS` diputuskan; `audit.Cleaner` terjadwal lewat RabbitMQ self-hosted (`cmd/jobsched` → antrean `simpeg.jobs`); ekspor audit dicoba dan tercatat sebagai `audit.exported`. QStash tidak dipakai (`DEC-102`).
 - [ ] Runbook diuji untuk insiden minimal: readiness gagal, DB tidak dapat diakses, SMTP mati (antrean outbox tumbuh → dead-letter), Redis mati (fallback PostgreSQL), penjadwal berhenti.
 - [ ] Rollback aplikasi (image/frontend sebelumnya) dan rollback migrasi (atau rencana kompatibilitas) diuji di staging.
 

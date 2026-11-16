@@ -39,10 +39,10 @@
 ## Redis, jobs, and email
 
 - Use Upstash Redis only for explicitly selected ephemeral or cache use cases. PostgreSQL remains the source of truth for employee, payroll, and payment records.
-- Use QStash for asynchronous or scheduled backend work when appropriate. Verify QStash signatures against the raw request body before processing a callback.
-- Make QStash handlers safe for retries: validate the event, use an idempotency key, and record processing/delivery outcomes. Never assume a message is delivered exactly once.
+- Use RabbitMQ (self-hosted) for asynchronous or scheduled backend work: `cmd/jobsched` publishes persistent messages to `simpeg.jobs`, the server consumes them, and failures land in `simpeg.jobs.dead`. QStash is not used on any deployment (`DEC-042`, `DEC-102`).
+- Legacy `internal/qstash/*` callbacks must keep signature verification against the raw request body. Make handlers safe for retries: validate the event, use an idempotency key, and record processing/delivery outcomes. Never assume a message is delivered exactly once.
 - Send salary-paid email only after the backend records a confirmed payment event; publishing or generating a payslip is not proof of payment.
-- Keep email provider credentials and Upstash/QStash tokens server-side. Do not include salary amounts or other sensitive data in email by default; link to an authenticated page instead.
+- Keep email provider credentials, RabbitMQ credentials, and any QStash signing keys (legacy) server-side. Do not include salary amounts or other sensitive data in email by default; link to an authenticated page instead.
 - Keep cache or queue outages from silently losing authoritative business writes. Define retry, expiration, and fallback behavior for each integration.
 
 ## Verification

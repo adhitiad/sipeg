@@ -5,7 +5,12 @@ Status: Uji dinamis selesai pada infrastruktur disposable lokal. Tidak ada temua
 Alat: OWASP ZAP 2.17.0 (Automation Framework), ditambah matriks otorisasi manual empat role.
 Target: backend `http://localhost:8081`, frontend `http://localhost:3001` (dev server pada pemindaian awal, preview build produksi pada pemindaian ulang), PostgreSQL disposable `simpeg_owasp`.
 
-> **Catatan cakupan (2026-11-16):** pemindaian ini mencakup backend & frontend **per 13 November 2026**. Modul yang menyusul — penggajian inti (skala, tunjangan, honor, BPJS, PPh 21 TER, THR, kontrak/pesangon, master pensiun), presensi mesin, cuti lanjutan, dan RBAC admin (`/api/v1/admin/rbac/*`, termasuk UI `/admin/rbac` dan `/admin/pensiun`) — **belum dipindai ulang**; temuan pada modul baru itu belum diketahui dan pemindaian ulang menyeluruh tetap menjadi item terbuka di `docs/IMPLEMENTATION-PLAN.md` §6. Rute baru wajib didokumentasikan di kontrak OpenAPI seperti pada `DEC-088`/`DEC-089`.
+> **Catatan cakupan (2026-11-16):** pemindaian ini mencakup backend & frontend **per 13 November 2026**. Modul yang menyusul — penggajian inti (skala, tunjangan, honor, BPJS, PPh 21 TER, THR, kontrak/pesangon, master pensiun), presensi mesin, cuti lanjutan, dan RBAC admin (`/api/v1/admin/rbac/*`, termasuk UI `/admin/rbac` dan `/admin/pensiun`) — **dipindai ulang pada 2026-11-16** dua tahap terhadap database disposable lokal `simpeg_zap` (dihapus setelah pengujian; migrasi v33 bersih, 4 akun uji, binary dari sumber ini, `APP_ENV=development`, RATE_LIMIT diturunkan):
+>
+> 1. **Matriks otorisasi manual 20 endpoint × 4 role** pada disposable `simpeg_owasp3` (mencakup cakupan unit/self/any) — **0 anomali** (atasan & operator hanya unitnya, pegawai hanya dirinya; penolakan tercatat `authz.denied`; `POST /api/v1/admin/rbac/roles` dengan body kosong menjawab `503` — batasan kecil, bukan kebocoran informasi).
+> 2. **Authenticated ZAP active scan** dengan ZAP 2.17.0 (Automation Framework, `245 URL` di-import dari kontrak, HTTP Sender script menyuntikkan `Authorization: Bearer zapscan-admin-20261116` untuk GET/HEAD/OPTIONS dari akun admin). Cakupan: `payroll/bpjs*, honor-*, pph21-ter, scale, schedules, slips, slips/generate, thr/*, pemberhentian/*, kontrak, pesangon-aturan, pensiun/*, surat-keputusan, perpanjangan, holidays, admin/rbac/*, attendance/*, employees/import`. Mode: passive scan 5 menit + active scan 20 menit max, 2 thread. Hasil: **2 tipe alert** — (a) `CSP: Failure to Define Directive with No Fallback` (3 instance URL tertentu; extension header-only; residual `F-09` yang sudah diterima secara kebijakan — **CSP frontend dan HSTS/TLS pada lapisan deployment produksi belum terverifikasi**, jadi header keamanan produksi tetap terbuka sebagai item pra-rilis) dan (b) `Information Disclosure — Sensitive Information in URL` (2 instance: `arsip?search=ZAP`, `surat-keputusan?search=ZAP&userId=` — bukan data sensitif nyata, false positive hasil fuzzing). **Tidak ada SQLi, XSS, path traversal, command injection, atau SSRF terdeteksi.** Endpoint tulis (`POST/PATCH/DELETE`) tidak dipindai secara aktif dengan sesi (sengaja, untuk tidak memicu mutasi massal) — **tetap terbuka untuk bukti lebih lanjut sebelum rilis produksi**; OpenAPI diimpor apa adanya (tanpa user-provided data), sehingga scan hanya melihat parameter berparameter yang dinyatakan di kontrak.
+>
+> Sisa cakupan yang terbuka: ZAP tidak dijalankan pada atasan/operator/pegawai (hanya admin sesi — API-level otorisasi dinilai lewat matriks manual); Active scan terbatas 20 menit; belum ada Postman/OWASP ZAP scan untuk form/non-API UI front-end. Lihat item **Pemindaian ulang OWASP** di `docs/IMPLEMENTATION-PLAN.md` §6. Rute baru **wajib** didokumentasikan di kontrak OpenAPI seperti pada `DEC-088`/`DEC-089`.
 
 ## 1. Ruang lingkup
 
@@ -15,7 +20,7 @@ Target: backend `http://localhost:8081`, frontend `http://localhost:3001` (dev s
 | Empat role sintetis: `admin`, `operator`, `atasan`, `pegawai`    | Google OAuth, MFA, dan alur pendaftaran mandiri (belum diverifikasi live; keduanya diimplementasikan 2026-11-13, `DEC-058`) |
 | Halaman publik frontend dan `/login`, `/workspace`, `/admin/slo` | Pemindaian frontend dengan sesi login (crawl terautentikasi)                                                                |
 | Endpoint autentikasi Better Auth `/api/auth/*`                   | TLS/HTTPS, HSTS, dan konfigurasi reverse proxy produksi                                                                     |
-| Penanganan galat, pembatasan laju, logging keamanan, header      | Unggah file ke Cloudinary, SMTP/Redis/RabbitMQ/QStash nyata                                                                 |
+| Penanganan galat, pembatasan laju, logging keamanan, header      | Unggah file ke Cloudinary, SMTP/Redis/RabbitMQ nyata (QStash & S3 tidak dipakai)                        |
 | Kontrak `docs/openapi.yaml` versus rute yang terdaftar           | Aplikasi mobile dan beban data berskala produksi                                                                            |
 
 Uji hanya dijalankan terhadap infrastruktur lokal yang dapat dibuang. Tidak ada kredensial atau data pegawai nyata yang dipakai. Akun dan sesi dibuat khusus untuk pengujian dan dihapus bersama database `simpeg_owasp`.
@@ -171,7 +176,7 @@ Belum teruji: IDOR dengan identifier milik pengguna lain. ZAP hanya mengirim UUI
 
 ### A08 Software or Data Integrity Failures — teruji pada konfigurasi
 
-- Signature QStash diverifikasi atas raw body, URL tujuan, masa berlaku, dan rotasi kunci; callback dengan signature tidak valid ditolak dan dicatat `webhook_signature_rejected` tanpa mencatat nilai signature.
+- Signature QStash diverifikasi atas raw body, URL tujuan, masa berlaku, dan rotasi kunci (transport lama tidak dipakai; RabbitMQ adalah transport produksi); callback dengan signature tidak valid ditolak dan dicatat `webhook_signature_rejected` tanpa mencatat nilai signature.
 - Idempotensi event presensi diuji: retry identik mengembalikan event yang sama, key sama dengan fakta berbeda ditolak `409`.
 - Jejak audit append-only dari sisi aplikasi, dijaga tes pemindai source; satu-satunya penghapusan adalah retensi terjadwal.
 - Tidak ada integritas artefak build (SBOM/signature) dan tidak ada unggah file dalam cakupan, sehingga bagian itu tidak dinilai.
@@ -303,7 +308,7 @@ Header juga diperiksa langsung pada respons `/` dan `/login`: CSP enforcing, `X-
 4. Active scan pada frontend tidak berjalan dengan sesi login, sehingga halaman terautentikasi (`/workspace`, `/admin/slo` dengan data) tidak dipindai.
 5. Tidak ada pemindaian komposisi perpustakaan JavaScript (Retire.js) dan tidak ada pemindaian container/image.
 6. Google OAuth, MFA, unggah file Cloudinary, dan alur ekspor/impor Excel tidak termasuk cakupan (Google OAuth dan MFA diimplementasikan di kode 2026-11-13 tetapi belum diuji live).
-7. Rate limit, timeout dependency eksternal, RabbitMQ, QStash, SMTP, Redis, dan Cloudinary tidak diuji dinamis dalam sesi ini.
+7. Rate limit, timeout dependency eksternal, RabbitMQ, SMTP, Redis, dan Cloudinary tidak diuji dinamis dalam sesi ini. QStash & S3 tidak dipakai dan tidak relevan untuk diuji.
 8. Triage alert SQL Injection dibatasi pada parameter yang dilaporkan ZAP (`mimeType`, `fileUrl`, `tanggalMulai`, `description`) dan pada pemeriksaan kode seluruh jalur tulis repository. Belum ada fuzzing diperluas untuk setiap parameter pada body JSON.
 9. CSP frontend masih memakai `'unsafe-inline'` untuk script dan style (F-09). Karena inline SSR masih dipakai, perlindungan terhadap injeksi script bergantung pada `default-src 'self'` dan `script-src 'self'`, bukan pada whitelist origin yang ketat.
 10. Uji ini tidak menggantikan uji penetrasi dengan data dan beban produksi; hasil hanya berlaku untuk cakupan dan versi kode yang diuji.

@@ -1,7 +1,7 @@
 # Baseline Performa dan Kapasitas SIMPEG
 
 Tanggal: 2026-11-12
-Status: Baseline unit-level **dan** pengukuran nyata terhadap PostgreSQL, Redis, QStash, dan SMTP pada database staging Supabase. Semua angka di bawah berasal dari pengukuran yang dapat direproduksi memakai `backend/cmd/perfbench`.
+Status: Baseline unit-level **dan** pengukuran nyata terhadap PostgreSQL, Redis, dan SMTP pada database staging Supabase. Pengukuran QStash di bawah (§6.1, §8.1) bersifat **historis** — QStash tidak dipakai pada deployment mana pun sejak `DEC-102`. Semua angka di bawah berasal dari pengukuran yang dapat direproduksi memakai `backend/cmd/perfbench`. Seksi 8B (uji beban impor/ekspor pegawai, 2026-11-16) diukur pada container PostgreSQL 16 disposable lokal, bukan Supabase; konteks lingkungannya ada pada seksi 8B.
 
 ## 1. Metode Pengukuran
 
@@ -33,7 +33,8 @@ Perkakas `backend/cmd/perfbench` menjalankan pengukuran terhadap dependensi sung
 | `explain`  | menjalankan `EXPLAIN (ANALYZE, BUFFERS)` atas statement yang direkam saat repository produksi berjalan |
 | `latency`  | mengukur distribusi latensi tiap skenario query                                                        |
 | `e2e`      | menjalankan binari `cmd/server` asli lalu mengukurnya lewat HTTP                                       |
-| `deps`     | mengukur beban Redis, QStash, dan SMTP                                                                 |
+| `deps`     | mengukur beban Redis, QStash (historis), dan SMTP                                              |
+| `importexport` | mengukur ekspor CSV pegawai (seluruh pegawai aktif) dan impor CSV (multipart, satu berkas per percobaan) terhadap server asli |
 
 ```bash
 cd backend
@@ -43,7 +44,8 @@ go run ./cmd/perfbench schema
 go run ./cmd/perfbench explain
 go run ./cmd/perfbench latency --iterations=40
 go run ./cmd/perfbench e2e --requests=400 --streams=16
-go run ./cmd/perfbench deps --redis --qstash --smtp --count=100 --concurrency=8
+go run ./cmd/perfbench deps --redis --smtp --count=100 --concurrency=8   # QStash tidak dipakai (DEC-102); --qstash hanya historis
+go run ./cmd/perfbench importexport --import-rows=1000 --import-runs=2 --export-runs=5
 ```
 
 SQL yang dianalisis bukan query yang ditulis ulang secara manual. Statement direkam pada level connection pool GORM, sehingga `EXPLAIN` dijalankan atas SQL yang benar-benar diterima PostgreSQL beserta argumennya. Uji `e2e` menjalankan binari `cmd/server` asli sebagai proses anak, sehingga pengukuran memakai rantai handler produksi tanpa duplikasi.
@@ -75,7 +77,7 @@ Pengisian data sintetis selesai dalam **58,13 detik**: 5.000 pegawai, 49 unit or
 
 Benchmark paralel memakai `b.RunParallel`, jadi 12 goroutine bekerja bersamaan. Throughput jalur baca daftar 100 pegawai di repository palsu sekitar **35.000 req/detik**. Angka berlaku khusus untuk Go 1.26.11.
 
-Uji burst (200 permintaan paralel) dan uji soak (30 dan 120 detik, 16 stream) menghasilkan 0 kegagalan, throughput tetap ±36.000 req/detik, p99 di bawah 2,7 ms, dan heap tidak tumbuh proporsional dengan waktu. Yang terbukti stabil adalah jalur HTTP, bukan perilaku PostgreSQL, Redis, QStash, atau SMTP.
+Uji burst (200 permintaan paralel) dan uji soak (30 dan 120 detik, 16 stream) menghasilkan 0 kegagalan, throughput tetap ±36.000 req/detik, p99 di bawah 2,7 ms, dan heap tidak tumbuh proporsional dengan waktu. Yang terbukti stabil adalah jalur HTTP, bukan perilaku PostgreSQL, Redis, SMTP, maupun QStash (QStash tidak dipakai, `DEC-102`).
 
 ## 3. Latensi Query PostgreSQL Nyata
 
@@ -189,7 +191,9 @@ Dengan demikian cache daftar kategori bukan sekadar penghematan sumber daya, tet
 
 ## 6. Beban Dependency Nyata
 
-### 6.1 QStash
+### 6.1 QStash (historis — tidak dipakai sejak `DEC-102`)
+
+> **Catatan (2026-11-16):** QStash tidak dipakai pada deployment mana pun. Subbab ini disimpan sebagai bukti pengukuran masa lalu; angka berikut bukan acuan konfigurasi produksi.
 
 | Metrik     | Hasil                                                      |
 | ---------- | ---------------------------------------------------------- |
@@ -337,7 +341,9 @@ Besides itu, pengukuran beban menemukan dua keterbatasan konfigurasi:
 | Pooler sesi Supabase membatasi 15 koneksi concurrently (`pool_size: 15`), sedangkan bawaan pool backend adalah 25 | `FATAL: (EMAXCONNSESSION) max clients reached in session mode` pada 16 stream paralel | Bawaan `DB_MAX_OPEN_CONNS` diturunkan menjadi 10 dan didokumentasikan |
 | `QSTASH_SCHEDULES_URL` kosong membuat jadwal jatuh ke region global                                               | Token regional `us-east-1`                                                            | Endpoint jadwal diturunkan dari `QSTASH_URL`                          |
 
-### 8.1 Verifikasi Perbaikan terhadap QStash Nyata
+### 8.1 Verifikasi Perbaikan terhadap QStash Nyata (historis — `DEC-102`)
+
+> **Catatan (2026-11-16):** QStash tidak dipakai pada deployment mana pun. Subbab ini adalah rekaman verifikasi masa lalu (2026-11-12), bukan acuan konfigurasi.
 
 Setelah bentuk endpoint diperbaiki, pendaftaran jadwal berhasil terhadap API QStash sungguhan:
 
@@ -359,11 +365,13 @@ Pendaftaran jadwal dengan tujuan `APP_BASE_URL` ditolak QStash dengan:
 
 Pemeriksaan DNS mengonfirmasi bahwa `simpeg.unisubang.ac.id` maupun `unisubang.ac.id` tidak ada di DNS. QStash memvalidasi tujuan dengan menyelesaikannya sebelum menerima jadwal, sehingga jadwal tidak dapat didaftarkan sampai domain aplikasi benar-benar terbit. Ini adalah fakta lingkungan, bukan cacat kode: jalur kode sudah benar dan terbukti berhasil pada tujuan yang dapat diresolusi.
 
-## 8A. Verifikasi Job SLO Terjadwal
+## 8A. Verifikasi Job SLO Terjadwal (historis — pindah ke RabbitMQ, `DEC-102`)
+
+> **Catatan (2026-11-16):** sejak `DEC-042`/`DEC-102`, pemeriksaan `slo.evaluate` dijadwalkan lewat RabbitMQ (`cmd/jobsched`). Seksi ini adalah rekaman verifikasi masa lalu.
 
 Job pemeriksaan SLO diuji end-to-end terhadap server produksi sungguhan, bukan
 hanya dengan pengujian unit. Alurnya: pengoleki metrik mengumpulkan data,
-callback bertanda tangan QStash dipanggil, target dievaluasi, alert diantrekan,
+callback bertanda tangan (kini dijadwalkan RabbitMQ) dipanggil, target dievaluasi, alert diantrekan,
 dan hasilnya tercatat di jejak audit.
 
 ### 8A.1 Metrik yang terkumpul
@@ -417,8 +425,38 @@ pelanggaran yang terdeteksi, dan lima rute terlambat. Jejak audit mencatat
 
 Status pesan tetap `PENDING` karena kredensial SMTP ditolak oleh Google
 Workspace (bagian 6.2). Antrean keluar, bukan pengiriman langsung, yang
-membuat perilaku ini ожи: bila kredensial diperbaiki, worker outbox akan
+membuat perilaku ini benar: bila kredensial diperbaiki, worker outbox akan
 mengirimkan pesan yang sama tanpa perlu pemeriksaan ulang.
+
+## 8B. Uji Beban Impor/Ekspor Pegawai (database disposable lokal)
+
+Pengukuran dijalankan 2026-11-16 terhadap **container PostgreSQL 16 Alpine disposable di mesin developers (`127.0.0.1:55432`), bukan Supabase dan bukan region Tokyo**. Lingkungan sengaja dibedakan dari §1.3: tujuannya adalah membuktikan perilaku ujung-ke-ujung (migrasi → seed → server asli → permintaan HTTP nyata) tanpa menyentuh database bersama. Angka di sini **bukan** latensi staging/produksi dan tidak boleh dibandingkan langsung dengan bagian 3/4 yang terukur lewat pooler Supabase.
+
+Setiap percobaan memakai binari `cmd/server` asli yang dibangun dari sumber yang sedang diuji lewat `perfbench importexport`. Database disposable berisi 5.000 pegawai sintetis, 49 unit organisasi, dan 100 jejak audit (`seed --employees=5000 --months=1 --audit=100`), migrasi Goose 000001–000033 diterapkan pada database kosong.
+
+Ekspor `GET /api/v1/employees/export` (streaming CSV BOM, tanpa pagination; 5.000 pegawai aktif, 315,0 KB):
+
+| Percobaan | 1 | 2 | 3 | 4 | 5 |
+| --------- | - | - | - | - | - |
+| Latensi   | 33,22 ms | 30,30 ms | 28,86 ms | 20,89 ms | 20,93 ms |
+
+Ringkasan: min **20,89 ms** · p50 **28,86 ms** · p95 **32,63 ms** · maks 33,22 ms · **±173.000 baris/detik**. Kesetaraan jumlah baris ekspor dengan `count(*)` pegawai aktif diperiksa oleh perkakas (percobaan gagal bila tidak sama); bentuk berkas (header sesuai template impor, BOM, tanpa kolom NIK/NPWP/rekening) dan audit `employee.exported` terverifikasi pada `tests/httpserver/employee_export_test.go`.
+
+Impor `POST /api/v1/employees/import` (multipart, berkas CSV buatan perkakas, 1.000 baris per berkas):
+
+| Percobaan | Latensi | Pegawai diimpor | Kecepatan |
+| --------- | ------- | --------------- | --------- |
+| 1 | 678,63 ms | 1000 | 1.473,6 pegawai/detik |
+| 2 | 616,43 ms | 1000 | 1.622,2 pegawai/detik |
+
+Ringkasan: min 616,43 ms · p50 **647,53 ms** · p95 675,52 ms. Alamat email dan NIP dibuat unik per percobaan sehingga kedua impor sama-sama berstatus 201 (bukan keberhasilan semu karena bentrok identitas diabaikan). Setelah kedua percobaan, `count(*)` tabel `user` adalah **7.000** (5.000 seed + 2.000 impor) — diverifikasi langsung pada database disposable sebelum dihapus.
+
+Keterbatasan khusus seksi ini:
+
+- Mesin developers dan PostgreSQL setempat tanpa pooler/jaringan; angka bukan bukti performa pada Supabase.
+- Berkas uji impor adalah CSV biasa, bukan .xlsx hasil tulis Microsoft Excel; jalur parser .xlsx (dimensi sel, formula) belum terukur.
+- Unggahan lewat localhost dengan payload ≪ batas 5 MB; penolakan berkas besar belum terukur.
+- Impor menambah baris; jalankan hanya pada database yang dapat dibuang.
 
 ## 9. Workload Realistis (Estimasi)
 
@@ -450,13 +488,13 @@ Target SLO p95 bawaan yang dipakai job pemeriksaan adalah **800 ms** dengan tole
 ## 11. Keterbatasan Baseline
 
 - Tidak mencakup latensi jaringan antara frontend dan backend; semua pengukuran dilakukan dari mesin developers.
-- Tidak mencakup beban import/ekspor Excel (menggunakan pustaka eksternal, lebih mahal).
-- Tidak ada uji beban UI; frontend sudah tersedia di `frontend/` tetapi pengukuran beban UI belum dijalankan.
+- Uji beban import/ekspor pegawai ada pada §8B, tetapi terbatas pada berkas CSV (bukan parser .xlsx) dan pada PostgreSQL 16 disposable lokal; belum diukur pada staging/produksi representatif maupun lewat pooler Supabase.
+- Uji beban UI sudah dijalankan secara lokal dengan dataset sintetis (`docs/UI-LOAD-TEST.md`); belum divalidasi pada lingkungan staging/produksi representatif.
 - Uji beban SMTP berhenti pada autentikasi karena kredensial pada `.env` ditolak oleh Google Workspace; jalur kode terverifikasi sampai autentikasi, tetapi pengiriman nyata ke kotak masuk belum terukur.
 - Skala data pengukuran (5.000 pegawai) masih kecil dibanding kapasitas produksi. Kesimpulan tentang indeks (`Seq Scan` pada `aktif`, `nama`, dan `homebaseId`) berdasarkan plan pada 5.000 baris dan harus diulang pada skala lebih besar.
 - Semua angka berasal dari satu mesin developers, satu proyek Supabase, dan satu region. Angka belum merupakan bukti lintas lingkungan.
 - `count(*)` pada tabel besar masih berjalan penuh (10 ms pada 50.000 baris jejak audit) dan belum dioptimalkan.
-- Jadwal QStash untuk `APP_BASE_URL` production belum bisa didaftarkan karena domain aplikasi belum ada di DNS (bagian 8.2). Perilaku jadwal pada domain yang sudah terbit belum diuji.
+- Jadwal QStash untuk `APP_BASE_URL` production belum bisa didaftarkan karena domain aplikasi belum ada di DNS (bagian 8.2). Sejak `DEC-102` QStash tidak dipakai sama sekali; retensi audit dan `slo.evaluate` dijadwalkan lewat RabbitMQ self-hosted.
 - Pengoleki metrik SLO memakai satu proses backend. Pada deployment multi-instance, setiap instance menulis agregasi untuk jendela yang sama dan baris terakhir yang menang. Untuk instance banyak, pengoleki perlu dikunci per jendela atau metrik perlu dikumpulkan per instance.
 
 ## 12. Langkah Selanjutnya
@@ -466,14 +504,14 @@ Target SLO p95 bawaan yang dipakai job pemeriksaan adalah **800 ms** dengan tole
 3. Optimasikan `count(*)` pada daftar dengan penghitungan estimasi atau berversi.
 4. Jalankan backend di region yang sama dengan database Supabase, lalu ulangi seluruh pengukuran.
 5. Sediakan _app password_ Google Workspace yang valid, lalu ulangi uji beban SMTP sampai ke kotak masuk.
-6. Uji beban import/ekspor Excel dengan data sintetis.
-7. Terbitkan domain aplikasi, lalu daftarkan jadwal QStash dan verifikasi job SLO berjalan otomatis pada jadwal cron.
+6. ~~Uji beban import/ekspor Excel dengan data sintetis.~~ Selesai secara lokal (§8B); tersisa validasi pada lingkungan staging/produksi representatif dan berkas .xlsx asli hasil tulis Excel.
+7. Verifikasi job terjadwal RabbitMQ berjalan otomatis pada jadwal cron (`jobsched` → antrean `simpeg.jobs`): `audit.cleanup` dan `slo.evaluate`; QStash tidak dipakai (`DEC-102`).
 8. Tinjau batas `pool_size` pooler sesi dan pertimbangkan pooler transaksi untuk toleransi koneksi lebih tinggi.
 9. Untuk deployment multi-instance, tentukan cara pengoleki metrik SLO mengunci jendela agar tidak saling menimpa.
 
 ## Referensi
 
-- `backend/cmd/perfbench/` — perkakas pengukuran (seed, schema, explain, latency, e2e, deps, slo, schedule)
+- `backend/cmd/perfbench/` — perkakas pengukuran (seed, schema, explain, latency, e2e, deps, slo, schedule, importexport)
 - `backend/internal/slo/` — domain, aplikasi, repository, dan pengoleki metrik SLO
 - `backend/internal/httpserver/slo_handlers.go` — callback pemeriksaan SLO terjadwal
 - `backend/migrations/000016_payment_updated_at.sql` — perbaikan skema `pembayaran`
@@ -484,7 +522,7 @@ Target SLO p95 bawaan yang dipakai job pemeriksaan adalah **800 ms** dengan tole
 - `backend/tests/directory/app/catalog_benchmark_test.go` — benchmark dampak cache
 - `backend/tests/directory/repository/gorm_import_test.go` — penjaga jumlah statement impor
 - `backend/tests/payroll/repository/schedule_test.go` — penjaga jumlah statement notifikasi
-- `backend/tests/qstash/publisher_endpoint_test.go` — penjaga bentuk endpoint QStash
+- `backend/tests/qstash/publisher_endpoint_test.go` — penjaga bentuk endpoint QStash (historis; QStash tidak dipakai, `DEC-102`)
 - `backend/tests/notify/smtp_starttls_test.go` — penjaga peningkatan STARTTLS
 - `backend/tests/notify/address_test.go` — penjaga bentuk alamat email
 - `backend/tests/slo/domain/slo_test.go` — penjaga perhitungan persentil dan evaluasi target

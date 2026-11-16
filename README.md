@@ -1,4 +1,4 @@
-﻿# SIMPEG
+# SIMPEG
 
 **Sistem Informasi Kepegawaian (SIMPEG)** adalah platform pengelolaan data dan proses kepegawaian yang dikembangkan untuk kebutuhan institusi (target: Universitas Subang). Proyek ini memisahkan **backend API** (Go) dan **frontend web** (TanStack Start) dengan kontrak HTTP/JSON berversi.
 
@@ -24,7 +24,7 @@
 - **Penggajian:** slip gaji (PDF A5 bermerek + QR verifikasi publik), konfirmasi pembayaran manual (transaksional, notifikasi tanpa nominal), jadwal gajian per unit, kalender hari libur, dan mekanisme notifikasi berbasis outbox. Modul penggajian inti yang **sudah terimplementasi**: master skala gaji yayasan, komponen tunjangan & potongan, honor per SKS, BPJS, PPh 21 TER, THR (termasuk `PERSEN_TAKE_HOME`), kontrak PKWT/PKWTT + perpanjangan pasca-BUP, aturan pesangon, alur pemberhentian (SK PHK otomatis), dan master pensiun (konfigurasi per kategori status + kepesertaan DPLK). Aturan bisnisnya disetujui pada `DEC-067`/`DEC-070`; asumsi yang masih menunggu konfirmasi pemilik tercatat di `DEC-071` (penyedia & iuran DPLK, pelaporan LLDikti, potongan koperasi/pinjaman).
 - **Akses berbasis peran (RBAC scoped, `DEC-087`–`DEC-089`):** matriks grant statis (deny-by-default) tetap sumber kebijakan, dan lapisan RBAC berbasis _scoped assignment_ mulai menegakkan keputusan secara otoritatif bagi pengguna yang sudah punya assignment. Modul admin RBAC (`/api/v1/admin/rbac/*`) mengelola role, permission, matriks role-permission, assignment per pengguna beserta cakupan unit, dan delegasi; UI `/admin/rbac`. Perkakas `backend/cmd/rbacseed` memetakan grant statis ke data RBAC untuk pengguna yang sudah ada (dry-run bawaan, `--apply` idempoten).
 - **Administrasi:** arsip dokumen, master Surat Keputusan (baca-saja — SK terbit dari alur kerja seperti persetujuan pemberhentian yang menerbitkan SK-PHK; penerbitan manual belum diputuskan), serta modul RBAC admin.
-- **Operasional:** health/readiness terpisah, logging terstruktur dengan correlation ID, rate limit & security headers, metrik SLO admin (agregat), status operasional antrean keluar (agregat outbox), dukungan pekerjaan terjadwal via RabbitMQ (self-hosted) atau QStash (alternatif).
+- **Operasional:** health/readiness terpisah, logging terstruktur dengan correlation ID, rate limit & security headers, metrik SLO admin (agregat), status operasional antrean keluar (agregat outbox), dukungan pekerjaan terjadwal via RabbitMQ self-hosted (**QStash tidak dipakai**, `DEC-102`), SMTP untuk notifikasi (kredensial dari `.env`, `DEC-102`).
 - **Observabilitas & pemulihan (templat $0, self-hosted):** stack Prometheus/Alertmanager/Grafana/Loki + exporter host/container/blackbox/RabbitMQ di `observability/`, formulir & helper uji backup/restore di `docs/backup-restore-drill.md` dan `scripts/backup-restore-drill.ps1`. Pemasangan di target produksi belum terbukti — lihat `docs/IMPLEMENTATION-PLAN.md` §7.
 
 > Batas penting: tidak semua keputusan kebijakan di `docs/PRD.md` berarti sudah terimplementasi penuh. Selalu verifikasi perilaku aktual pada konfigurasi, middleware, handler, dan database target.
@@ -130,7 +130,7 @@ curl http://localhost:8080/ready
 - Migrasi dijalankan oleh layanan `migrations` (`/bin/migrate`) sebelum backend bergantung padanya.
 - Migrasi `000025_payroll_core.sql` (skema penggajian inti) dan `000026`–`000032` (presensi, cuti, kategori, slip BATAL, RBAC scoped) sudah disetujui/terdaftar di repo tetapi **belum diterapkan pada staging/produksi**. Karena sudah terdaftar, `migrate up` akan menerapkannya otomatis, jadi jalankan hanya lewat workflow pada staging lebih dulu, lalu verifikasi `perfbench schema`/`goose_db_version`, baru produksi dengan persetujuan pemilik (`DEC-068`, `DEC-087`).
 - Seed RBAC (`go run ./cmd/rbacseed --apply`) dijalankan **setelah** migrasi diterapkan di target, mengikuti urutan pada `docs/RUNBOOK.md` §RBAC dan `docs/STAGING-RELEASE-CHECKLIST.md`.
-- Mode QStash tetap tersedia sebagai alternatif cloud bila `RABBITMQ_URL` tidak diisi (`DEC-042`).
+- **QStash tidak dipakai.** Pekerjaan terjadwal hanya melalui RabbitMQ self-hosted; backend melewati pendaftaran jadwal QStash bila `RABBITMQ_URL` diisi. Variabel `QSTASH_*` dipertahankan kosong di `.env.example` namun tidak dipakai pada deployment mana pun (lihat `DEC-042`, `DEC-102`).
 
 ### Monitoring, alerting, dan log (stack opsional, $0)
 
@@ -211,13 +211,14 @@ Simpan nilai lokal di `.env` (diabaikan Git) atau secret manager. **Jangan** mem
 | `APP_ENV`, `PORT`                                    | Lingkungan dan porta server                                                    |
 | `PII_ENCRYPTION_KEY`                                 | Enkripsi kolom PII di level aplikasi (wajib pada production)                   |
 | `RABBITMQ_URL`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD` | Broker RabbitMQ untuk pekerjaan terjadwal self-hosted                          |
-| `QSTASH_*`                                           | Penjadwalan/callback QStash (alternatif cloud)                                 |
-| `SMTP_*`                                             | Pengiriman email dari backend                                                  |
+| `QSTASH_*` (DEPRECATED, TIDAK DIPAKAI)                | QStash tidak dipakai; RabbitMQ self-hosted adalah pengangkut pekerjaan terjadwal (`DEC-042`, `DEC-102`)      |
+| `SMTP_*`                                             | Pengiriman email dari backend; kredensial dibaca dari `.env` (tanpa default)                                 |
 | `UPSTASH_REDIS_REST_*`                               | Cache Redis (data referensi non-sensitif, cache-only)                          |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`           | OAuth Google (bila dikonfigurasi/digunakan)                                    |
 | `ALLOWED_EMAIL_DOMAINS`, `INVITE_ONLY`               | Kebijakan akses akun (sesuai keputusan yang berlaku)                           |
 | `SESSION_LIFETIME`                                   | Masa berlaku sesi (bila relevan dengan runtime yang dipakai)                   |
-| `SLO_*`, `HOLIDAY_API_*`, `CLOUDINARY_*`, `AWS_*`    | Fitur/observabilitas/integrasi spesifik (aktif sesuai konfigurasi & keputusan) |
+| `SLO_*`, `HOLIDAY_API_*`, `CLOUDINARY_*`            | Fitur/observabilitas/integrasi spesifik (aktif sesuai konfigurasi & keputusan) |
+| `AWS_*` (TIDAK DIPAKAI)                              | S3/S3-compatible storage tidak dipakai & tidak didukung (`DEC-016`)            |
 
 > Tercantum di sini tidak berarti integrasi sudah aktif end-to-end. Lihat `docs/IMPLEMENTATION-PLAN.md`, `docs/DECISIONS.md`, dan `backend/README.md`.
 

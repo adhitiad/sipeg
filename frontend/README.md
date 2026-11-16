@@ -67,7 +67,7 @@ keadaan belum dikonfigurasi.
 
 ## Batas tanggung jawab
 
-- Frontend tidak mengakses PostgreSQL, Supabase Data API, Redis, QStash, atau
+- Frontend tidak mengakses PostgreSQL, Supabase Data API, Redis, RabbitMQ, atau
   kredensial email. Semua data bisnis berasal dari backend Go.
 - Sesi dibawa lewat header `Authorization: Bearer <token>` sesuai skema
   `bearerSession` pada `docs/openapi.yaml`. Cookie tidak disertakan karena

@@ -1,5 +1,8 @@
 # Checklist & formulir uji backup/restore (Supabase Free, $0)
 
+> **Hasil drill 2026-11-16 (staging, bukan produksi)** — lengkap di `docs/DECISIONS.md` `DEC-100`:
+> dump `pg_dump` ≈ **59 detik**, 2.555.361 byte; restore ke container disposable `postgres:16-alpine` ≈ **5 detik** (4 galat khusus Supabase `supabase_vault`/`transaction_timeout`, diabaikan — tidak menyentuh skema aplikasi); **verifikasi identik dengan sumber**: 89 tabel, 89 RLS, Goose 33, `user`=102 (100 sintetis + 2 pilot), `gaji`=301, `session`=30, `account`=2, `auditLog`=50.161. Artefak dihapus. **Belum menggantikan uji di DB produksi.**
+
 Pemilik: **adhitiad (admin)**. Terkait: `docs/DECISIONS.md` `DEC-050`, `DEC-065`, `docs/RUNBOOK.md` §7 & §8E.  
 Tujuan: membuktikan prosedur pemulihan, mengukur durasi pulih dan titik data, serta membandingkan dengan target awal **RPO 24 jam / RTO 4 jam** (nilai awal, belum terukur produksi).
 

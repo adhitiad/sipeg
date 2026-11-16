@@ -80,7 +80,7 @@ bunx shadcn@latest add button
 - Better Auth is reached at same-origin `/api/auth` by default; set `VITE_AUTH_BASE_URL` only for a runtime on a separate origin.
 - Treat client-side route guards and hidden controls as navigation only; the Go backend remains authoritative for authentication and authorization.
 - Use secure server-managed session handling. Do not expose session secrets, OAuth client secrets, or privileged tokens to browser bundles, and do not connect browser code directly to PostgreSQL.
-- Never use Supabase service-role/secret keys, Upstash tokens, QStash signing keys, or email-provider credentials in the client. Do not call QStash or send email from the browser; the backend owns payment confirmation and notification delivery.
+- Never use Supabase service-role/secret keys, Upstash tokens, RabbitMQ credentials, or email-provider credentials in the client. Do not publish messages to RabbitMQ or send email from the browser; the backend owns payment confirmation and notification delivery.
 - Do not duplicate backend business rules in the client. The unit-scope rules, permission matrix, and validation all live server-side.
 
 ## UI quality

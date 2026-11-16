@@ -156,3 +156,71 @@ func TestStatementTimeoutMiddlewareSkippedWhenNotPositive(t *testing.T) {
 		t.Fatalf("status = %d, want 200", response.Code)
 	}
 }
+
+func TestRateLimiterCountsPerClientAcrossPaths(t *testing.T) {
+	limiter := NewRateLimiter(RateLimitOptions{Limit: 1, Window: time.Minute})
+	handler := limiter.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	send := func(path string) int {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		request.RemoteAddr = "10.0.0.7:1234"
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response.Code
+	}
+	if status := send("/api/v1/employees"); status != http.StatusOK {
+		t.Fatalf("first request status = %d, want 200", status)
+	}
+	if status := send("/api/v1/payroll/slips/one"); status != http.StatusTooManyRequests {
+		t.Fatalf("request to another path must share client quota; got %d, want 429", status)
+	}
+}
+
+func TestRateLimiterRetryAfterUsesInjectedClock(t *testing.T) {
+	now := time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
+	limiter := NewRateLimiter(RateLimitOptions{Limit: 1, Window: time.Minute, Now: func() time.Time { return now }})
+	handler := limiter.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	send := func() *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodGet, "/api/v1/employees", nil)
+		request.RemoteAddr = "10.0.0.8:1234"
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response
+	}
+	if response := send(); response.Code != http.StatusOK {
+		t.Fatalf("first request status = %d, want 200", response.Code)
+	}
+	now = now.Add(15 * time.Second)
+	response := send()
+	if response.Code != http.StatusTooManyRequests {
+		t.Fatalf("second request status = %d, want 429", response.Code)
+	}
+	if got := response.Header().Get("Retry-After"); got != "45" {
+		t.Fatalf("Retry-After = %q, want 45 seconds", got)
+	}
+}
+
+func TestRateLimiterResetsAtExactWindowBoundary(t *testing.T) {
+	now := time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
+	limiter := NewRateLimiter(RateLimitOptions{Limit: 1, Window: time.Minute, Now: func() time.Time { return now }})
+	handler := limiter.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	send := func() int {
+		request := httptest.NewRequest(http.MethodGet, "/api/v1/employees", nil)
+		request.RemoteAddr = "10.0.0.9:1234"
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response.Code
+	}
+	if send() != http.StatusOK {
+		t.Fatal("first request must be allowed")
+	}
+	now = now.Add(time.Minute)
+	if status := send(); status != http.StatusOK {
+		t.Fatalf("request at exact window boundary status = %d, want 200", status)
+	}
+}

@@ -209,3 +209,30 @@ func TestCanAccessUserInScopeDeniesWithoutPolicy(t *testing.T) {
 		t.Fatal("missing policy must deny access")
 	}
 }
+
+type denyScopedPolicy struct{}
+
+func (denyScopedPolicy) Allows(string, Permission) bool { return true }
+
+func (denyScopedPolicy) AllowsScoped(context.Context, Principal, Permission) bool {
+	return false
+}
+
+func TestRequireAnyPermissionHonorsScopedDenial(t *testing.T) {
+	principal := Principal{UserID: "user-1", RoleName: "operator"}
+	handler := RequireAnyPermission(denyScopedPolicy{}, []Permission{
+		"employee:read:any",
+		"employee:read:homebase",
+	}, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("handler must not run when scoped RBAC denies every candidate")
+	}))
+	request := httptest.NewRequest(http.MethodGet, "/employees", nil)
+	request = request.WithContext(WithPrincipal(request.Context(), principal))
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 when scoped RBAC denies all candidates, got %d", response.Code)
+	}
+}

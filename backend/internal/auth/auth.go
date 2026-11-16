@@ -160,8 +160,14 @@ func RequireAnyPermission(policy Policy, permissions []Permission, next http.Han
 			writeError(w, http.StatusForbidden, apierror.CodeForbidden)
 			return
 		}
-		for _, p := range permissions {
-			if policy.Allows(principal.RoleName, p) {
+		for _, permission := range permissions {
+			allowed := false
+			if scoped, ok := policy.(ScopedPolicy); ok {
+				allowed = scoped.AllowsScoped(r.Context(), principal, permission)
+			} else {
+				allowed = policy.Allows(principal.RoleName, permission)
+			}
+			if allowed {
 				next.ServeHTTP(w, r)
 				return
 			}

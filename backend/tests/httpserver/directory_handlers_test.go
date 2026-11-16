@@ -9,6 +9,7 @@ import (
 	. "simpeg/backend/internal/httpserver"
 	"strings"
 	"testing"
+	"time"
 
 	"simpeg/backend/internal/audit"
 	"simpeg/backend/internal/auth"
@@ -19,30 +20,33 @@ import (
 )
 
 type fakeDirectoryStore struct {
-	employee       models.User
-	employees      []models.User
-	byID           map[string]models.User
-	auditLogs      []models.AuditLog
-	cutiLogs       []models.Cuti
-	createdCuti    models.Cuti
-	updatedCuti    models.Cuti
-	categories     []models.Kategori
-	scopeIDs       []string
-	recordedAudits []audit.Entry
-	listHomebaseID string
-	listOptions    listing.Options
-	streamOptions  listing.Options
-	batchCalls     int
-	organization   models.Homebase
-	employeePatch  domain.EmployeePatch
-	assignedRole   string
-	orgPatch       domain.OrganizationPatch
-	actorID        string
-	archived       bool
-	jabatans       []models.Jabatan
-	jabatan        models.Jabatan
-	jabatanPatch   domain.JabatanPatch
-	err            error
+	employee        models.User
+	employees       []models.User
+	byID            map[string]models.User
+	auditLogs       []models.AuditLog
+	cutiLogs        []models.Cuti
+	createdCuti     models.Cuti
+	updatedCuti     models.Cuti
+	categories      []models.Kategori
+	saldoCuti       *models.SaldoCuti
+	startDate       *time.Time
+	overlappingCuti int64
+	scopeIDs        []string
+	recordedAudits  []audit.Entry
+	listHomebaseID  string
+	listOptions     listing.Options
+	streamOptions   listing.Options
+	batchCalls      int
+	organization    models.Homebase
+	employeePatch   domain.EmployeePatch
+	assignedRole    string
+	orgPatch        domain.OrganizationPatch
+	actorID         string
+	archived        bool
+	jabatans        []models.Jabatan
+	jabatan         models.Jabatan
+	jabatanPatch    domain.JabatanPatch
+	err             error
 }
 
 func (s *fakeDirectoryStore) RecordAudit(_ context.Context, entry audit.Entry) error {

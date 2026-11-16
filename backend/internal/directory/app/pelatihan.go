@@ -26,8 +26,8 @@ func NewPelatihanService(repo repository.PelatihanRepository, policy auth.Policy
 
 func (s *PelatihanService) List(ctx context.Context, principal auth.Principal, options listing.Options) (listing.Page[models.RiwayatPelatihan], error) {
 	switch {
-	case allows(s.policy, principal, "pelatihan:read:any"):
-	case allows(s.policy, principal, "pelatihan:read:homebase"):
+	case allows(ctx, s.policy, principal, "pelatihan:read:any"):
+	case allows(ctx, s.policy, principal, "pelatihan:read:homebase"):
 		scope, err := s.scope.resolve(ctx, principal)
 		if err != nil {
 			return listing.Page[models.RiwayatPelatihan]{}, err
@@ -36,7 +36,7 @@ func (s *PelatihanService) List(ctx context.Context, principal auth.Principal, o
 			return listing.EmptyPage[models.RiwayatPelatihan](options.Page, options.PageSize), nil
 		}
 		options.ScopeHomebaseIDs = scope.List()
-	case allows(s.policy, principal, "pelatihan:read:self"):
+	case allows(ctx, s.policy, principal, "pelatihan:read:self"):
 		options.UserID = principal.UserID
 	default:
 		return listing.Page[models.RiwayatPelatihan]{}, domain.ErrForbidden
@@ -52,7 +52,7 @@ func (s *PelatihanService) List(ctx context.Context, principal auth.Principal, o
 }
 
 func (s *PelatihanService) Get(ctx context.Context, principal auth.Principal, id string) (models.RiwayatPelatihan, error) {
-	needsScope := allows(s.policy, principal, "pelatihan:read:homebase") && !allows(s.policy, principal, "pelatihan:read:any")
+	needsScope := allows(ctx, s.policy, principal, "pelatihan:read:homebase") && !allows(ctx, s.policy, principal, "pelatihan:read:any")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.RiwayatPelatihan{}, err
@@ -61,7 +61,7 @@ func (s *PelatihanService) Get(ctx context.Context, principal auth.Principal, id
 	if err != nil {
 		return models.RiwayatPelatihan{}, err
 	}
-	if !s.canRead(scoped, item) {
+	if !s.canRead(ctx, scoped, item) {
 		return models.RiwayatPelatihan{}, domain.ErrForbidden
 	}
 	return item, nil
@@ -71,12 +71,12 @@ func (s *PelatihanService) Create(ctx context.Context, principal auth.Principal,
 	if err := input.Validate(); err != nil {
 		return models.RiwayatPelatihan{}, err
 	}
-	needsScope := allows(s.policy, principal, "pelatihan:create:homebase") && !allows(s.policy, principal, "pelatihan:create")
+	needsScope := allows(ctx, s.policy, principal, "pelatihan:create:homebase") && !allows(ctx, s.policy, principal, "pelatihan:create")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.RiwayatPelatihan{}, err
 	}
-	if !s.canCreate(scoped, &input.UserID) {
+	if !s.canCreate(ctx, scoped, &input.UserID) {
 		return models.RiwayatPelatihan{}, domain.ErrForbidden
 	}
 	tanggalMulai, err := time.Parse("2006-01-02", input.TanggalMulai)
@@ -107,7 +107,7 @@ func (s *PelatihanService) Update(ctx context.Context, principal auth.Principal,
 	if err := patch.Validate(); err != nil {
 		return models.RiwayatPelatihan{}, err
 	}
-	needsScope := allows(s.policy, principal, "pelatihan:update:homebase") && !allows(s.policy, principal, "pelatihan:update:any")
+	needsScope := allows(ctx, s.policy, principal, "pelatihan:update:homebase") && !allows(ctx, s.policy, principal, "pelatihan:update:any")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.RiwayatPelatihan{}, err
@@ -116,14 +116,14 @@ func (s *PelatihanService) Update(ctx context.Context, principal auth.Principal,
 	if err != nil {
 		return models.RiwayatPelatihan{}, err
 	}
-	if !s.canWrite(scoped, item) {
+	if !s.canWrite(ctx, scoped, item) {
 		return models.RiwayatPelatihan{}, domain.ErrForbidden
 	}
 	return s.repo.UpdatePelatihan(ctx, principal.UserID, id, patch)
 }
 
 func (s *PelatihanService) Archive(ctx context.Context, principal auth.Principal, id string) error {
-	needsScope := allows(s.policy, principal, "pelatihan:archive:homebase") && !allows(s.policy, principal, "pelatihan:archive")
+	needsScope := allows(ctx, s.policy, principal, "pelatihan:archive:homebase") && !allows(ctx, s.policy, principal, "pelatihan:archive")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return err
@@ -132,7 +132,7 @@ func (s *PelatihanService) Archive(ctx context.Context, principal auth.Principal
 	if err != nil {
 		return err
 	}
-	if !s.canArchive(scoped, item) {
+	if !s.canArchive(ctx, scoped, item) {
 		return domain.ErrForbidden
 	}
 	return s.repo.ArchivePelatihan(ctx, principal.UserID, id)
@@ -149,7 +149,7 @@ func (s *PelatihanService) scopedPrincipal(ctx context.Context, principal auth.P
 	return scopedPrincipal{principal: principal, scope: scope}, nil
 }
 
-func (s *PelatihanService) canRead(scoped scopedPrincipal, item models.RiwayatPelatihan) bool {
+func (s *PelatihanService) canRead(ctx context.Context, scoped scopedPrincipal, item models.RiwayatPelatihan) bool {
 	for _, permission := range []auth.Permission{"pelatihan:read:any", "pelatihan:read:homebase", "pelatihan:read:self"} {
 		if auth.CanAccessUserInScope(scoped.principal, item.UserId, item.UserId, permission, s.policy, scoped.scope) {
 			return true
@@ -158,11 +158,11 @@ func (s *PelatihanService) canRead(scoped scopedPrincipal, item models.RiwayatPe
 	return false
 }
 
-func (s *PelatihanService) canCreate(scoped scopedPrincipal, userID *string) bool {
-	if allows(s.policy, scoped.principal, "pelatihan:create") {
+func (s *PelatihanService) canCreate(ctx context.Context, scoped scopedPrincipal, userID *string) bool {
+	if allows(ctx, s.policy, scoped.principal, "pelatihan:create") {
 		return true
 	}
-	if !allows(s.policy, scoped.principal, "pelatihan:create:homebase") {
+	if !allows(ctx, s.policy, scoped.principal, "pelatihan:create:homebase") {
 		return false
 	}
 	if userID == nil || *userID == "" {
@@ -171,7 +171,7 @@ func (s *PelatihanService) canCreate(scoped scopedPrincipal, userID *string) boo
 	return scoped.scope.Contains(*userID)
 }
 
-func (s *PelatihanService) canWrite(scoped scopedPrincipal, item models.RiwayatPelatihan) bool {
+func (s *PelatihanService) canWrite(ctx context.Context, scoped scopedPrincipal, item models.RiwayatPelatihan) bool {
 	for _, permission := range []auth.Permission{"pelatihan:update:any", "pelatihan:update:homebase"} {
 		if auth.CanAccessUserInScope(scoped.principal, item.UserId, item.UserId, permission, s.policy, scoped.scope) {
 			return true
@@ -180,7 +180,7 @@ func (s *PelatihanService) canWrite(scoped scopedPrincipal, item models.RiwayatP
 	return false
 }
 
-func (s *PelatihanService) canArchive(scoped scopedPrincipal, item models.RiwayatPelatihan) bool {
+func (s *PelatihanService) canArchive(ctx context.Context, scoped scopedPrincipal, item models.RiwayatPelatihan) bool {
 	for _, permission := range []auth.Permission{"pelatihan:archive", "pelatihan:archive:homebase"} {
 		if auth.CanAccessUserInScope(scoped.principal, item.UserId, item.UserId, permission, s.policy, scoped.scope) {
 			return true

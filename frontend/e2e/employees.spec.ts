@@ -105,12 +105,17 @@ async function signInAndOpenEmployees(page: Page) {
   await page.getByRole('button', { name: 'Masuk', exact: true }).click()
   await expect(page).toHaveURL(/\/workspace$/)
 
-  // Pada layar lebar (desktop) tautan "Pegawai" tampil di header; pada ponsel
-  // tersembunyi dalam drawer sidebar yang harus dibuka terlebih dahulu.
+  // Kerangka aplikasi baru muncul setelah sesi selesai dimuat; tunggu header
+  // navigasi ada sebelum menilai apakah tautan sidebar sudah terlihat.
+  await expect(page.getByRole('navigation', { name: 'Navigasi utama' })).toBeVisible()
+
+  // Pada layar lebar tautan tampil langsung di sidebar. Pada ponsel sidebar
+  // berada di drawer yang harus dibuka lebih dahulu.
   const pegawai = page.getByRole('link', { name: 'Pegawai' }).first()
   if (!(await pegawai.isVisible())) {
     await page.getByRole('button', { name: 'Buka menu navigasi' }).click()
   }
+  await expect(pegawai).toBeVisible()
   await pegawai.click()
   await expect(page).toHaveURL(/\/employees$/)
 }

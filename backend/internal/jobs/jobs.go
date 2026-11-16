@@ -22,11 +22,10 @@ import (
 const CronAuditCleanup = "0 19 * * *"
 
 // CronPayrollNotify adalah jadwal harian pemberitahuan ketersediaan slip
-// gaji H+1.
+// gaji H-1.
 //
 // Waktu cron dihitung dalam UTC. "19:05 UTC" setara dengan 02:05 WIB,
-// sehingga slip dengan tanggal gajian kemarin selalu siap pada saat
-// pemberitahuan berjalan.
+// sehingga pemberitahuan H-1 berjalan satu hari sebelum tanggal gajian.
 const CronPayrollNotify = "5 19 * * *"
 
 // CronSLOEvaluate adalah jadwal berkala pemeriksaan target SLO.

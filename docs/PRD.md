@@ -1,416 +1,1268 @@
-﻿# PRD: SIMPEG
+PRD — SIMPEG (Sistem Informasi Kepegawaian)
 
-- Status: Draft baseline; product decisions below are not yet confirmed.
-- Last updated: 2026-11-11
-- Product: Sistem Informasi Kepegawaian (SIMPEG)
-- Log keputusan ringkas beserta pemilik, tanggal, dan status: `docs/DECISIONS.md`.
+- **Status dokumen:** Baseline aktif (draft hidup). Keputusan yang ditandai **disetujui** menjadi acuan kebijakan; item lain adalah usulan/pertanyaan terbuka hingga diputuskan.
+- **Terakhir diperbarui:** 2026-11-16
+- **Target institusi:** Universitas Subang (dikonfirmasi)
+- **Produk:** Sistem Informasi Kepegawaian (SIMPEG)
+- **Rujukan terkait:** [`docs/DECISIONS.md`](DECISIONS.md), [`docs/IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md), [`docs/openapi.yaml`](openapi.yaml), [`docs/RUNBOOK.md`](RUNBOOK.md), [`AGENTS.md`](../AGENTS.md)
 
-## 1. Ringkasan
+> **Cara membaca PRD ini**
+>
+> - PRD memisahkan **kebijakan/keputusan yang disetujui** dari **status implementasi**. Keberadaan tabel, endpoint, atau kode tidak otomatis berarti fitur siap rilis atau kebijakan final.
+> - Perilaku aktual harus diverifikasi pada konfigurasi, middleware, handler, migrasi/database target, dan bukti uji.
+> - Jika PRD, keputusan, dan implementasi berbeda, laporkan dan selaraskan dokumen/kode sesuai proses yang disetujui.
 
-SIMPEG direncanakan sebagai aplikasi untuk mengelola data pegawai dan proses kepegawaian dalam satu sumber informasi yang dapat dicari, diperbarui, dan diaudit oleh pengguna yang berwenang. Backend dan frontend dibangun sebagai aplikasi terpisah dan berkomunikasi melalui API. Skema PostgreSQL aplikasi dibentuk oleh migrasi Goose di `backend/migrations/`; backend mengakses database dengan model GORM di `backend/internal/models`.
+---
 
-Migrasi yang tersedia memuat domain lebih luas dari MVP awal, termasuk presensi, cuti, penggajian, mutasi, dokumen, kinerja, dan autentikasi. Keberadaan tabel tidak dengan sendirinya menetapkan prioritas rilis atau aturan bisnis final. Kebijakan organisasi, yurisdiksi, dan urutan peluncuran perlu dikonfirmasi.
+## 1. Ringkasan eksekutif
 
-## 2. Masalah dan tujuan
+SIMPEG bertujuan menjadi sumber informasi kepegawaian yang terpusat, tepercaya, dan dapat diaudit untuk mengelola data pegawai, organisasi, serta proses pendukungnya. Sistem dibangun sebagai **backend API (Go/GORM + PostgreSQL)** dan **frontend web (TanStack Start)** yang berkomunikasi melalui kontrak HTTP/JSON berversi.
 
-### Masalah yang ingin diselesaikan
+**MVP awal (Tahap 1, disetujui)** berfokus pada fondasi akses, data inti kepegawaian, dan keterlacakan perubahan:
 
-- Data pegawai dan organisasi berpotensi tersebar di berkas atau sistem yang berbeda.
-- Petugas membutuhkan cara konsisten untuk mencari dan memperbarui data yang menjadi tanggung jawabnya.
-- Perubahan data penting perlu dapat ditelusuri.
+- autentikasi/akun dan otorisasi berbasis peran & cakupan,
+- profil pegawai, kategori, unit/homebase, dan struktur organisasi/jabatan,
+- pencarian/daftar, ringkasan dasar, dan jejak audit.
 
-Pernyataan masalah ini adalah hipotesis produk dan perlu divalidasi dengan calon pengguna.
+Modul lanjutan (presensi operasional penuh, cuti/persetujuan end-to-end, notifikasi terintegrasi, kinerja, mutasi/disiplin/dokumen lanjutan, dsb.) dimodelkan atau sebagian diimplementasikan, tetapi **prioritas rilis, aturan bisnis final, dan kesiapan operasionalnya** mengikuti keputusan dan verifikasi bertahap. **Penggajian dinaikkan menjadi scope inti** per arah pengguna 2026-11-14 (`DEC-067`, disetujui): komponen gaji, kategori status, kontrak kerja, struktur yayasan, dan pensiun tercantum pada §5.9; parameter aturan bisnis per komponen ditetapkan pada `DEC-070` (2026-11-14), asumsi isi-kemungkinan dicatat pada `DEC-071`, dan target rilis belum ditetapkan.
 
-### Tujuan MVP
+---
 
-- Menyediakan profil pegawai terpusat dengan identitas pegawai yang unik.
+## 2. Latar belakang dan masalah
+
+### Masalah yang ingin diselesaikan (hipotesis, perlu validasi)
+
+- Data pegawai dan organisasi berpotensi tersebar di berkas/sistem yang berbeda.
+- Petugas membutuhkan cara konsisten untuk mencari dan memperbarui data sesuai kewenangan.
+- Perubahan data penting perlu dapat ditelusuri secara akuntabel.
+
+### Nilai yang dituju
+
+- Satu sumber data pegawai yang terstruktur dan mudah dicari.
+- Kontrol akses yang jelas (siapa boleh melihat/mengubah apa, pada cakupan mana).
+- Jejak perubahan untuk mendukung tata kelola, audit, dan pemulihan kepercayaan data.
+
+---
+
+## 3. Tujuan, ruang lingkup, dan tahapan
+
+### 3.1 Tujuan MVP (Tahap 1)
+
+- Menyediakan profil pegawai terpusat dengan identitas yang unik.
 - Mengelola struktur organisasi dan penempatan pegawai.
-- Membatasi tindakan berdasarkan peran dan kewenangan data.
-- Menyediakan pencarian, filter, dan ringkasan data pegawai yang bermanfaat untuk operasional.
-- Menyimpan jejak perubahan untuk data kepegawaian yang sensitif.
+- Membatasi tindakan berdasarkan peran, izin, dan cakupan data.
+- Menyediakan pencarian, filter, dan ringkasan operasional sesuai kewenangan.
+- Menyimpan jejak perubahan untuk data kepegawaian yang sensitif/penting.
 
-### Belum menjadi komitmen MVP
+### 3.2 Di luar komitmen MVP awal
 
-- Schema sudah memodelkan penggajian, pajak, tunjangan, presensi, cuti, lembur, penilaian kinerja, tugas belajar, dan sejumlah proses kepegawaian lain. Modul-modul ini belum otomatis menjadi bagian rilis MVP; prioritas dan aturan bisnisnya perlu dikonfirmasi.
-- Rekrutmen dan integrasi eksternal belum ditetapkan dalam schema maupun ruang lingkup MVP.
+Migrasi/skema sudah memodelkan domain luas (presensi, cuti, penggajian, mutasi, dokumen, kinerja, autentikasi, dll.). Keberadaan model/tabel/endpoint **tidak otomatis** menetapkan prioritas rilis atau aturan bisnis final. Modul berikut diperlakukan sebagai fase lanjutan kecuali dinyatakan eksplisit:
 
-Ruang lingkup ini dapat diperluas setelah pemilik produk menyetujui prioritas dan aturan bisnisnya.
+- Rekrutmen dan integrasi eksternal yang belum dikonfirmasi.
+- Automasi presensi perangkat/vendor end-to-end (adapter produksi menunggu kontrak vendor).
+- Penggajian otomatis/integrasi bank real-time (MVP pembayaran: pencatatan manual terkontrol).
+- Fitur lanjutan: kinerja, lembur/tugas belajar, mutasi/disiplin/pemberhentian lanjutan, pengumuman/survei, dsb. (prioritas mengikuti validasi pilot).
 
-## 3. Pengguna dan peran (usulan)
+### 3.3 Tahapan ruang lingkup (disetujui/diusulkan)
 
-- Admin sistem: mengelola akses dan konfigurasi dasar.
-- Operator kepegawaian: mengelola data pegawai dan organisasi sesuai kewenangan.
-- Atasan/pejabat: melihat data dan ringkasan pegawai dalam cakupan organisasinya.
-- Pegawai: melihat profilnya sendiri; kemampuan mengubah data pribadi belum diputuskan.
+| Tahap | Fokus                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Status                                                                                                                                                                                                                        |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Fondasi & data inti: autentikasi/akun, RBAC & cakupan, profil pegawai, kategori, unit/jabatan, pencarian/daftar, ringkasan dasar, audit                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | **MVP awal disetujui**                                                                                                                                                                                                        |
+| 2     | **Penggajian inti (disetujui 2026-11-14, `DEC-067`/`DEC-072`):** target rilis **2027-04-01**; gaji pokok per skala yayasan; tunjangan fungsional/struktural; honor per SKS (dosen LB, Rp 100.000/SKS); BPJS Kesehatan/Ketenagakerjaan; PPh 21 TER (PMK 168/2023); THR (gaji kotor, H-7 Idulfitri, syarat 3 bulan); potongan koperasi/pinjaman; slip digital (PDF + token; logo/nama PT diinput manual); kategori status (dosen tetap yayasan/DPK/LB, tendik tetap/kontrak); kontrak PKWT/PKWTT + pesangon (PP 35/2021 + 1 bulan/5 tahun); pensiun BUP yayasan (Tenaga Kependidikan & Dosen S2/S3 65, Guru Besar/Profesor 70; dosen S1 = 65, `DEC-083`) + DPLK; SK Yayasan vs SK Rektor; **scope menu Tahap 2:** Master (pegawai, riwayat, kontrak, struktur organisasi, cuti, presensi) dan **Dashboard Akreditasi dan Analitik SDM** | Scope & target rilis 2027-04-01 disetujui (`DEC-067`/`DEC-072`); aturan bisnis ditetapkan (`DEC-070`); asumsi isi-kemungkinan tercatat (`DEC-071`); migrasi disetujui (`DEC-068`) — penerapan via workflow staging lebih dulu |
+| 3     | Operasional kepegawaian: presensi dasar dan cuti/persetujuan (biometrik/geofencing/aturan khusus menunggu kebijakan & privasi)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Usulan fase lanjutan                                                                                                                                                                                                          |
+| 4     | Integrasi notifikasi: email otomatis terkait pembayaran hanya setelah sumber konfirmasi & outbox/retry/idempotensi sah                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Usulan fase lanjutan (mekanisme sebagian tersedia)                                                                                                                                                                            |
+| 5     | Modul lanjutan sesuai kebutuhan pilot tervalidasi                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Usulan fase lanjutan                                                                                                                                                                                                          |
 
-Nama peran, batas organisasi, dan izin final harus disesuaikan dengan model organisasi yang sebenarnya.
+---
 
-## 4. Ruang lingkup fungsional MVP (usulan)
+## 4. Pengguna, peran, dan kontrol akses
 
-### FR-01: Akses pengguna
+### 4.1 Peran (usulan yang telah diberi grant kebijakan)
 
-- Usulan login awal adalah Google OAuth tanpa login kata sandi, sesuai konfigurasi yang sudah disiapkan. Pemilik produk harus mengonfirmasi apakah ini kebijakan final.
-- Hanya akun yang diizinkan organisasi yang dapat memperoleh akses. Metode allowlist, domain email yang diperbolehkan, undangan, dan provisioning masih perlu diputuskan.
-- Sesi harus dikelola di sisi server dengan cookie `HttpOnly`, `Secure` di production, dan perlindungan CSRF/origin yang aktif.
-- Pengguna dapat keluar; sesi dapat dicabut saat akun dinonaktifkan atau akses dicabut.
-- Tabel `User`, `Session`, `Account`, `Verification`, dan `TwoFactor` sudah ada di schema acuan. Keberadaan tabel tersebut belum berarti alur autentikasi sudah diimplementasikan.
-- Resolver sesi API membedakan sesi tidak valid (`401`) dari kegagalan resolver/database (`503`) dan tidak mengirim detail dependency ke klien.
-- Sesi diterbitkan oleh runtime Better Auth yang tertanam di server frontend pada `/api/auth/*` (`DEC-049`): pendaftaran publik dimatikan, akun dibuat administrator, sesi 7 hari dengan rolling refresh 1 hari. Browser menyimpan token hanya di memori tab dan mengirimnya ke API sebagai `Authorization: Bearer <session-token>`; API memverifikasi token pada tabel `session` dan menolak sesi kedaluwarsa. Logout memanggil dua pencabutan: `POST /api/auth/sign-out` Better Auth (mencabut sesi runtime) dan `POST /api/v1/auth/logout` (menghapus baris `session` untuk sesi opaque).
-- Middleware otorisasi backend menolak secara default dan hanya menerima grant permission eksplisit berdasarkan role server-side. Grant role bawaan telah dikonfirmasi (lihat §11 matriks peran dan cakupan yang disetujui); role atau izin yang tidak tercantum tetap ditolak.
+- **Admin sistem:** konfigurasi/akses dan operasi lintas organisasi sesuai grant.
+- **Operator kepegawaian:** kelola data dalam cakupan unit penugasan (beserta turunan) sesuai grant.
+- **Atasan/pejabat:** baca data/ringkasan dalam cakupan organisasinya.
+- **Pegawai:** akses data milik sendiri sesuai grant.
 
-### FR-02: Data pegawai
+Nama peran final, hierarki organisasi, dan pemetaan akun/unit harus selaras dengan struktur institusi.
 
-- Operator berwenang dapat membuat, melihat, memperbarui, dan menonaktifkan catatan pegawai.
-- Setiap pegawai memiliki nomor/identitas internal yang unik.
-- Profil menampilkan data yang disetujui untuk kebutuhan SIMPEG; daftar field wajib masih perlu disepakati.
-- Sistem mencegah duplikasi identitas internal dan memberi pesan validasi yang dapat ditindaklanjuti.
+### 4.2 Prinsip otorisasi (disetujui)
 
-### FR-03: Organisasi dan jabatan
+- **Deny-by-default:** setiap aksi/endpoint terlindungi memeriksa identitas, izin, dan cakupan data di backend.
+- **Least privilege:** grant eksplisit per permission; izin tidak tercantum ditolak.
+- **Cakupan data server-side:** `:any` (lintas organisasi, admin), `:homebase` (unit penugasan + seluruh turunan), `:self` (milik sendiri).
+- **Sumber kebenaran akses:** role/izin/cakupan dari data server-side terverifikasi; UI hanya membantu navigasi, bukan penentu akses.
+- **Perubahan akses diaudit:** perubahan role/status/cakupan dan operasi sensitif dicatat sesuai kebijakan audit.
 
-- Pengguna berwenang dapat melihat struktur organisasi.
-- Data unit organisasi dan jabatan dapat dikelola oleh peran yang ditetapkan.
-- Penempatan pegawai mengacu pada unit dan jabatan yang valid.
-- Riwayat perubahan unit/jabatan perlu dipertahankan jika kebijakan mengharuskan pelacakan historis; aturan efektif tanggal masih terbuka.
+### 4.3 Matriks permission inti (ringkasan, disetujui 2026-11-10)
 
-### FR-04: Pencarian dan daftar
+Grant runtime dikonfigurasi di `backend/cmd/server/main.go` (`auth.StaticPolicy`). Detail kontrak dan cakupan tetap harus diverifikasi pada handler/query.
 
-- Pengguna dapat mencari pegawai berdasarkan field yang disetujui.
-- Daftar pegawai mendukung filter dan pagination; pengurutan hanya pada kolom yang diizinkan.
-- Hasil yang ditampilkan mengikuti kewenangan akses pengguna.
+| Peran      | Contoh permission utama                                                                                                                                                                                                  | Cakupan                         |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------- |
+| `admin`    | `employee:*:any/manage`, `organization:*`, `audit:read`, `category:read`, `jabatan:*`, `payroll:*` (termasuk konfirmasi/jadwal), `holiday:*`, `attendance:*:any/ingest`, `slo:read`                                      | Seluruh organisasi              |
+| `operator` | `employee:read/create/update/import:homebase`, `organization:read/manage:homebase`, `audit:read:homebase`, `category:read`, `jabatan:read`, `attendance:read:homebase`, `payroll:read/schedule:homebase`, `holiday:read` | Unit penugasan + turunan        |
+| `atasan`   | `employee:read:homebase`, `organization:read:homebase`, `category:read`, `jabatan:read`, `attendance:read:homebase`, `holiday:read`                                                                                      | Unit penugasan + turunan (baca) |
+| `pegawai`  | `employee:read:self`, `attendance:read:self`, `payroll:read:self`, `jabatan:read`                                                                                                                                        | Data milik sendiri              |
 
-### FR-05: Ringkasan
+**Catatan penting**
 
-Dashboard awal dapat menampilkan jumlah pegawai menurut status dan unit organisasi, sepanjang definisi status serta izin akses telah disepakati. Metrik lain tidak termasuk tanpa keputusan produk.
+- Cakupan `:homebase` bersifat hierarkis (turunan pohon `Homebase`).
+- Principal tanpa penugasan unit tidak memperoleh data ber-cakupan unit.
+- Beberapa operasi sensitif (mis. konfirmasi pembayaran, perubahan role, manajemen tertentu) dibatasi grant khusus dan diaudit.
 
-### FR-06: Audit perubahan
+---
 
-Perubahan pada data penting mencatat pelaku, waktu, jenis perubahan, dan referensi catatan yang diubah. Nilai sensitif tidak boleh disalin ke log secara berlebihan. Retensi dan siapa yang dapat membaca audit log perlu diputuskan.
+## 5. Kebutuhan fungsional
 
-### FR-07: Email pemberitahuan gaji dibayarkan
+### 5.1 Akses pengguna & sesi
 
-- Setelah backend menerima dan menyimpan konfirmasi bahwa pembayaran gaji pegawai berhasil, sistem mengantrekan email pemberitahuan kepada pegawai tersebut.
-- Penerbitan atau pembuatan slip gaji berstatus `TERBIT` saja tidak boleh memicu email “gaji sudah masuk”.
-- Pemrosesan antrean harus idempoten dan dapat dicoba ulang tanpa mengirim duplikat untuk peristiwa pembayaran yang sama.
-- Email tidak menyertakan nominal atau data sensitif secara default; email dapat memuat tautan ke halaman slip yang memerlukan login.
-- Status pembayaran, sumber konfirmasi, provider email, dan kebijakan kegagalan/pengiriman ulang harus diputuskan sebelum implementasi.
+- Autentikasi melalui runtime yang disetujui (Better Auth tertanam di server frontend pada `/api/auth/*`; `DEC-049`), dengan sesi/server-side verification untuk akses API.
+- Pendaftaran publik dimatikan; provisioning akun oleh administrator (sesuai kebijakan).
+- Google OAuth dan MFA TOTP tersedia di implementasi (`DEC-058`) namun verifikasi live/provider nyata dan kebijakan wajib MFA per peran dapat masih terbuka.
+- Sesi harus aman (`HttpOnly`, `Secure` di production, `SameSite` sesuai, trusted origins, CSRF sesuai arsitektur), dapat dicabut, dan menolak akun nonaktif/sesi kedaluwarsa.
+- Frontend mengirim token bearer ke API sesuai kontrak; token tidak disimpan di storage persisten browser.
 
-### FR-08: Otorisasi berbasis peran dan cakupan data
+### 5.2 Data pegawai
 
-- Backend memakai prinsip deny-by-default: setiap endpoint dan aksi yang dilindungi harus memeriksa identitas, izin, dan cakupan data.
-- Usulan peran awal: admin sistem, operator kepegawaian, atasan/approver, dan pegawai. Matriks izin per aksi dan cakupan organisasi harus disetujui sebelum implementasi.
-- Pegawai hanya boleh mengakses profil dan data miliknya kecuali diberi izin lebih luas. Atasan dibatasi pada cakupan organisasi yang ditetapkan. Operator dan admin hanya mendapat akses sesuai tugasnya.
-- Role dan cakupan akses adalah data server-side. Pengguna tidak dapat menaikkan hak melalui profil, request body, metadata yang dapat diedit sendiri, atau manipulasi UI.
-- Perubahan role, status akun, dan cakupan akses harus dibatasi untuk admin berwenang dan dicatat dalam audit log.
-- Frontend boleh menyembunyikan navigasi yang tidak tersedia, tetapi keputusan akses tetap dilakukan backend.
+- CRUD terbatas sesuai peran/cakupan (buat, lihat, perbarui, arsip/nonaktifkan) dengan validasi dan identitas unik.
+- Pencegahan duplikasi identitas dan pesan validasi yang dapat ditindaklanjuti.
+- Profil menampilkan field yang disetujui; field wajib/opsional/sensitif mengikuti kebijakan data.
+- Perubahan penting tercatat di audit tanpa menyalin rahasia/PII berlebihan.
 
-## 5. Alur utama
+### 5.3 Organisasi, jabatan, dan penempatan
 
-1. Operator masuk dan hanya melihat menu yang sesuai dengan aksesnya.
-2. Operator mencari pegawai atau membuka daftar pegawai dalam cakupannya.
-3. Operator membuat atau memperbarui profil; sistem memvalidasi data dan kewenangan di backend.
-4. Setelah perubahan berhasil, frontend menampilkan hasil terbaru dan perubahan tercatat untuk audit.
-5. Atasan melihat daftar atau ringkasan sesuai cakupan organisasinya.
+- Pengelolaan unit organisasi (pohon induk-anak fleksibel) dan master jabatan sesuai izin.
+- Penempatan pegawai mengacu pada entitas valid.
+- Riwayat/effective-dated changes menjadi kebutuhan lanjutan bila kebijakan mensyaratkan.
+
+### 5.4 Pencarian, daftar, dan ringkasan
+
+- Daftar/pencarian/filter/paginasi/sort (allowlist) untuk resource yang disetujui, dengan hasil sesuai cakupan akses.
+- Ringkasan dasar (dashboard) untuk metrik operasional yang disepakati (mis. agregat pegawai/unit) tanpa mengekspos data di luar kewenangan.
+
+### 5.5 Audit dan keterlacakan
+
+- Jejak audit append-only (dari sisi aplikasi) untuk aksi penting: aktor, waktu, aksi, sasaran, metadata minimum, dan unit cakupan.
+- Akses baca/ekspor audit dibatasi per izin/cakupan; ekspor/pembacaan dapat diaudit.
+- Retensi terjadwal sesuai konfigurasi/kebijakan (`AUDIT_RETENTION_DAYS`).
+
+### 5.6 Penggajian dan notifikasi terkait pembayaran
+
+- Slip gaji dapat dibaca sesuai cakupan (`:any/:homebase/:self`); konfirmasi pembayaran hanya oleh pemegang izin khusus.
+- **Sumber kebenaran pembayaran:** bukti pembayaran tersimpan (tabel `pembayaran`) dan tercatat transaksional bersama perubahan status slip serta audit.
+- **Aturan notifikasi gaji:** hanya setelah konfirmasi pembayaran tersimpan; **tidak pernah memuat nominal**; idempoten terhadap retry; pengiriman via outbox/worker.
+- Jadwal gajian per unit (1–28) dan pemberitahuan ketersediaan slip H-1 (QR + tautan verifikasi publik; bukan bukti bayar, tanpa nominal) mengikuti keputusan yang ditetapkan (`DEC-027`, `DEC-078`).
+
+- **Status implementasi (2026-11-15, `DEC-073`–`DEC-083`):** irisan pertama — modul master skala gaji pokok yayasan diimplementasikan penuh (`internal/payscale/`; endpoint `/api/v1/payroll/scale*`; model GORM `SkalaGaji`/`SkalaGajiDetail`/`KategoriStatusPegawai` + `user.kategoriStatusId`; **termasuk halaman admin frontend** `/admin/payroll-scale`; e2e 2 uji). Irisan kedua (`DEC-074`) lapis penuh backend: **honor mengajar per SKS** (`internal/honorsks/`; endpoint `/api/v1/payroll/honor-rate{,/current,/{id}}`, `/api/v1/payroll/honor-periode{,/{id}}`), **BPJS** (`internal/bpjs/`; endpoint `/api/v1/payroll/bpjs/config{,/{id}}`, `/api/v1/payroll/bpjs/peserta{,/{id}}`), **PPh 21 TER** (`internal/pph21ter/`; endpoint `/api/v1/payroll/pph21-ter{,/{id}}`; `ResolveTarif`); **termasuk halaman admin frontend** `/admin/honor-sks`, `/admin/bpjs`, `/admin/pph21-ter`. Irisan ketiga (`DEC-075`): **mesin hitung slip otomatis** (`internal/calculasi/domain` + `GenerateSlipService`) dengan `POST /api/v1/payroll/slips/generate` (admin; upsert DRAF; slip TERBIT/TERBAYAR → `409`) dan **`GET /api/v1/payroll/slips/{payrollId}/pdf`** (PDF A5 bermerek satu halaman; `application/pdf`; `PAYROLL_SLIP_ORG_NAME` untuk kop; QR verifikasi bila slip memiliki token). **Potongan alpa (`DEC-076`) diimplementasikan** (Rp 25.000 per hari alpa tanpa keterangan, maks Rp 750.000/bulan, komponen `ALPA`, hanya DOSEN_TETAP_YAYASAN/TENDIK_TETAP/TENDIK_KONTRAK). **Pipeline presensi (`DEC-077`) diimplementasikan** (pemetaan `machinePin` → pegawai global + CRUD + impor massal CSV/XLSX; penurunan status harian `H`/`A`/`LD`/`C`/`S` dari `AttendanceEvent` pada kalender Asia/Jakarta — **terverifikasi memakai 25 hari libur nasional nyata 2026 dari provider api.co.id** (refresh terverifikasi dinamis di disposable; Imlek → LD, Nyepi → LD, dst.); pengisian manual admin/operator; laporan alpa berulang untuk ditindaklanjuti manual; SP1 **tidak** auto-terbit) **+ halaman admin frontend** `/admin/mesin-pin` (e2e 2 uji). **UI slip gaji lengkap** (`DEC-075`): daftar, detail, **unduh PDF** (tombol di halaman detail, via fetch+blob karena token in-memory), **Generate slip** (dialog admin di halaman daftar — memanggil `POST /payroll/slips/generate`), **konfirmasi pembayaran** (sudah ada sebelumnya). **Pemberitahuan slip kini H-1** (`DEC-078`, supersedes bagian timing/konten `DEC-027`): email berisi QR inline + tautan verifikasi publik, dikirim ke seluruh pemilik slip, periode slip = periode bulan sebelumnya. **Halaman verifikasi publik slip** `/verify/slip/{token}` (frontend, tanpa auth) dan endpoint `GET /api/v1/verify/slip/{token}` (tanpa sesi; hanya nama/periode/status; tanpa nominal) diimplementasikan. **Halaman unduh PDF dibatasi 3× per pegawai per periode di sisi klien** (localStorage; rem UX) dan **setiap unduhan dicatat di jejak audit** (`payroll.slip.pdf.downloaded`, best-effort). Seluruh 43 e2e hijau. **Perbaikan nyata:** route induk `/payroll/slips` kini layout `<Outlet/>` sehingga halaman detail slip dapat dirender (sebelumnya halaman detail tidak terjangkau dari UI — ditemukan lewat e2e). **Verifikasi hibrida (`DEC-083`/`DEC-084`, 2026-11-15):** spec `frontend/e2e/hybrid-pemberhentian.spec.ts` menjalankan UI Playwright sungguhan + backend nyata + database disposable (hanya autentikasi yang disimulasikan; dilewati bila backend uji tidak hidup) — alur propose → pratinjau kompensasi → approve → generate slip → detail slip dengan **PESANGON Rp 35.625.000** di atas gaji pokok sakit **Rp 7.125.000**; PDF A5 dirender dan **diperiksa visual** (baris PESANGON tampil rapi). Perbaikan nyata: pengajuan pemberhentian dengan UUID pegawai tak dikenal **503 → 404**. **Pembatalan cuti ditambahkan (`DEC-080`):** endpoint `POST /api/v1/cuti/{cutiId}/cancel` (permission `cuti:approve:*`; MENUNGGU/DISETUJUI → BATAL; saldo TAHUNAN yang terpotong dikembalikan; jejak audit `cuti.canceled`). **Modul pemberhentian + perpanjangan pasca-BUP (`DEC-083`) diimplementasikan:** alur pengajuan+persetujuan (`pemberhentian:propose:*`/`pemberhentian:approve`), SK PHK terbit otomatis (`SK-PHK-<tahun>-NNNN`, penerbit YAYASAN), pesangon input admin (`/admin/pesangon-aturan`), perpanjangan dosen tidak tetap per 5 tahun (kategori `DOSEN_TIDAK_TETAP` via `000029`, kontrak PKWT tahunan, `perpanjangan:manage`); **(`DEC-082`):** rute `POST /api/v1/cuti` menerima `cuti:create:any`. OpenAPI terdokumentasi (**119 path**, 206 operasi; 0 ref hilang; 0 `operationId` duplikat). **Pembaruan 2026-11-15 (lanjutan modul `DEC-083`):** approve pemberhentian menonaktifkan pegawai (`aktif=false`); slip bulan pemberhentian memuat komponen penerimaan `PESANGON` (bulan kompensasi × gaji pokok berjalan, TER bulan berjalan); periode setelah bulan pemberhentian ditolak `409`; perpanjangan tumpang tindih (kontrak AKTIF) ditolak `409` kecuali override `allowOverlap: true` (audit); **46/46 e2e** (spec baru `admin-pemberhentian.spec.ts`); `perfbench schema` melaporkan **83 model selaras**; halaman detail pegawai menampilkan riwayat pemberhentian & kontrak. **Modul THR (`DEC-084`) terimplementasikan:** slip THR terpisah (komponen `THR`, tanpa potongan normal), nominal dari slip TERBIT terakhir, permission `thr:manage`, halaman `/admin/thr`; approve pemberhentian kini **juga membatalkan slip DRAF periode setelah bulan pemberhentian** (status `BATAL` via `000031`) dan slip `BATAL` tidak dapat digenerate ulang/dicetak/dibayar; listing `periode=YYYY-MM` cocok sebulan penuh; OpenAPI **119 path**, 206 operasi; e2e **47/47**. Terverifikasi dinamis pada DB disposable lokal `simpeg_tahap2` (25 skenario `DEC-075`, 14 skenario `DEC-076`, 20 skenario `DEC-077`, skenario `DEC-078`: token 22 karakter, 400/404/200 tanpa nominal, PDF A5 MediaBox 420×595 + 1 image XObject = QR, audit terisi `unitId`; migrasi `000025`/`000026`/`000027`/`000028`/`000029`/`000030` diterapkan hanya pada disposable lalu dihapus; **belum** pada staging/produksi). Perhitungan dengan tabel TER resmi PMK 168/2023 masih wajib diisi admin sebelum slip nyata; pengisian `HariLibur` produksi dan pemetaan mesin produksi; penerapan migrasi pada staging/produksi.
+
+### 5.9 Penggajian inti — `DEC-067` (disetujui 2026-11-14), aturan bisnis `DEC-070` (2026-11-14)
+
+Scope diratifikasi dan parameter aturan bisnis ditetapkan pada 2026-11-14 (`DEC-070`). Skema di `backend/migrations/000025_payroll_core.sql` disetujui (`DEC-068`), belum diterapkan pada target mana pun per 2026-11-14 (penerapan hanya lewat workflow, staging lebih dulu). Parameter berikut dinyatakan sebagai aturan yang disetujui:
+
+- **Gaji pokok per skala yayasan:** tabel skala effective-dated (`skalaGaji` + `skalaGajiDetail`), **master data dikelola manual di SIMPEG oleh admin** (keputusan 2026-11-14, `DEC-070`); nominal per tingkat per kategori status; berlaku mulai periode yang ditetapkan; **kenaikan gaji pokok per masa kerja setiap 2 tahun**.
+- **Tunjangan fungsional/struktural:** `komponenTunjangan` yang ada diperluas arahnya: tunjangan fungsional (fungsional akademik) dan struktural (jabatan struktural) dihitung dari jenis/tingkat jabatan; **master data dikelola manual di SIMPEG via frontend (admin input)** (`DEC-071`); integrasi dengan `Jabatan` (`DEC-057`) menjadi keputusan terpisah.
+- **Honor mengajar per SKS (dosen LB):** **nominal flat Rp 100.000 per SKS** untuk semua dosen LB per periode (`DEC-070`); tarif per periode (`honorSksRate`), beban per semester per periode akademik (`honorSksPeriode`, FK `periodeAkademik`); dosen LB tidak menerima gaji pokok yayasan.
+- **BPJS Kesehatan / Ketenagakerjaan:** **ikut regulasi berlaku penuh** (`DEC-070`) — iuran pegawai dan pemberi kerja sesuai aturan berlaku; batas atas dari `bpjsKonfigurasi` per periode; kepesertaan `bpjsPeserta`; komponen aktual per slip tetap di jurnal slip (`gajiTunjangan`/`gajiPotongan`).
+- **PPh 21 skema TER (PMK 168/2023):** **ikut PMK 168/2023 penuh** (`DEC-070`) — tabel tarif efektif bulanan A/B/C (`pph21TerTarif`); pemetaan status PTKP → kategori TER di aplikasi; perhitungan bulanan saja; final settlement tahunan di luar usulan.
+- **THR:** **gaji kotor 100%**, dibayar paling lambat **H-7 Idulfitri**, syarat masa kerja minimal **3 bulan** (`DEC-070`); konfigurasi per tahun (`thrKonfigurasi`); slip THR memakai mekanisme slip yang sama dengan pembeda jenis (keputusan terpisah bila perlu tabel baru).
+- **Potongan koperasi/pinjaman:** jenis potongan tersedia di `komponenPotongan` (`KOPERASI`, `KAS BON`); aturan cicilan/sisa pinjaman dan penagihan bulanan menunggu keputusan.
+- **Slip digital:** **PDF + verifikasi via token** (`DEC-070`/`DEC-071`) — **terimplementasi (`DEC-078`)**: slip PDF A5 bermerek dengan QR verifikasi; token unik per slip (`kodeVerifikasi`); halaman verifikasi publik (`/verify/slip/{token}`, tanpa sesi) menampilkan minimal (nama, periode, status) **tanpa nominal**; batas unduh 3× per pegawai per periode di sisi klien; mock desain di `docs/design/slip-gaji.html` dan `docs/design/slip-gaji-mock.png` (palet SIMPEG) dipakai sebagai acuan visual.
+- **Kategori status kepegawaian** (`kategoriStatusPegawai`): dosen tetap yayasan, dosen DPK (gaji dari negara, dikelola via LLDikti), dosen tidak tetap/LB, tendik tetap, tendik kontrak. Aturan gaji/cuti/pelaporan berbeda per kategori; kolom `user.kategoriStatusId` diusulkan; dosen DPK tidak dibayar gaji pokok yayasan dan pelaporannya via LLDikti.
+- **Kontrak kerja PKWT/PKWTT** (`kontrakKerja`): tracking per pegawai; validasi batas PKWT (PP 35/2021) di lapisan aplikasi; **alert H-30 sebelum berakhir** (`DEC-070`); status PKWT berakhir/diakhiri diaudit.
+- **Pesangon/uang penghargaan:** **PP 35/2021 sebagai lantai + aturan yayasan tambahan 1 (satu) bulan upah per 5 tahun masa kerja** (`DEC-070`); faktor per tahun masa kerja per kategori status (`pesangonAturan`) **diisi manual oleh admin** (bukan seed dari PP 35/2021). Bila tabel kosong, perhitungan kompensasi disetujui menghasilkan nilai 0 (tidak blok keputusan).
+- **Struktur yayasan:** yayasan → universitas → fakultas → prodi dimodelkan pada pohon `Homebase`; **SK Yayasan** (pengangkatan, mutasi, PHK) dipisahkan dari **SK Rektor** (jabatan struktural, penugasan) lewat `suratKeputusan` + `TingkatSk` (`YAYASAN`/`REKTOR`).
+- **Pensiun:** **BUP per kategori (`DEC-083`, supersedes `DEC-070`): Tenaga Kependidikan & Dosen (S2/S3) 65 tahun, Dosen S1 65, Guru Besar/Profesor 70**; pengelolaan via **DPLK/dana pensiun, bukan BKN** (`pensiunKepesertaan` + iuran pegawai/pemberi kerja); tanggal mulai pensiun dihitung dari tanggal lahir + BUP. **Asumsi kerja (`DEC-071`, menunggu konfirmasi pemilik):** penyedia DPLK `DPLK Bank Mandiri` (placeholder teks), iuran pegawai 5% / pemberi kerja 10% dari gaji pokok.
+- **THR (`DEC-085`, kebijakan final 2026-11-15):** berhak **pegawai tetap dan tendik kontrak/PKWT** yang aktif; masa kerja **tahun penuh (floor)** dari `tanggalMasuk`; nominal otomatis dari slip gaji `TERBIT`/`TERBAYAR` terakhir (`GAJI_KOTOR` = bruto slip; `SATU_GAJI_POKOK` = gaji pokok slip; `PERSEN` = persen × gaji pokok slip); **prorata diinput admin** per pegawai (nominal hasil input admin menggantikan nominal otomatis, sumber tercatat di audit); **tanpa iuran apa pun** pada slip THR (tanpa BPJS Kesehatan/Ketenagakerjaan, tanpa PPh 21, tanpa alpa) — THR dibayar bersih; slip terpisah pada tanggal berlaku dengan komponen `THR`; endpoint `GET /api/v1/payroll/thr/plan` menyusun kandidat + yang dilewati sebelum slip dibuat.
+- **Pelaporan LLDikti (dosen DPK):** **format resmi (Excel/PDF), bukan integrasi API** (`DEC-072`); pekerjaan awal = ekspor rekap (BKD semesteran) dari SIMPEG; pengiriman manual menunggu petunjuk resmi LLDikti; di luar cakupan rilis awal bila format belum tersedia.
+- **Alur PHK vs pengunduran diri (`DEC-071`/`DEC-072`/`DEC-083`):** keputusan PHK/pengunduran diri diajukan/dirancang **Kabiro Kepegawaian dengan tembusan Rektor dan Ketua Yayasan**; SK memakai `suratKeputusan` (`penerbit=YAYASAN`); PHK/Hormat berhak pesangon lantai PP 35/2021 + tambahan 1 bulan/5 tahun (dibedakan `HORMAT` vs `TIDAK_HORMAT`); pengunduran diri tidak memperoleh pesangon (berhak uang penggantian hak cuti bila memenuhi syarat); BUP berhak pensiun + pesangon sesuai aturan yayasan; status kontrak di `kontrakKerja`. **Terimplementasi (`DEC-083`):** alur pengajuan + persetujuan (operator/kabiro propose, admin approve), SK PHK terbit otomatis saat approve (nomor urut `SK-PHK-<tahun>-NNNN`), kategori status pegawai pindah ke `DOSEN_TIDAK_TETAP` untuk perpanjangan 5 tahun; **approve menonaktifkan pegawai** (`aktif=false`); slip bulan pemberhentian memuat komponen `PESANGON`; periode setelah pemberhentian ditolak; perpanjangan overlap → `409` kecuali override `allowOverlap: true` (audit, `DEC-083`).
+- **Target rilis Tahap 2:** **2027-04-01** (`DEC-072`, disetujui pemilik sebagai acuan perencanaan); cakupan pilot (1 fakultas + pegawai berbeda kategori) adalah rincian UAT, bukan acuan tanggal.
+- **Scope menu Tahap 2 (`DEC-072`):** Master (pegawai, riwayat, kontrak, struktur organisasi, cuti, presensi) — sebagian sudah ada; dan **Dashboard Akreditasi dan Analitik SDM** (agregasi lintas modul untuk kebutuhan akreditasi; metrik spesifik menunggu keputusan terpisah).
+- **Slip bermerek per instansi (`DEC-072`):** logo dan nama PT **diinput manual**, tidak hardcode; sumber = konfigurasi/branding (mis. `unitBranding`); ganti logo/nama tanpa deploy ulang; mock memakai identitas contoh Universitas Subang.
+- **Implikasi keamanan/data:** nomor kepesertaan BPJS/DPLK adalah data pribadi (perlakukan seperti PII: minimisasi, redaksi, akses terbatas; pertimbangkan enkripsi level aplikasi seperti `DEC-053`/`DEC-054`); slip THR/gaji tidak boleh dikirim tanpa konfirmasi pembayaran tersimpan.
+
+### 5.7 Presensi (fondasi & baca; pipeline DEC-077; potongan alpa & laporan SP1)
+
+- Ingestion event presensi ternormalisasi minimum dengan idempotensi; autentikasi perangkat/adapter vendor produksi menunggu kontrak.
+- Endpoint baca presensi menyediakan record/ringkasan/detail tim sesuai izin/cakupan.
+- **Pipeline `DEC-077` (2026-11-14, diimplementasikan):** pemetaan `machinePin` → pegawai global (kerja di semua mesin sejenis — 6 unit; CRUD + impor massal CSV/XLSX, admin semua, operator cakupan unit); **penurunan status hari** `H`/`A`/`LD`/`C`/`S` dari `AttendanceEvent` (hari kerja Senin–Sabtu; Minggu + libur nasional → `LD`; tap → `H`; tanpa tap + cuti disetujui → `C` / sakit → `S`; selain itu → `A`; baris manual tidak pernah ditimpa derivasi; hari kalender Asia/Jakarta); **pengisian manual** admin/operator (upsert per pegawai-tanggal); **laporan alpa berulang** untuk ditindaklanjuti manual (SP1 **tidak** diterbitkan sistem). Admin untuk semua, operator cakupan; pegawai ditolak (`403`). Migrasi `000026_mesin_absensi_pin.sql` hanya pada DB disposable lokal (belum di staging/produksi).
+- **Potongan alpa (`DEC-076`, 2026-11-14):** pegawai DOSEN_TETAP_YAYASAN, TENDIK_TETAP, TENDIK_KONTRAK yang alpa tanpa keterangan ('A') di bulan berjalan dipotong **Rp 25.000 per hari alpa, maksimal Rp 750.000 per bulan**, sebagai komponen potongan `ALPA` pada slip gaji (otomatis saat generate slip; `Presensi` adalah sumber; izin/sakit/cuti/libur tidak memotong; SP1 hanya sanksi administratif — laporan, bukan auto-terbit). Dosen LB dan dosen DPK tidak tercakup.
+
+### 5.8 Cuti, dokumen, dan modul pendukung
+
+- **Cuti:** alur pengajuan/persetujuan dengan aturan eviden wajib untuk jenis tertentu (`DEC-044`), validasi, dan pembatasan akses. **Aturan substansi sesuai Pedoman Universitas (`DEC-079`, 2026-11-14):** cuti tahunan 12 hari kerja/tahun, syarat masa kerja ≥ 1 tahun, carry maks 6 hari (hangus 30 Juni, penghitungan lazy); cuti panjang 2 bulan (masa kerja ≥ 6 tahun atau haji; tidak memblokir tahunan tahun berjalan); cuti bersalin 3 bulan / keguguran 1,5 bulan (sub-jenis wajib); durasi izin penting per sub-jenis; cuti sakit berkepanjangan membayar gaji pokok 100/75/50/25% (bulan 1–4/5–8/9–12/13–16) dan PeriodeSakit diisi otomatis saat persetujuan; gaji pokok pada slip dibayar sesuai persen berjalan. **Pembatalan (`DEC-080`/`DEC-081`):** `POST /api/v1/cuti/{cutiId}/cancel` (pemegang `cuti:approve:*`, atau pegawai dengan `cuti:cancel:self` untuk pengajuan miliknya sendiri) membatalkan MENUNGGU/DISETUJUI → `BATAL`; saldo TAHUNAN yang terpotong dikembalikan dalam transaksi yang sama.
+- **Arsip dokumen pegawai:** metadata dan referensi berkas (unggah langsung ke penyimpanan eksternal oleh klien sesuai desain), batas jenis/ukuran, dan kontrol akses.
+- **Kalender libur:** sumber penyedia untuk refresh admin, pembacaan selalu dari tabel lokal; tidak mengubah jadwal/H-1.
+- **SLO/admin observability:** metrik agregat per rute untuk admin (`slo:read`) sesuai konfigurasi.
+- **Status operasional antrean keluar:** agregat read-only (pending/processing/done/failed, usia pesan tertua, kegagalan per jenis pekerjaan) untuk admin (`ops:read`); tidak memuat payload, dedupe key, atau penerima (`DEC-065`).
+
+---
 
 ## 6. Kebutuhan nonfungsional
 
-- Keamanan: autentikasi dan otorisasi wajib ditegakkan di backend; akses menggunakan prinsip least privilege.
-- Privasi: kumpulkan data minimum yang diperlukan, batasi eksposur pada API/UI, dan gunakan data sintetis untuk pengembangan serta pengujian.
-- Integritas: identitas pegawai unik; operasi multi-langkah yang harus konsisten dijalankan secara transaksional.
-- Keandalan: tampilkan keadaan loading, kosong, berhasil, dan gagal dengan jelas; kegagalan API tidak boleh tampak sebagai keberhasilan.
-- Aksesibilitas: alur utama dapat digunakan dengan keyboard dan kontrol memiliki label yang bermakna.
-- Keterpeliharaan: backend dan frontend dapat dibangun dan diuji secara terpisah; kontrak API terdokumentasi.
-- Kinerja dan ketersediaan: target numerik belum ditetapkan. Tetapkan setelah volume pegawai, pola akses, dan lingkungan deployment diketahui.
-- Kepatuhan dan retensi: standar yang berlaku belum diketahui dan tidak boleh diklaim sebelum dikonfirmasi.
-- Integrasi eksternal: rahasia hanya berada di backend; pekerjaan asinkron harus aman terhadap retry dan kegagalan sementara.
-
-## 7. Kriteria penerimaan MVP
-
-- Pengguna tanpa autentikasi tidak dapat membaca atau mengubah endpoint yang dilindungi.
-- Pengguna tanpa izin tidak dapat membaca atau mengubah data di luar cakupannya, termasuk melalui pemanggilan API langsung.
-- Akun yang tidak memenuhi kebijakan allowlist/provisioning tidak dapat membuat sesi SIMPEG.
-- Tes otorisasi mencakup akses sendiri, akses lintas pegawai, lintas unit organisasi, perubahan role, dan endpoint administratif.
-- Menonaktifkan akun atau mencabut akses membatalkan sesi aktif sesuai kebijakan sesi yang dipilih.
-- Operator dapat membuat, mencari, melihat, memperbarui, dan menonaktifkan pegawai sesuai aturan yang dikonfirmasi.
-- Nomor pegawai duplikat ditolak dengan respons validasi yang konsisten.
-- Penempatan pegawai hanya dapat menggunakan unit dan jabatan yang valid.
-- Perubahan data penting dapat ditelusuri tanpa menyimpan rahasia atau menyalin data sensitif secara tidak perlu ke log.
-- Frontend menampilkan status loading, kosong, gagal, dan berhasil pada alur data utama.
-- Backend dan frontend memiliki pemeriksaan build/typecheck dan pengujian untuk perilaku yang diubah.
-- Pemberitahuan gaji hanya dibuat setelah konfirmasi pembayaran tersimpan; pembuatan atau penerbitan slip tidak memicu pemberitahuan.
-- Retry notifikasi untuk peristiwa pembayaran yang sama tidak menghasilkan email duplikat, dan kegagalan pengiriman dapat ditelusuri.
-
-## 8. Batas arsitektur dan stack
-
-### Backend
-
-- Bahasa: Go.
-- ORM: GORM.
-- Database relasional: Supabase PostgreSQL, dengan schema yang dibentuk oleh migrasi Goose di `backend/migrations/`.
-- Model Go/GORM di `backend/internal/models` memetakan tabel dan kolom PostgreSQL yang didefinisikan oleh migrasi.
-- Naming strategy GORM mempertahankan nama tabel dan kolom yang digunakan migrasi.
-- Backend memiliki API HTTP/JSON dan bertanggung jawab atas aturan bisnis, validasi, otorisasi, serta akses data.
-- Migrasi produksi harus eksplisit, berversi, dan menjadi sumber DDL; jangan mengandalkan GORM AutoMigrate. Status migrasi aktual harus diverifikasi pada database target.
-
-### Layanan pendukung
-
-- Supabase menyediakan PostgreSQL terkelola. Backend GORM memakai koneksi server-side dengan TLS dan role database berhak minimum. Jika Data API Supabase mengekspos tabel aplikasi, RLS dan kebijakan per pengguna/unit wajib diterapkan.
-- Upstash Redis tersedia untuk cache atau state sementara yang use case, TTL, dan fallback-nya disepakati. PostgreSQL tetap sumber kebenaran untuk pegawai, payroll, dan status pembayaran.
-- RabbitMQ menangani pengiriman pekerjaan asinkron/terjadwal dari backend pada deployment self-hosted, termasuk antrean email. Mode QStash tetap tersedia sebagai alternatif cloud (bila `RABBITMQ_URL` kosong dan kredensial QStash terisi). Callback QStash harus memverifikasi signature mentah QStash dan idempoten terhadap retry.
-- Email dikirim backend setelah status pembayaran gaji terkonfirmasi. Provider dan identitas pengirim belum dipilih. Pesan minimal dan tidak memuat nominal gaji tanpa persetujuan kebijakan.
+- **Keamanan:** autentikasi & otorisasi di backend/database boundary yang relevan; hardening header/CORS/rate limit/timeout; verifikasi signature callback; prinsip deny-by-default.
+- **Privasi & perlindungan data:** minimisasi data, enkripsi PII pada kolom yang disetujui (level aplikasi + blind index), redaksi log, data sintetis untuk dev/test, larangan nominal gaji pada notifikasi.
+- **Integritas & konsistensi:** constraint unik, operasi multi-langkah transaksional, idempotensi pekerjaan asinkron, migrasi berversi.
+- **Keandalan & operabilitas:** health/readiness terpisah, graceful shutdown, logging terstruktur + correlation ID, runbook, retry/backoff/dead-letter untuk pekerjaan terpilih.
+- **Performa & skalabilitas:** target numerik ditetapkan berbasis baseline; pengukuran dan tuning berkelanjutan (lihat `docs/PERFORMANCE-BASELINE.md`).
+- **Aksesibilitas & UX:** alur utama dapat digunakan dengan keyboard, label bermakna, state loading/empty/error/success jelas, dan perilaku permission transparan bagi pengguna.
+- **Keterpeliharaan:** backend/frontend terpisah, kontrak API terdokumentasi, kualitas kode & CI, batas ukuran file sesuai aturan proyek.
+
+---
+
+## 7. Arsitektur dan batas teknis
 
-### Frontend
+### 7.1 Backend
 
-- TanStack Start untuk aplikasi web.
-- shadcn/ui untuk komponen UI.
-- TanStack Query untuk server state dan TanStack Store untuk client state bersama.
-- TanStack Table untuk tabel data.
-- Frontend mengakses backend melalui kontrak API, bukan database.
+- **Bahasa/runtime:** Go (versi sesuai `backend/go.mod`), GORM.
+- **Struktur:** per area bisnis dengan lapis `domain`, `app` (use case + permission/cakupan), `repository` (GORM/SQL), `httpserver` (transport/DTO/middleware).
+- **API:** HTTP/JSON berversi `/api/v1`, format error seragam, OpenAPI 3.1.
+- **Database:** PostgreSQL terkelola (Supabase). Skema ditentukan oleh migrasi Goose (`backend/migrations/`); **tanpa** GORM `AutoMigrate` untuk production. **Perhatian 2026-11-14:** `000025_payroll_core.sql` (`DEC-068`, disetujui) terdaftar di repo — `migrate up` pada target mana pun akan menerapkannya; penerapan hanya lewat workflow pada staging lebih dulu, baru produksi dengan persetujuan pemilik; belum diterapkan di target mana pun per 2026-11-14.
+- **Integrasi pendukung:** outbox PostgreSQL, RabbitMQ (self-hosted) atau QStash (cloud alternatif), SMTP email, Redis Upstash (cache-only, use case terbatas), penyedia libur eksternal (opsional/terkonfigurasi).
+
+### 7.2 Frontend
+
+- **Stack:** TanStack Start (React), Bun, shadcn/ui, TanStack Query, TanStack Store, TanStack Table.
+- **Batas:** frontend mengonsumsi API backend untuk data bisnis persisten; tidak terhubung langsung ke database atau layanan rahasia; guard rute bukan otorisasi.
 
-### Domain yang sudah dimodelkan
+### 7.3 Konvensi data & operasional (disetujui)
 
-- Data pegawai, kategori, unit/homebase, jabatan, pendidikan, dan riwayat gaji.
-- Autentikasi, sesi, akun, role, 2FA, delegasi, riwayat login, dan audit log.
-- Presensi, mesin dan template sidik jari, cuti, saldo cuti, lembur, dan tugas belajar.
-- Penggajian, komponen gaji, slip, pesangon, mutasi, disiplin, pemberhentian, dan dokumen.
-- Sasaran kinerja, pengumuman, survei, notifikasi, serta antrean pesan keluar.
-
-Daftar ini merangkum model yang tersedia; detail dan aturan bisnis wajib dibaca dari schema serta dikonfirmasi dengan pemilik produk sebelum dipakai sebagai persyaratan perilaku.
-
-### Keputusan integrasi yang masih terbuka
+- **Mata uang:** IDR saja, format `Rp` melalui utilitas terpusat (`internal/money`), tanpa konversi.
+- **Zona waktu:** simpan UTC, operasional/tampilan Asia/Jakarta (WIB) melalui utilitas terpusat (`internal/timeutil`).
+- **PII:** kolom identitas terpilih dienkripsi di aplikasi (AES-256-GCM, nonce acak) + blind index HMAC-SHA256 untuk pencarian/keunikan terbatas; kunci `PII_ENCRYPTION_KEY` wajib pada production.
+- **Observability:** liveness/readiness terpisah, log JSON terstruktur, redaksi data sensitif, metrik SLO agregat untuk admin (sesuai konfigurasi).
 
-- Format kontrak dipilih OpenAPI 3.1; draft MVP ada di `docs/openapi.yaml`. URL versioning, lokasi/provider runtime autentikasi, kontrak sesi frontend-backend, deployment, nama modul/repo, tool migrasi, dan mekanisme generate tipe masih terbuka.
-- Konfirmasi login Google-only, domain/allowlist akun, provisioning/undangan, masa sesi, kebijakan pencabutan sesi, serta kewajiban MFA untuk peran istimewa.
-- Matriks izin per peran dan model cakupan data organisasi.
-- Use case, TTL, dan fallback Upstash Redis; konfigurasi koneksi/pool Supabase untuk lingkungan deployment.
-- Sumber event/status pembayaran gaji yang dianggap terkonfirmasi. Schema saat ini hanya memiliki status slip `DRAF` dan `TERBIT`, sehingga perlu perubahan schema sebelum FR-07 dapat diimplementasikan.
-- Provider email, alamat pengirim/domain, kebijakan retry/retensi, dan apakah pegawai dapat memilih keluar dari email non-wajib.
-- Versi dan package manager belum dipilih karena repo belum memiliki manifest.
+---
 
-## 9. Ukuran keberhasilan (perlu baseline)
+## 8. Kriteria penerimaan (MVP) dan metrik
 
-- Waktu yang dibutuhkan operator untuk menemukan dan memperbarui profil pegawai.
-- Persentase profil yang memenuhi kelengkapan field wajib setelah field disepakati.
-- Jumlah duplikasi atau koreksi data yang dilaporkan.
-- Keberhasilan pengguna menyelesaikan alur kerja utama tanpa bantuan.
+### 8.1 Kriteria penerimaan inti
 
-Tetapkan definisi, baseline, target, serta cara pengukuran sebelum menggunakan metrik ini sebagai komitmen.
+- Pengguna tanpa autentikasi tidak dapat mengakses endpoint/data terlindungi.
+- Pengguna tanpa izin/cakupan tidak dapat membaca/mengubah data di luar kewenangannya (termasuk via API langsung).
+- Akun/sesi yang tidak memenuhi kebijakan ditolak; pencabutan/nonaktif bekerja sesuai kontrak sesi yang berlaku.
+- CRUD dan penempatan pegawai/organisasi mengikuti validasi, izin, dan cakupan yang disetujui.
+- Perubahan data penting tercatat di audit sesuai kebijakan redaksi/retensi.
+- Notifikasi gaji (bila aktif) hanya terjadi setelah konfirmasi pembayaran tersimpan, idempoten, tanpa nominal.
+- Frontend menampilkan state loading/empty/error/success pada alur utama dan tidak menyimpan rahasia/token persisten yang tidak diizinkan.
+- Perilaku yang diubah memiliki verifikasi (test/build/typecheck/lint) sesuai standar repo.
 
-## 10. Asumsi dan pertanyaan terbuka
+### 8.2 Metrik keberhasilan (butuh baseline & definisi)
 
-- Siapa pemilik produk dan siapa pengguna pertama yang akan memvalidasi alur?
-- Target institusi dikonfirmasi sebagai Universitas Subang; kebijakan kampus yang berlaku tetap harus diidentifikasi dan disetujui sebelum aturan bisnis diterapkan.
-- Data pegawai apa yang wajib, opsional, sensitif, atau dilarang disimpan?
-- Apakah pegawai boleh memperbarui profil sendiri? Apakah perubahan perlu persetujuan?
-- Bagaimana struktur peran, unit organisasi, dan cakupan akses dibentuk?
-- Apakah MVP memerlukan impor/ekspor data, dan format serta proses persetujuannya seperti apa?
-- Dari domain yang sudah dimodelkan oleh migrasi dan backend, modul mana yang masuk MVP dan mana yang dirilis pada fase berikutnya?
-- Apa sumber identitas/login, kebijakan MFA, dan proses keluar-masuk pengguna?
-- Tool migrasi, deployment, backup/restore, retensi audit, target kinerja, dan target ketersediaan apa yang diwajibkan?
-- Sistem eksternal apa yang perlu diintegrasikan dan siapa pemilik datanya?
+- Waktu menemukan dan memperbarui profil pegawai.
+- Kelengkapan field wajib profil (setelah disepakati).
+- Jumlah duplikasi/koreksi data.
+- Tingkat keberhasilan penyelesaian alur inti tanpa bantuan.
+- Indikator operasional: laju error, latensi, keberhasilan pekerjaan terjadwal/notifikasi (setelah target disepakati).
 
-## 11. Draf rekomendasi tahap 0 (belum disetujui)
+---
 
-Status: draf untuk ditinjau pemilik produk per 10 November 2026. Draf ini bukan keputusan atau requirement final kecuali yang dinyatakan sebagai keputusan terkonfirmasi di bawah. Target yang dikonfirmasi adalah Universitas Subang dan MVP awal dibatasi pada tahap 1. Rektor dan superadmin disebut sebelumnya, tetapi peran mereka sebagai pemilik/pilot/approver, kelompok pilot, dan lingkungan deployment belum dikonfirmasi.
+## 9. Keputusan yang disetujui (ringkasan)
 
-**Keputusan terkonfirmasi:** target institusi adalah Universitas Subang; tahap 1 di bawah menjadi MVP awal. Tahapan 2-5 tetap usulan fase lanjutan, bukan komitmen rilis.
+> Detail, tanggal, dan status perubahan tercatat di `docs/DECISIONS.md` dan riwayat implementasi di `docs/IMPLEMENTATION-PLAN.md`.
 
-### Keputusan fondasi presensi mesin (10 November 2026)
-
-- Pekerjaan fondasi presensi dimulai sekarang atas keputusan pengguna; ini tidak menetapkan aturan bisnis status hadir/pulang atau memindahkan seluruh modul presensi ke MVP awal tahap 1.
-- Target perangkat adalah Fingerspot Revo W-230N. Pengguna lebih memilih integrasi API langsung, tetapi dokumentasi API/SDK vendor belum tersedia. Jangan menebak protokol, kredensial, autentikasi perangkat, atau alur sinkronisasi; adapter vendor belum dibuat.
-- Simpan fakta tap ternormalisasi yang minimum: ID mesin terdaftar, PIN mesin sebagai kunci pemetaan pengguna eksternal, waktu kejadian dengan offset eksplisit (disimpan UTC dengan presisi milidetik), dan idempotency key dari adapter. PIN belum dipetakan ke `User`/NIP. Event tidak mengubah `Presensi` yang tetap satu status per orang/hari.
-- Retry dengan mesin dan idempotency key sama serta PIN/waktu sama mengembalikan event yang sama; key yang sama dengan fakta tap berbeda ditolak sebagai konflik. Event tidak menentukan status harian.
-- Rekomendasi non-final setelah mempertimbangkan fingerprint: bila kebutuhan operasional dan kajian privasi menyetujuinya, pencocokan dapat dilakukan pada perangkat saja; template biometrik tidak dikirim atau disimpan di SIMPEG. Ini tetap merupakan pemrosesan biometrik pada perangkat, bukan berarti data biometrik tidak diproses.
-- Pemakaian fingerprint belum disetujui untuk pilot/produksi. Sebelum mengaktifkan atau mendaftarkan sidik jari, konfirmasi aliran data perangkat dan Fingerspot.io (termasuk kemungkinan sinkronisasi cloud), kebutuhan dan dasar pemrosesan, pemberitahuan/otorisasi, alternatif presensi non-biometrik, prosedur koreksi saat gagal cocok, serta retensi dan penghapusan template pada mesin/vendor. Jangan aktifkan sinkronisasi template atau simpan template/payload biometrik di SIMPEG tanpa keputusan dan desain keamanan terpisah.
-- Tetap dikecualikan dari API event SIMPEG: template sidik jari atau payload biometrik, GPS, foto, payload mentah/vendor-spesifik, dan derivasi status harian.
-- Fondasi API menggunakan pola sesi sementara dan permission backend yang sudah ada; permission ingestion baru tidak diberi grant. Autentikasi perangkat/kredensial produksi, grant role, sumber idempotency key yang dijamin vendor, interpretasi zona waktu mesin, migration runner, penerapan migrasi, serta aturan retensi masih belum diputuskan.
-
-### Usulan tahapan ruang lingkup
-
-Pengguna semula memilih seluruh kelompok domain sebagai kandidat. Pada 10 November 2026, pengguna menyetujui tahap 1 saja sebagai MVP awal; tahapan 2-5 tetap usulan fase lanjutan dan belum disetujui.
-
-1. **MVP awal — fondasi dan data inti:** autentikasi/akun, role dan cakupan akses, profil pegawai, kategori, unit, jabatan, pencarian/daftar, ringkasan dasar, serta audit perubahan. Batas tahap ini telah disetujui; rincian kebijakan dan implementasi tetap memerlukan keputusan yang dicatat pada bagian ini.
-2. **Operasional kepegawaian:** presensi dasar dan cuti/persetujuan. Perangkat biometrik, geofencing, dan aturan cuti khusus menunggu kebijakan, kebutuhan pilot, serta tinjauan privasi.
-3. **Penggajian:** komponen gaji dan slip hanya setelah kebijakan payroll, akses khusus, serta proses verifikasi dan persetujuan disetujui. Schema saat ini hanya memodelkan status slip `DRAF`/`TERBIT`, bukan bukti dana dibayarkan.
-4. **Integrasi pemberitahuan:** email otomatis “gaji sudah masuk” hanya setelah sumber konfirmasi pembayaran dan alur outbox/retry/idempotensi disetujui. Pembuatan atau penerbitan slip bukan bukti pembayaran.
-5. **Tahap lanjutan:** kinerja, lembur/tugas belajar, mutasi/disiplin/pemberhentian/dokumen, pengumuman, dan survei; prioritaskan setelah kebutuhan pilot tervalidasi.
-
-Batas MVP awal tahap 1 telah disetujui. Dependensi antartahap dan kebijakan institusi tetap harus ditinjau sebelum fitur pada tahap lanjutan menjadi komitmen.
-
-### Matriks peran dan cakupan (disetujui 2026-11-10)
-
-`Role` di schema hanya menyimpan nama/deskripsi role dan relasi ke pengguna; schema tidak memuat grant aksi, hierarki unit, atau cakupan akses. Grant berikut diterapkan di `backend/cmd/server/main.go` sebagai `auth.StaticPolicy` dan ditranslasikan ke permission server-side pada setiap request. Role atau izin yang tidak tercantum dalam matriks ini ditolak (deny-by-default).
-
-| Peran | Permission yang diizinkan | Cakupan dan batas |
-|---|---|---|
-| admin | `employee:read:any`, `employee:create`, `employee:update:any`, `employee:archive`, `employee:role:manage`, `employee:import`, `organization:read`, `organization:manage`, `attendance:event:ingest`, `attendance:read:any`, `audit:read`, `category:read`, `payroll:read:any`, `payroll:manage`, `payroll:schedule`, `holiday:read`, `holiday:manage`, `slo:read` | Seluruh organisasi. Akses ke data payroll atau sensitif tambahan masih memerlukan grant eksplisit dan diaudit. |
-| operator | `employee:read:homebase`, `employee:create:homebase`, `employee:update:homebase`, `employee:import:homebase`, `organization:read:homebase`, `organization:manage:homebase`, `audit:read:homebase`, `category:read`, `attendance:read:homebase`, `payroll:read:homebase`, `payroll:schedule:homebase`, `holiday:read` | Unit yang ditugaskan beserta seluruh turunannya pada pohon `Homebase`. Tidak mengelola role; pencatatan konfirmasi pembayaran memerlukan grant terpisah. |
-| atasan | `employee:read:homebase`, `organization:read:homebase`, `category:read`, `attendance:read:homebase`, `holiday:read` | Unit tempat ditugasi beserta anak-anaknya. Tidak dapat mengakses unit lain atau mengubah data pegawai. |
-| pegawai | `employee:read:self`, `attendance:read:self`, `payroll:read:self` | Hanya profil, riwayat presensi, dan slip gaji miliknya sendiri. |
-
-Permission berakhiran `:any` berarti akses lintas seluruh organisasi dan hanya diberikan kepada `admin`. Permission berakhiran `:homebase` berarti akses dibatasi pada unit penugasan principal beserta turunannya, dan diberikan kepada `operator` serta `atasan`. Permission `audit:read:homebase` memberi operator akses ke jejak perubahan pada unitnya beserta turunannya — bukan jejak global. Permission `category:read` memberi akses baca ke daftar kategori pegawai; hanya kategori aktif yang dikembalikan. Permission `jabatan:read` (disetujui 13 November 2026, `DEC-057`) memberi akses baca ke master jabatan dan diberikan ke seluruh role yang terautentikasi (`admin`, `operator`, `atasan`, `pegawai`); `jabatan:manage` (`admin` saja) membuka membuat, mengubah, dan mengarsipkan master jabatan melalui `GET/POST /api/v1/jabatan` dan `GET/PATCH/DELETE /api/v1/jabatan/{jabatanId}`. Permission `slo:read` (disetujui 13 November 2026, `DEC-050`) hanya dimiliki `admin` dan membuka `GET /api/v1/admin/slo/metrics` serta halaman `/admin/slo`; isinya ringkasan agregat per rute (jumlah permintaan, galat 5xx, laju galat, latensi rata-rata/p95/p99/maks), bukan metrik mentah per jendela.
-
-Pembacaan presensi memakai `attendance:read:self` untuk pegawai, `attendance:read:homebase` untuk operator/atasan, dan `attendance:read:any` untuk admin. `GET /api/v1/attendance/my-records` membaca record yang sudah ada pada tabel `Presensi`; `GET /api/v1/attendance/unit-summary` menghitung jumlah record per tanggal/status sesuai cakupan. Keduanya tidak menurunkan status dari `AttendanceEvent`; PIN mesin belum dipetakan ke pegawai dan aturan status harian belum disetujui.
-
-**Keputusan pembacaan presensi tim 13 November 2026 (`DEC-051`):** atasan melihat kehadiran timnya dalam dua kedalaman, dibatasi cakupan yang sama dengan `attendance:read:homebase` (unit penugasan beserta turunannya; rektor dan pimpinan lain yang ditugaskan pada akar pohon `Homebase` melihat seluruh organisasi). (1) Agregat per tanggal `H/I/S/A/C/LD` lewat `GET /api/v1/attendance/unit-summary`. (2) Detail per pegawai untuk satu tanggal lewat `GET /api/v1/attendance/unit-records?date=YYYY-MM-DD`: seluruh pegawai **aktif** dalam cakupan ditampilkan, pegawai tanpa catatan `Presensi` pada tanggal itu tampil dengan `status` null (artinya belum tercatat/alpa belum diturunkan — aturan status harian belum disetujui). Endpoint ini **tidak** memerlukan permission baru — memakai `attendance:read:any` atau `attendance:read:homebase` yang sudah ada. Keterangan (`note`/`keterangan`) presensi boleh terlihat oleh atasan yang memegang cakupan (mis. alasan sakit atau izin untuk keputusan operasional); `note` bisa memuat informasi kesehatan/pribadi sehingga tetap terbatas pada cakupan atasan, tidak lintas organisasi selain lewat `attendance:read:any` (admin). Endpoint tidak menurunkan status dari `AttendanceEvent`.
-
-**Cakupan operator ditetapkan 11 November 2026:** cakupan operator adalah unit penugasannya **beserta seluruh turunan** pada pohon `Homebase` (sama dengan atasan). Operator yang ditempatkan di FAKULTAS karena itu dapat mengelola pegawai JURUSAN di bawahnya. Operator membuat unit baru hanya di bawah induk yang sudah berada dalam cakupan; unit akar berada di luar setiap cakupan unit dan hanya dapat dibuat oleh `admin`. Template impor pegawai tidak memuat kolom unit, sehingga pegawai hasil impor oleh operator ditempatkan pada unit penugasan operator.
-
-Backend memeriksa permission pada setiap request. Cakupan organisasi ditegakkan di lapisan aplikasi: `operator` dan `atasan` memakai permission `:homebase` yang dibatasi pada unit penugasan beserta turunannya (recursive CTE pada pohon `Homebase`), `admin` memakai permission `:any` untuk seluruh organisasi, dan `pegawai` memakai `:self`. Principal tanpa penugasan unit tidak melihat data pegawai apa pun. Akses ke gaji dan konfirmasi pembayaran memakai permission payroll khusus: `payroll:read:any` (admin), `payroll:read:homebase` (operator, slip pegawai pada unitnya beserta turunannya), `payroll:read:self` (pegawai, slipnya sendiri), dan `payroll:manage` (admin, mencatat konfirmasi pembayaran). Jadwal tanggal gajian per unit memakai `payroll:schedule` (admin, seluruh unit) dan `payroll:schedule:homebase` (operator, unitnya beserta turunannya). Kalender hari libur nasional memakai `holiday:read` (admin, operator, atasan) dan `holiday:manage` (admin; memicu penyegaran dari penyedia).
-
-**Aturan eviden pengajuan cuti (disetujui 12 November 2026):** cuti melahirkan (`BERSALIN`), cuti sakit (`SAKIT` dan `SAKIT_BERKEPANJANGAN`), dan cuti harian (`IZIN_PENTING`) wajib menyertakan eviden saat pengajuan dibuat; pengajuan tanpa eviden ditolak dengan `422`, dan eviden dicek ulang saat persetujuan. Bentuk eviden dibedakan: `SURAT_DOKTER` (berkas, nomor, dan tanggal surat dokter wajib) hanya boleh dipakai cuti sakit dan melahirkan; `FOTO` (berkas dan waktu tangkap wajib) atau `LAINNYA` (waktu dan keterangan wajib) untuk cuti harian. Metadata eviden disimpan pada kolom `jenisEviden`, `fileEvidenUrl`, `waktuEviden`, dan `catatanEviden` tabel `Cuti`; kolom lama `fileSuratUrl` diubah nama menjadi `fileEvidenUrl` lewat migrasi `000019_cuti_eviden.sql`.
-
-**Manajemen dokumen pegawai/dosen (disetujui 12 November 2026):** setiap pegawai/dosen memiliki arsip dokumen digital pada tabel `arsipDokumenPegawai` (endpoint `GET/POST/PATCH/DELETE /api/v1/arsip{...}`). Berkas diunggah langsung ke Cloudinary oleh klien frontend; backend hanya menyimpan URL dan metadata berkas (`fileUrl`, `fileSize`, `mimeType`, `cloudinaryPublicId`) tanpa menangani isi berkas. Setiap jenis dokumen memiliki aturan format MIME dan ukuran maksimal:
-
-| Jenis dokumen | Wajib/Opsional | Format yang diizinkan | Ukuran maksimal |
-|---|---|---|---|
-| Foto (`FOTO`) | Wajib | image/png, image/jpeg, image/webp | 3.1 MB |
-| KTP (`KTP`) | Wajib | image/png, image/jpeg, image/webp, application/pdf | 1.1 MB |
-| Kartu Keluarga (`KARTU_KELUARGA`) | Wajib | image/png, image/jpeg, image/webp, application/pdf | 1.1 MB |
-| Ijazah Terakhir (`IJAHAN_TERAKHIR`) | Wajib | application/pdf | 5.1 MB |
-| SK Kepegawaian/Kontrak (`SK_KEPEGAWAIAN_KONTRAK`) | Wajib | application/pdf | 7.1 MB |
-| NPWP (`NPWP`) | Opsional | image/png, image/jpeg, image/webp, application/pdf | 1.1 MB |
-| BPJS Ketenagakerjaan (`BPJS_KETENAGAKERJAAN`) | Opsional | image/png, image/jpeg, image/webp, application/pdf | 1.1 MB |
-| BPJS Kesehatan (`BPJS_KESEHATAN`) | Opsional | image/png, image/jpeg, image/webp, application/pdf | 1.1 MB |
-| Sertifikat Serdos (`SERTIFIKAT_SERDOS`) | Opsional | application/pdf | 5.1 MB |
-
-Konfigurasi Cloudinary dibaca dari environment `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, dan `CLOUDINARY_API_SECRET` (lihat `.env.example`). Backend menyediakan endpoint `GET /api/v1/cloudinary/upload-signature` (permission `arsip:create`) yang menghasilkan tanda tangan unggah (SHA-1 atas parameter terurut + API secret) beserta `cloudName`, `apiKey`, dan `timestamp` untuk klien. Nomor rekening (`BankRekening`) dan nama rekening (`BankAtasNama`) sudah tersedia sebagai kolom pada tabel `user`. Timestamps `createdAt`/`updatedAt` disimpan UTC di database dan ditampilkan Asia/Jakarta melalui `internal/timeutil`. Migrasi `000020_arsip_dokumen_tambahan.sql` menambah jenis dokumen baru dan kolom metadata berkas.
-
-**Catatan implementasi (11 November 2026):** batas operator "hanya unit yang ditugaskan" kini ditegakkan — sebelumnya `operator` memegang `employee:read:any` dan `employee:update:any` yang bersifat global. Verifikasi terjadi pada route dan query: daftar pegawai difilter dengan `ScopeHomebaseIDs`, dan setiap record diperiksa per-pegawai pada use case baca/ubah/arsip. Cakupan organisasi untuk `organization:read` dan `organization:manage` juga sudah dibatasi per unit.
-
-**Perbedaan kebijakan dan implementasi yang wajib diketahui agen/pengembang:** matriks di atas adalah kebijakan yang disetujui; konfigurasi runtime berada di `backend/cmd/server/main.go`. Role `atasan` (`employee:read:homebase`) dan `pegawai` (`employee:read:self`) memakai endpoint daftar/detail pegawai: route GET menerima ketiga permission tersebut dan use case mempersempit hasil ke unit penugasan beserta turunannya (atasan/operator) atau ke record sendiri (pegawai). Permission `employee:import` diberikan kepada `admin`; `employee:import:homebase` kepada `operator`. Cakupan unit untuk `organization:read` dan `organization:manage` sudah diterapkan. Jangan menyatakan seluruh cakupan sudah ditegakkan atau memperluas grant tanpa memverifikasi route dan query.
-
-### Keputusan autentikasi dan kontrak sesi (disetujui 2026-11-10)
-
-**Provider/runtime:** Better Auth. Migrasi `000001_directory_crud.sql` menyediakan tabel bergaya Better Auth (`session`, `account`, `verification`, `twoFactor`); konfigurasi Google OAuth sudah tersedia di `.env.example`.
-
-**Kontrak:** sesi server dikelola dengan cookie `HttpOnly`, `Secure` di production, `SameSite` yang sesuai, trusted-origin, dan CSRF protection. Go API memverifikasi sesi terhadap sumber server-side yang disepakati, memeriksa akun aktif serta permission/cakupan. Jangan percaya role atau identity header dari browser. Bila frontend dan API memakai host berbeda, topology cookie/proxy harus ditetapkan dan diuji. Jangan mengekspos token sesi ke penyimpanan browser atau menyamakan route guard dengan otorisasi.
-
-Sebelum produksi, pemilik harus mengonfirmasi: Google Workspace institusi sebagai provider login yang diizinkan, metode allowlist/invitasi/provisioning, masa sesi, pencabutan, dan MFA (disarankan wajib bagi admin serta pemegang permission payroll). Sesi, logout, revokasi, akun nonaktif, dan CSRF harus diuji end-to-end.
-
-### Status implementasi tabel autentikasi
-
-Empat tabel pada migrasi awal dipetakan ke model GORM di `backend/internal/models` dan dipakai sebagai berikut. Status di bawah menyatakan kondisi kode saat ini, bukan kelengkapan alur login.
-
-| Tabel acuan | Kolom kunci | Model GORM | Status implementasi |
-|---|---|---|---|
-| `session` | `id`, `userId`, `expiresAt`, `token` (unik), `ipAddress`, `userAgent` | `models.Session` | **Dipakai.** `GormSessionResolver` mencari token, menolak sesi kedaluwarsa, dan mengambil `userId` untuk lookup pengguna. `GormSessionRevoker` menghapus baris saat logout. |
-| `account` | `id`, `userId`, `providerId`, `accountId`, token OAuth, `password` (credential provider) | `models.Account` | **Dipakai runtime Better Auth** (kredensial kata sandi; Google OAuth bila kredensial diisi 2026-11-13, `DEC-058`). Belum diverifikasi terhadap penyedia Google nyata. |
-| `verification` | `id`, `identifier`, `value`, `expiresAt` | `models.Verification` | **Dipetakan saja, belum dipakai.** Tidak ada penerbitan token verifikasi, reset kata sandi, atau verifikasi email. |
-| `twoFactor` | `id`, `secret`, `backupCodes`, `userId` (unik), `verified`, `failedVerificationCount`, `lockedUntil` | `models.TwoFactor` | **Dipakai runtime Better Auth 2026-11-13** (`DEC-058`): pendaftaran TOTP (enable), verifikasi kode saat masuk, kode cadangan, penguncian akun setelah gagal berkali-kali. Kolom `twoFactorEnabled` pada `User` dipakai runtime. Enrollment/penonaktifan lewat `/account/mfa`; MFA opsional per akun. Verifikasi live pada penyedia nyata masih menunggu kredensial. |
-
-Catatan penting:
-
-- **Penerbitan sesi tersedia melalui runtime tertanam.** Better Auth dipasang di server frontend pada `/api/auth/*` (`DEC-049`): sesi 7 hari dengan rolling refresh 1 hari, pendaftaran publik dimatikan, akun dibuat administrator. Masuk/keluar terverifikasi end-to-end terhadap database uji disposable untuk keempat role. Google OAuth dan MFA TOTP **diimplementasikan di kode 2026-11-13** (`DEC-058`): login tombol "Masuk dengan Google" (URL otorisasi dari `/api/auth/sign-in/social`), halaman tantangan `/mfa`, enrollment/penonaktifan TOTP di `/account/mfa` (QR kode, kode cadangan), dan MFA opsional per akun. **Belum diverifikasi langsung terhadap penyedia Google nyata** — menunggu kredensial Google Workspace dan pengujian akhir oleh pemilik produk.
-- **Logout tersedia untuk sesi opaque saja.** `POST /api/v1/auth/logout` menghapus baris `session`. Penrevokasian token JWT milik Better Auth harus dilakukan oleh runtime autentikasi, bukan oleh backend Go.
-- **Perubahan role berlaku pada permintaan berikutnya.** Role dibaca dari tabel `Role` pada setiap resolusi sesi, sehingga perubahan role tidak memerlukan penerbitan sesi baru. Akun nonaktif (`aktif = false`) langsung ditolak sebagai sesi tidak valid.
-- **Pencabutan sesi sama dengan penghapusan baris `session`.** Sesudahnya token tidak lagi berlaku dan permintaan berikutnya menerima `401`.
-- **`account` menyimpan kredensial OAuth dan hash kata sandi.** Jangan pernah menulis nilai `accessToken`, `refreshToken`, `idToken`, atau `password` ke log, respons API, atau dokumentasi.
-
-### Implementasi awal CRUD pegawai dan organisasi
-
-Sebagai keputusan implementasi untuk melanjutkan coding (bukan pengesahan kebijakan organisasi), tipe `UNIT`, `FAKULTAS`, `JURUSAN`, `BIRO`, dan `BAGIAN` dipetakan ke satu pohon `Homebase` dengan parent opsional. Hubungan induk-anak fleksibel, tanpa mengunci aturan hierarki kampus. Profil pegawai dan organisasi memakai arsip/nonaktif, bukan hard delete; akun nonaktif langsung ditolak oleh resolver sesi. CRUD hanya mengubah field profil yang diizinkan dan menulis audit aktor/aksi/sasaran tanpa menyalin isi data pribadi.
-
-Endpoint menggunakan pemeriksaan permission eksplisit dan menolak permission yang tidak diberi grant. Grant role dikonfigurasi di `backend/cmd/server/main.go` (lihat matriks di §11). Cakupan unit ditegakkan di lapisan aplikasi: daftar difilter lewat `listing.Options.ScopeHomebaseIDs`, setiap record diperiksa per-pegawai atau per-unit, pegawai hasil impor operator ditempatkan pada unit penugasan operator, dan operator hanya dapat membuat unit di bawah induk yang sudah berada dalam cakupan. Pembuatan profil tidak membuat sesi, menetapkan role, atau mengirim undangan.
-
-Migration SQL sampai versi 000023 (`000023_keluarga_nik_encrypt.sql`) sudah diterapkan pada database Supabase `postgres` dan database uji `simpeg_perf`; keduanya versi Goose 23 (lihat `docs/IMPLEMENTATION-PLAN.md` bagian 3). `000024_jabatan.sql` ada di repo tetapi belum diterapkan pada produksi; sudah diterapkan pada database disposable `simpeg_verify` (2026-11-13). Workflow deployment migrasi tersedia sebagai `.github/workflows/deploy-migrations.yml`; pengisian environment/secret `DATABASE_URL` di GitHub masih menunggu pemilik. Jangan menjalankan `AutoMigrate`.
-
-### Enkripsi kolom PII (13 November 2026)
-
-Kolom identitas PII `user.nik`, `user.nip`, `user.npwp`, `RiwayatPendidikan.noIjazah`, dan `KeluargaPegawai.nik` disimpan terenkripsi pada level aplikasi (AES-256-GCM, nonce acak per enkripsi, format `enc1:`). Tanpa blind index HMAC-SHA256 pada kolom pendamping (`nikHash`, `nipHash`, `npwpHash`, `noIjazahHash`, `keluargaPegawai."nikHash"`), nilai terenkripsi tidak dapat dicari maupun di-sort; indeks unik parsial pada kolom hash tersebut menegakkan keunikan menggantikan unique index plaintext yang dijatuhkan oleh migrasi `000022`; `keluargaPegawai."nikHash"` bersifat non-unik. Pencarian pegawai pada NIP dan pencarian keluarga pada NIK menjadi **kesetaraan persis** (setelah normalisasi bentuk), bukan pencarian substring ILIKE; pengurutan kolom `nip`/`nik` dihapus dari allowlist (`EMPLOYEE_SORT_FIELDS` di frontend, `domain.EmployeeSortColumns`/`KeluargaSortColumns` di backend). Kunci berasal dari `PII_ENCRYPTION_KEY` (base64, 32 byte) dan diwajibkan pada production; production menolak start tanpa kunci. Kontrak HTTP tidak berubah: backend mendekripsi sebelum mengirim dan mengenkripsi saat menyimpan; plaintext tidak pernah disimpan ke log. Kolom PII lain (mis. `no_hp`, `alamat`) belum tercakup. Hilangnya `PII_ENCRYPTION_KEY` membuat data PII tidak dapat dibaca; salinan cadangan wajib dibuat sebelum kunci dipakai untuk data nyata. Detail keputusan: `DEC-053` dan `DEC-054`.
-
-### Keputusan integrasi layanan pendukung (11 November 2026)
-
-Mekanisme integrasi diimplementasikan lebih dulu; penggunaan nyata mengikuti fitur yang membutuhkannya.
-
-- **Outbox persisten di PostgreSQL** (`backend/internal/outbox`) adalah fondasi. Transaksi bisnis menulis baris outbox dalam transaksi yang sama sehingga pekerjaan tidak hilang saat queue eksternal gagal. Klaim baris memakai `FOR UPDATE SKIP LOCKED` agar tidak diproses dua worker. Kunci idempotensi `dedupeKey` mencegah satu pekerjaan logis terkirim dua kali. Retry memakai backoff eksponensial yang dibatasi; setelah jumlah percobaan maksimum pesan diletakkan pada status `FAILED` sebagai dead-letter yang dapat ditinjau dan diulang kembali. Meja `outboxMessage` dibuat lewat migrasi `000006_outbox_message.sql`.
-- **RabbitMQ** (`backend/internal/jobsched`, `backend/internal/mq`) dipakai sebagai penjadwal pekerjaan asinkron pada deployment self-hosted, bukan sumber pekerjaan. Penjadwal `cmd/jobsched` menerbitkan pesan ke exchange `simpeg.jobs` sesuai cron UTC; server mengonsumsi antrean `simpeg.jobs` dan menjalankan logika yang sama dengan callback QStash, lalu mengakui pesan hanya setelah sukses. Pesan gagal pindah ke `simpeg.jobs.dead`.
-- **QStash** (`backend/internal/qstash`) tersedia sebagai alternatif cloud untuk penjadwal pekerjaan asinkron. Callback diverifikasi signature HS256 terhadap **raw request body** sebelum payload dipercaya, dengan dukungan rotasi kunci (kunci saat ini dan berikutnya). Subjek tujuan callback, masa berlaku, dan isi body diperiksa. **Endpoint callback yang terdaftar:** `POST /api/v1/internal/qstash/audit/cleanup` — endpoint ini tidak memakai sesi bearer, pengesahnya signature QStash, dan pekerjaannya (retensi jejak audit) bersifat idempoten sehingga percobaan ulang QStash tidak mengubah hasil. Jadwal harian didaftarkan lewat `internal/jobs.EnsureSchedule` yang idempoten terhadap tujuan yang sama.
-- **Email** (`backend/internal/notify`) memakai SMTP sesuai konfigurasi pada `README.md` dan `.env.example`. Provider **disetujui** pada 11 November 2026, dengan alamat pengirim `no-reply@simpeg.unisubang.ac.id` dan origin aplikasi `https://simpeg.unisubang.ac.id`. Notifikasi gaji dibangun oleh `notify.SalaryPaidNotice` yang **tidak menerima parameter nominal** — nominal hanya tersedia di halaman terautentikasi dan dirujuk lewat tautan. `notify.SalaryNoticeSender` menolak mengirim bila konfirmasi pembayaran belum tersimpan.
-- **Pengiriman lewat outbox** (`notify.EmailDeliverer`) menjembatani antrean keluar persisten ke SMTP: bisnis menulis baris outbox dalam transaksinya, worker mengambilnya dan mengirim. Kesalahan permanen (payload rusak, jenis tidak dikenal, sumber konfirmasi pembayaran belum dikonfigurasi) langsung menjadi dead-letter tanpa diulang; kegagalan sementara dijadwalkan ulang dengan backoff. **Sumber konfirmasi pembayaran sudah ada:** modul penggajian menyimpan bukti pada tabel `pembayaran` yang menempel pada slip gaji dan menandainya `TERBAYAR`; `notify.EmailDeliverer.Confirmations` memakai `payroll/app.Service.ConfirmedPayment`.
-- **Redis** (`backend/internal/cache`) hanya untuk cache data referensi non-sensitif dengan TTL pendek dan satu namespace. Lapisan cache menegakkan aturan secara runtime: kunci yang menyerupai sesi, token, kredensial, penggajian, atau status pembayaran ditolak, dan `ReadThrough` selalu memuat ulang dari sumber utama bila cache miss atau Redis gagal. **Use case yang disetujui: cache daftar kategori pegawai** — data referensi berkardinalitas rendah yang dibaca setiap kali formulir pegawai dibuka. TTL 5 menit, namespace `simpeg`, dan kunci memuat seluruh parameter daftar. **Queue tidak wajib untuk alur kritis** karena durability dijamin outbox di PostgreSQL, bukan oleh Redis.
-- **S3-compatible storage** belum masuk scope. Mekanismenya tidak dibuat agar tidak ada kode tanpa pemakaian.
-
-### Keputusan stack frontend (11 November 2026)
-
-- **Package manager dan script runner:** Bun. Lockfile yang dipakai adalah `bun.lock`; `package-lock.json`, `yarn.lock`, dan `pnpm-lock.yaml` tidak boleh masuk repo. Perintah Vite dijalankan lewat `bun --bun run dev|build|preview` agar Bun (bukan Node) yang mengeksekusi CLI.
-- **Scaffolding:** `bunx @tanstack/cli@latest create` dengan TanStack Start + React dan default yang direkomendasikan (Tailwind CSS dan alias `@/*` dikonfigurasi oleh scaffolder). Add-on shadcn **tidak** dipilih pada tahap ini.
-- **shadcn/ui diinisialisasi sebelum menulis komponen atau halaman** agar `cn()`, variabel CSS tema, alias path, dan dependency dasar sudah tersedia. Perintah: `bunx shadcn@latest init -t start` lalu `bunx shadcn@latest add <component>`. `components.json` memakai `style` `new-york`, `cssVariables` true, dan lima alias `components`/`ui`/`lib`/`hooks`/`utils`. `style`, `baseColor`, dan `cssVariables` tidak dapat diubah setelah init.
-- **shadcn/ui di frontend adalah satu-satunya sumber komponen.** Komponen ditambahkan lewat CLI lalu diedit langsung di repo; tidak menambah pustaka komponen kedua atau design system kustom di atasnya.
-- **TanStack Query** untuk server state. `QueryClient` dibuat di dalam `getRouter()` (bukan di module scope) karena Start membuat satu router per request SSR; client di module scope berisiko menyajikan data cache milik request lain.
-- **TanStack Table** untuk tabel data dengan pagination/sorting/filtering di sisi server (`manualPagination`, `manualSorting`, `manualFiltering`), `rowCount` dari server, dan reset `pageIndex` saat sort/filter berubah.
-- **TanStack Store** hanya untuk client state yang benar-benar dipakai lintas area UI. Pembacaan di React memakai `useSelector` (`useStore` sudah deprecated).
-- **Rincian operasional** tersedia di `agents/rules/frontend.md`.
-- **Status implementasi (diperbarui 2026-11-13):** fondasi frontend sudah dibuat di folder `frontend/` (TanStack Start + shadcn/ui, satu lockfile `bun.lock`, tooling mutu lengkap, workflow `.github/workflows/frontend.yml`). Sesi dibaca dari `GET /api/v1/me` dengan header `Authorization: Bearer <token>`; token hanya hidup di memori tab dan tidak disimpan di browser. Detail teknis token, batas CORS credential, dan belakan runtime Better Auth dicatat di `DEC-048`, `DEC-049`. Antarmuka yang sudah ada: pegawai (daftar/cari/profil/manajemen peran admin), organisasi (manajemen), kategori dan master jabatan (baca; manajemen khusus admin), jejak audit (baca/ekspor), ringkasan `/dashboard` (sumber: `GET /api/v1/employees/summary`, `DEC-055`), impor pegawai (via UI di halaman pegawai), absensi (`attendance/*`), dasbor SLO admin, dan penggajian (daftar slip, detail slip, konfirmasi pembayaran khusus `payroll:manage` untuk slip `TERBIT`, serta jadwal tanggal gaji — `/payroll/slips`, `/payroll/slips/$payrollId`, `/payroll/schedules`). Cuti belum memiliki antarmuka.
-
-### Kebijakan jejak audit (11 November 2026)
-
-- **Aksi yang dicatat:** pembuatan, perubahan, dan pengarsipan profil pegawai; pembuatan, perubahan, dan pengarsipan unit organisasi; impor massal pegawai; ingestion event presensi; pencabutan sesi; dan pembacaan jejak audit itu sendiri. Jejak hanya memuat aktor, aksi, sasaran, keterangan minimal, unit cakupan, alamat IP, dan waktu — isi profil pegawai tidak pernah disalin.
-- **Jejak bersifat append-only.** Backend tidak memiliki jalur hapus atau ubah pada tabel `auditLog` dari kode aplikasi (dijamin oleh tes pemindaian source). Penghapusan hanya dilakukan melalui `audit.Cleaner` yang menjalankan `DELETE` pada entri yang lebih lama dari `AUDIT_RETENTION_DAYS` hari. Default retensi adalah 90 hari. Jika `AUDIT_RETENTION_DAYS` diatur ke 0, tidak ada pemotongan otomatis.
-- **Akses dibatasi per unit.** Setiap entri menyimpan `unitId` — unit cakupan saat aksi terjadi. `admin` membaca seluruh jejak; `operator` hanya membaca jejak unit penugasannya beserta turunannya. Kolom `unitId` diselaraskan pada model GORM dan migrasi `backend/migrations/000003_audit_log_unit.sql`.
-- **Pembacaan jejak diaudit.** Setiap pembacaan yang mengembalikan entri mencatat aksi `audit.accessed`. Pembacaan yang tidak mengembalikan entri tidak dicatat agar tabel tidak membengkak oleh request kosong.
-- **Jejak role sudah diterapkan.** `PUT /api/v1/employees/{id}/role` memerlukan `employee:role:manage` (admin), hanya menerima role `admin`, `operator`, `atasan`, atau `pegawai`, serta menulis perubahan `user.roleId` dan aksi `employee.role.updated` dalam satu transaksi.
-- **Jejak pembayaran sudah ada.** Pencatatan konfirmasi pembayaran menulis aksi `payroll.payment.confirmed`.
-- **Arsip dan ekspor jejak.** Ekspor jejak audit tersedia melalui `GET /api/v1/audit-logs/export` (disetujui 12 November 2026, `DEC-018`): berkas CSV dengan BOM UTF-8, urutan kronologis naik, tanpa batas jumlah baris, filter hanya `aksi` dan `search` (sama seperti endpoint daftar), dan setiap ekspor dicatat sebagai aksi `audit.exported`. `admin` (`audit:read`) mengekspor seluruh jejak; `operator` (`audit:read:homebase`) hanya jejak unit penugasannya beserta turunannya. Kewajiban arsip ke media lain dan prosedur pemangkasan di luar retensi otomatis belum ditetapkan. Retensi otomatis (90 hari) dan pekerjaan terjadwalnya sudah disetujui.
-
-### Keputusan versi API (11 November 2026)
-
-- **Strategi:** versi pada prefix path — seluruh endpoint berada di `/api/v1/...`. Endpoint operasional (`/health`, `/ready`) tidak berversi karena bukan kontrak data.
-- **Konsekuensi kompatibilitas:** perubahan additive (field baru, endpoint baru, enum baru yang tidak merusak klien) tetap pada `v1`. Versi naik hanya bila ada perubahan yang merusak kompatibilitas (field dihapus/diubah makna, endpoint dipindah, bentuk error berubah). Versi baru disajikan pada prefix terpisah (`/api/v2/...`) dan versi lama tetap didukung selama masa transisi.
-- **Penegakan:** `httpserver.VersionGuard` menolak path `/api/...` tanpa versi dengan `400 unversioned_path` beserta path yang benar. Path dengan versi yang tidak dikenal (mis. `/api/v2/...` saat ini `v1`) menghasilkan `404 not_found`.
-- **Observability:** setiap respons memuat header `X-API-Version` berisi versi yang dipakai.
-- **Pengecualian yang belum disepakati:** versioning berbasis media type (`Accept: application/vnd.simpeg.v1+json`) dan negosiasi versi melalui header tidak dipakai. Pendekatan ini menambah kompleksitas pada klien tanpa manfaat nyata untuk API internal institusi.
-
-### Keputusan environment deployment (11 November 2026)
-
-- **Environment pertama:** Supabase PostgreSQL production, diputuskan oleh pengguna.
-- **Pemilik produk:** Rektor Universitas Subang. **Kelompok pilot:** admin sistem dan operator kepegawaian dari satu fakultas dan satu biro. **Pembagian peran approval:** matriks peran disetujui bersama Rektor dan Kabiro. Rincian lengkap ada di `docs/DECISIONS.md` (`DEC-017`).
-- **Prasyarat yang belum terpenuhi sebelum deployment production:** migration `000001_directory_crud.sql` dan `000002_attendance_events.sql` belum pernah diterapkan pada database nyata, migration runner (Goose) belum memiliki workflow deployment, dan backup/restore belum diuji. Deployment ke production tidak boleh dilakukan sebelum hal-hal tersebut selesai dan diverifikasi.
-- **Belum ditetapkan:** nama perorangan untuk admin sistem, operator, dan anggota Kabiro. Yang dibutuhkan agar pilot dapat berjalan adalah daftar akun beserta peran (`admin`, `operator`) dan unit penugasannya.
-
-### Draf migrasi, backup, audit, dan ketersediaan
-
-- **Migrasi:** Goose (tool migrasi SQL berversi yang dikelola aplikasi Go), dengan file SQL di `backend/migrations/` sebagai sumber DDL. Jangan gunakan GORM `AutoMigrate` untuk production. Penerapan migrasi dan pemeriksaan kesesuaian terhadap database target tetap wajib diverifikasi.
-- **Backup/restore:** gunakan kemampuan backup/PITR Supabase sesuai tier yang dipilih, dokumentasikan siapa yang dapat memulihkan, dan uji restore berkala di lingkungan terpisah. Tier, frekuensi/retensi backup, RPO, dan RTO harus ditentukan berdasarkan dampak layanan dan anggaran. **Target telah ditetapkan:** `RPO_HOURS` (default 24 jam), `RTO_HOURS` (default 4 jam), `SLO_TARGET` (default 99.9%) dikonfigurasikan melalui environment variable dan dibaca oleh `config.Load()`.
-- **Audit:** batasi isi log pada aktor, aksi, sasaran, waktu, dan metadata minimum; jangan salin rahasia atau isi data pribadi sensitif. Akses audit dibatasi dan diaudit. Retensi serta kewajiban arsip harus mengikuti kebijakan institusi yang dikonfirmasi, bukan angka asumsi.
-- **Ketersediaan:** jangan menjanjikan SLO/angka uptime sebelum deployment, tier layanan, jam operasional, RPO/RTO, dan jalur eskalasi dipilih.
-
-### Draf konfirmasi pembayaran dan integrasi pendukung
-
-- **Sumber konfirmasi pembayaran (disetujui 2026-11-10):** rekonsiliasi/settlement bank atau sistem keuangan resmi yang dapat ditelusuri. Persetujuan pejabat dan penerbitan slip saja tidak cukup. Catat referensi batch/transaksi, waktu, dan pelaku pengesahan tanpa menyimpan kredensial bank. Email "gaji sudah masuk" hanya boleh dikirim setelah backend mencatat konfirmasi pembayaran sebagai terkonfirmasi, bukan saat slip baru diterbitkan. Pada MVP rekaman tersebut dimasukkan manual oleh admin ke tabel `pembayaran` (`DEC-026`); adapter integrasi bank menulis lewat jalur yang sama setelah kontrak vendor tersedia.
-- **Redis:** rekomendasi untuk MVP adalah tidak mengandalkan Redis sampai ada use case konkret. Bila disetujui kelak, batasi pada cache data referensi non-sensitif dengan TTL pendek (misalnya lima menit sebagai nilai usulan), strategi invalidasi, dan fallback ke PostgreSQL saat Redis gagal. Jangan cache sumber kebenaran, sesi, payroll, atau status pembayaran.
-- **Queue:** bila email otomatis masuk scope, gunakan outbox persisten di PostgreSQL dan queue hanya sebagai mekanisme delivery. Transaksi bisnis tidak boleh hilang saat queue gagal; retry harus idempoten dan status kegagalan dapat ditinjau/redrive. QStash adalah kandidat yang sudah tercatat di arsitektur, tetapi belum dinyatakan wajib.
-- **Email:** provider dan domain pengirim belum diputuskan. Schema menyebut Resend serta pengiriman manual/draf admin/no-op bila credential tidak tersedia, sedangkan README mendokumentasikan konfigurasi SMTP dan FR-07 mengusulkan notifikasi setelah pembayaran. Perbedaan ini harus diselesaikan sebelum implementasi. Rekomendasi isi: pemberitahuan generik dengan tautan ke halaman terautentikasi, tanpa nominal/slip sebagai lampiran; batasi retry, catat hasil, dan cegah duplikasi berdasarkan event pembayaran.
-
-### Keputusan mata uang, zona waktu, dan struktur backend (11 November 2026)
-
-- **Mata uang:** sistem memakai satu mata uang, Rupiah Indonesia (IDR). Tidak ada konversi antar-mata uang dan tidak ada nilai tukar yang disimpan. Nominal pada database adalah angka desimal dalam Rupiah penuh; representasi teksnya dibentuk hanya oleh `internal/money` dengan konvensi Indonesia (pemisah ribuan titik, desimal koma, awalan `Rp`), misalnya `Rp 1.500.000`. Simbol atau kode mata uang lain tidak boleh muncul di API maupun dokumen.
-- **Zona waktu:** zona waktu operasional adalah **Asia/Jakarta (UTC+7, WIB)**. Penyimpanan timestamp memakai UTC — kolom `timestamp without time zone` yang dibuat migrasi menyimpan jam dinding UTC, dan `database.OpenPostgres` memaksa parameter runtime `timezone=UTC` agar default `now()` dan nilai yang ditulis GORM memakai basis yang sama. Tampilan ke pengguna dan aturan kalender (periode penggajian, tanggal pembayaran, tanggal cuti) memakai Asia/Jakarta lewat `internal/timeutil`. Kolom tanggal (`date`) menyimpan kalender tanpa jam dan ditulis sebagai tengah malam UTC agar tanggal yang dibaca kembali tetap sama setelah dikonversi.
-- **Struktur backend:** backend dibagi per area bisnis dengan empat lapis yang dapat dibedakan: `domain` (aturan dan nilai tanpa I/O), `app` (use case yang memeriksa permission dan cakupan unit), `repository` (port persistensi plus adapter GORM), dan `httpserver` (transport, DTO, middleware). Area direktori memakai `internal/directory/{domain,app,repository}`; area penggajian memakai `internal/payroll/{domain,app,repository}`. Kontrak daftar bersama (pagination, pencarian, penyaring cakupan, pengurutan) ada di `internal/listing`. Handler tidak boleh memuat aturan bisnis.
-
-### Keputusan jadwal gajian, pemberitahuan slip H+1, dan kalender hari libur (11 November 2026)
-
-- **Jadwal gajian per unit:** tanggal gajian bersifat tetap per bulan, antara 1 dan 28, diinput per unit organisasi — bukan per periode. Nilai disimpan di tabel `jadwalGaji` (satu baris per unit, `unitId` unik, foreign key ke `Homebase`). `GET /api/v1/payroll/schedules` memakai permission `payroll:schedule` (admin, seluruh unit) atau `payroll:schedule:homebase` (operator, unit dalam cakupan penugasannya beserta seluruh turunannya). `PUT /api/v1/payroll/schedules/{unitId}` menyimpan nilai `tanggalGajian` (1–28); operator hanya boleh mengatur unit dalam cakupannya. Perubahan jadwal ditulis bersama jejak audit `payroll.schedule.updated` dalam satu transaksi. Skema tabel ada pada migrasi `backend/migrations/000009_payroll_schedule.sql` dan dipetakan oleh model GORM.
-- **Pemberitahuan slip gaji H+1:** slip berstatus `TERBIT` atau `TERBAYAR` pada unit yang punya jadwal gajian diberi pemberitahuan **satu hari kalender setelah tanggal gajian**. Tanggal pemberitahuan dipakai tetap — tidak digeser karena jatuh pada Sabtu, Minggu, atau hari libur nasional, dan tidak maju bila periode berjalan belum lewat jadwalnya. Pemberitahuan adalah pemberitahuan **ketersediaan slip**, bukan bukti pembayaran: isi pesan hanya nama, periode, dan tautan ke halaman penggajian — tidak pernah memuat nominal gaji dan tidak pernah menyebut gaji sudah dibayar. Jenis pesan `email.slip-tersedia` disimpan di outbox dengan kunci idempotensi `slip-available:{slipId}` sehingga setiap slip hanya diberi satu pemberitahuan meski pekerjaan dijalankan berulang. Pengiriman dijalankan sebagai pekerjaan terjadwal `payroll.notify` (`POST /api/v1/internal/qstash/payroll/notify`, cron `5 19 * * *` = 02:05 WIB, 3 percobaan ulang) yang menulis jejak `payroll.notified`. Notifikasi gaji ("gaji sudah masuk") tetap terpisah dan hanya boleh terkirim setelah konfirmasi pembayaran tersimpan.
-- **Kalender hari libur nasional:** backend mengintegrasikan penyedia **api.co.id** (endpoint `GET /holidays/indonesia`, autentikasi header `x-api-co-id`) untuk mengisi tabel `HariLibur`. Sinkronisasi hanya berjalan bila `HOLIDAY_API_URL` dan `HOLIDAY_API_KEY` terisi, dipicu admin lewat `POST /api/v1/holidays/{year}/refresh` (permission `holiday:manage`); pembacaan kalender (`GET /api/v1/holidays?year=`, permission `holiday:read`, default tahun berjalan WIB) selalu dari tabel lokal dan tidak pernah bergantung pada penyedia. Entri penyedia disimpan bila `type`-nya `Public Holiday`, `National Holiday`, atau `Joint Holiday`; entri `Observance` dilewati, tanggal di luar tahun yang diminta dan tanggal ganda dibuang, dan entri tanpa nama atau dengan tanggal tidak sah menolak seluruh penyegaran. Penyimpanan tahun berjalan dilakukan dengan mengganti seluruh entri tahun itu dalam satu transaksi bersama jejak audit `holiday.refreshed`. Pembacaan kalender di-cache di Redis (`holiday:{year}`, TTL 24 jam) bila Redis dikonfigurasi. Kalender hari libur **tidak** mengubah tanggal gajian maupun pemberitahuan H+1. Kunci API disimpan di `.env`/`.env.example` (`HOLIDAY_API_KEY`) dan tidak pernah dicatat pada jejak audit maupun log. Tabel `HariLibur` dibawa migrasi `backend/migrations/000010_holiday.sql`.
-- **Permission baru:** admin memperoleh `payroll:schedule`, `holiday:read`, `holiday:manage`; operator memperoleh `payroll:schedule:homebase`, `holiday:read`; atasan memperoleh `holiday:read`. Matriks ini sudah diterapkan di `backend/cmd/server/main.go`.
-
-### Keputusan modul penggajian dan konfirmasi pembayaran (11 November 2026)
-
-- **Representasi pembayaran terkonfirmasi:** migrasi `backend/migrations/000008_payment_confirmation.sql` menambahkan status slip `TERBAYAR` dan tabel `pembayaran` yang menyimpan referensi transaksi, waktu konfirmasi, pelaku pengesahan, dan keterangan. Konfirmasi dibaca dari baris `pembayaran` yang menempel pada slip, sehingga bukti pembayaran selalu dapat ditelusuri; pemetaan GORM berada di `backend/internal/models`.
-- **Pencatatan pembayaran:** `POST /api/v1/payroll/slips/{payrollId}/payment` (permission `payroll:manage`, hanya `admin`). Slip hanya dapat dibayar satu kali dan hanya dari status `TERBIT`. Pencatatan baris `pembayaran`, perubahan status slip, antrean notifikasi gaji, dan jejak audit `payroll.payment.confirmed` ditulis dalam satu transaksi — sehingga notifikasi gaji tidak pernah ada tanpa bukti pembayaran yang tersimpan.
-- **Konfirmasi manual pada MVP, adapter bank disiapkan:** integrasi langsung ke bank sulit dilakukan sekarang, sehingga pencatatan pembayaran pada MVP dilakukan manual oleh pemegang `payroll:manage`: admin mengisi referensi transaksi/rekapan bank, waktu, dan pengesah secara telusuri. Integrasi otomatis ke bank (REST dan websocket) disiapkan sebagai adapter lanjutan yang menulis bukti pembayaran lewat jalur transaksional yang sama (tabel `pembayaran`) dengan idempotensi; implementasinya menunggu kontrak API vendor dan tidak dibuat sebelum benar-benar dipakai.
-- **Pembacaan slip gaji:** `GET /api/v1/payroll/slips` memakai permission `payroll:read:any` (admin), `payroll:read:homebase` (operator, slip pegawai pada unitnya beserta turunannya), atau `payroll:read:self` (pegawai, slipnya sendiri). Seluruh nominal dikembalikan sebagai Rupiah yang sudah diformat; periode ditulis sebagai `YYYY-MM` beserta label Bahasa Indonesia.
-- **Email gaji kini dapat terkirim** karena sumber konfirmasi pembayaran sudah ada. Notifikasi tetap tidak pernah memuat nominal dan hanya dikirim setelah konfirmasi tersimpan.
-
-
-
-1. Tetapkan pemilik produk, peran Rektor/superadmin dalam keputusan, pengguna pilot, dan lingkungan deployment.
-2. Setujui atau ubah tahapan MVP di atas serta data profil yang boleh diproses pada pilot.
-3. [Disetujui 2026-11-10] Matriks aksi/cakupan telah disetujui pemilik produk dan pemilik keamanan; dicatat di §11 dan diterapkan di `backend/cmd/server/main.go`. Pemilik organisasi masih perlu memvalidasi hierarki unit untuk assignment `homebaseId` operator/atasan.
-4. Pemilik identitas/IT menyetujui provider, provisioning, sesi/token, MFA, trusted origins, dan topology frontend/API.
-5. Pemilik platform/DB menyetujui tool migrasi, backup/restore, RPO/RTO, dan deployment; pemilik kebijakan menentukan retensi audit.
-6. Pemilik keuangan mengidentifikasi sumber sistem/rekaman konfirmasi pembayaran yang otoritatif serta pihak yang boleh mengesahkan.
-7. Pemilik platform menentukan kebutuhan Redis/queue; pemilik komunikasi/IT menentukan provider email, domain pengirim, retry, dan kebijakan isi.
-
-Sampai keputusan dan penanggung jawab tersebut dicatat serta disetujui, Gerbang 0 pada `docs/IMPLEMENTATION-PLAN.md` tetap belum terpenuhi. Jawaban “ya” pada pertanyaan konfirmasi pembayaran dan integrasi belum menentukan rekaman sumber, provider, atau kebijakan operasional; tidak mengaktifkan pengiriman email.
+| Area                  | Keputusan                                                                                                                                                                                                                                                                                                                                           | Referensi                                                |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Target & MVP          | Universitas Subang; MVP awal Tahap 1 (fondasi & data inti)                                                                                                                                                                                                                                                                                          | PRD §3, `DEC-017`                                        |
+| Arsitektur            | Backend Go/GORM + PostgreSQL, frontend TanStack Start, API terpisah & berversi `/api/v1`                                                                                                                                                                                                                                                            | PRD §7, `docs/openapi.yaml`                              |
+| Migrasi & skema       | Goose sebagai sumber DDL, RLS default-deny, tanpa AutoMigrate produksi                                                                                                                                                                                                                                                                              | `DEC-033`, `DEC-019`                                     |
+| Otorisasi             | Deny-by-default, `StaticPolicy`, cakupan `:any/:homebase/:self`, audit operasi sensitif                                                                                                                                                                                                                                                             | PRD §4, `DEC-0xx` terkait                                |
+| Autentikasi/sesi      | Better Auth tertanam, sesi server-side verification, provisioning admin, logout kontraktual; OAuth/MFA tersedia (verifikasi live terbatas)                                                                                                                                                                                                          | `DEC-049`, `DEC-058`                                     |
+| PII                   | Enkripsi level aplikasi + blind index untuk kolom terpilih; kunci wajib produksi                                                                                                                                                                                                                                                                    | `DEC-053`, `DEC-054`                                     |
+| Data & format         | IDR terpusat, UTC storage + WIB operasional                                                                                                                                                                                                                                                                                                         | PRD §7.3                                                 |
+| Pekerjaan & integrasi | Outbox PostgreSQL, RabbitMQ self-hosted / QStash alternatif, SMTP untuk notifikasi (tanpa nominal gaji), Redis cache-only kategori                                                                                                                                                                                                                  | `DEC-014`, `DEC-015`, `DEC-042`                          |
+| Penggajian            | Konfirmasi pembayaran manual MVP tersimpan transaksional; notifikasi hanya pasca-konfirmasi; jadwal per unit & slip H-1                                                                                                                                                                                                                             | `DEC-026`, `DEC-027`                                     |
+| Scope penggajian inti | Penggajian masuk inti (skala yayasan, kategori status, honor SKS Rp 100.000, BPJS regulasi, PPh21 PMK 168/2023, THR gaji kotor, kontrak PKWT/PKWTT + pesangon PP 35/2021+1 bln/5 th, pensiun DPLK, SK split) — target rilis **2027-04-01** (`DEC-072`); asumsi isi-kemungkinan dicatat (`DEC-071`); migrasi disetujui (`DEC-068`, belum diterapkan) | `DEC-067`, `DEC-068`, `DEC-070`, `DEC-071`, `DEC-072`    |
+| Cuti & dokumen        | Eviden wajib untuk jenis cuti tertentu; aturan universitas: kuota/carry/panjang/bersalin/izin/sakit-bertahap & koneksi ke gaji                                                                                                                                                                                                                      | `DEC-044`, `DEC-047`, `DEC-079`                          |
+| Audit                 | Append-only (aplikasi), retensi terkonfigurasi, pembatasan akses & ekspor terkontrol                                                                                                                                                                                                                                                                | `DEC-018`, `DEC-024`                                     |
+| API & observabilitas  | Prefix versi, header versi, health/readiness, SLO metrics admin agregat, status operasional outbox                                                                                                                                                                                                                                                  | PRD §7, `DEC-050`, `DEC-065`                             |
+| Keamanan              | Tinjauan OWASP Top 10:2025 berbasis bukti; risiko residual dicatat & diterima                                                                                                                                                                                                                                                                       | `DEC-056`, `DEC-066`, `docs/SECURITY-TEST-OWASP-2025.md` |
+| Lingkungan awal       | Target deployment produksi Supabase PostgreSQL (prasyarat migrasi/backup/verifikasi wajib)                                                                                                                                                                                                                                                          | `DEC-017`                                                |
+
+---
+
+## 10. Risiko, asumsi, dan pertanyaan terbuka
+
+### 10.1 Risiko utama
+
+- **Kesenjangan kebijakan vs implementasi:** grant, cakupan, atau alur dapat belum sepenuhnya mencerminkan kebijakan di semua endpoint/data path.
+- **Ketergantungan operasional:** kredensial/provider (SMTP, OAuth, holiday API, vendor presensi), secret GitHub environment, dan konfigurasi produksi belum lengkap.
+- **Migrasi & data:** status penerapan migrasi pada database target harus selalu diverifikasi; rotasi/backfill kunci PII memiliki dampak operasional.
+- **Keamanan & privasi:** verifikasi live (TLS produksi, OAuth nyata, alerting, pentest berulang), header produksi, dan kontrol biometrik/presensi memerlukan keputusan & bukti tambahan.
+- **Performa/kapasitas:** penempatan region, beban nyata, dan fitur berat (impor/ekspor/UI load) belum tervalidasi penuh.
+- **Scope penggajian inti:** parameter utama ditetapkan (`DEC-070`); penyedia DPLK, pelaporan LLDikti, dan target rilis belum ditetapkan; migrasi disetujui (`DEC-068`) namun belum diterapkan — `migrate up` hanya lewat workflow sesudah staging terverifikasi.
+
+### 10.2 Pertanyaan terbuka (prioritas penetapan)
+
+1. Siapa pengguna pilot bernama, unit penugasannya, dan proses provisioning akun final?
+2. Kebijakan lengkap data pegawai: field wajib/opsional/sensitif/terlarang, self-service, dan persetujuan perubahan.
+3. Verifikasi live Google OAuth/MFA, kebijakan MFA wajib per peran, masa sesi/revokasi final pada produksi.
+4. Kontrak vendor presensi (Fingerspot Revo W-230N), autentikasi perangkat, pemetaan PIN, retensi, dan kebijakan privasi biometrik.
+5. Kelengkapan operasional produksi: domain/DNS, TLS, secret management, backup/PITR drill produksi, monitoring/alerting.
+6. Validasi end-to-end notifikasi email (app password/kredensial sah) dan kebijakan komunikasi.
+7. Rencana rilis, UAT, sign-off (produk/teknis/keamanan/operasi), dan dukungan pascarilis.
+8. Sisa penetapan penggajian inti (`DEC-071`/`DEC-072`): penyedia DPLK & iuran (asumsi kerja terisi, menunggu konfirmasi); konfirmasi alur PHK/pengunduran diri dengan kabiro/yayasan (diajukan Kabiro, tembusan Rektor + Ketua Yayasan); desain final slip (mock di `docs/design/`, logo & nama PT diinput manual); spesifikasi metrik Dashboard Akreditasi dan Analitik SDM (scope Tahap 2, `DEC-072`).
+
+### 10.3 Asumsi
+
+- PostgreSQL (Supabase) menjadi sumber kebenaran data relasional inti.
+- Akses lintas jaringan hanya melalui kontrak API yang dikontrol backend.
+- Pengembangan dan pengujian menggunakan data sintetis; rahasia tidak disimpan di repo/bundle klien.
+
+---
+
+## 11. Langkah prioritas menuju rilis
+
+1. **Kunci keputusan pilot & akses:** tetapkan akun pilot, unit, provisioning, dan verifikasi autentikasi end-to-end pada lingkungan target.
+2. **Finalisasi keamanan & kepatuhan operasional:** verifikasi header/TLS produksi, rotasi rahasia, review OWASP berkala, dan kebijakan data/privasi (termasuk biometrik bila diaktifkan).
+3. **Tuntaskan verifikasi migrasi & deployment:** terapkan/verifikasi migrasi pada target produksi, isi secret CI/CD, dan jalankan prosedur deploy/rollback teruji.
+4. **Validasi integrasi kritis:** SMTP nyata, pekerjaan terjadwal (RabbitMQ/QStash), dan alur pembayaran→notifikasi secara transaksional/idempoten.
+5. **Uji kualitas rilis:** regresi, otorisasi lintas peran/cakupan, aksesibilitas, performa representatif, dan drill backup/restore.
+6. **Siapkan operasi:** monitoring/alerting, runbook yang diuji, eskalasi, dan sign-off rilis bertahap.
+
+---
+
+## Lampiran rujukan
+
+- **Kebijakan & ruang lingkup:** `docs/PRD.md` (dokumen ini), `docs/DECISIONS.md`
+- **Perencanaan & status kerja:** `docs/IMPLEMENTATION-PLAN.md`
+- **Kontrak API:** `docs/openapi.yaml`
+- **Operasi:** `docs/RUNBOOK.md`, `observability/README.md`, `docs/backup-restore-drill.md`, `docs/STAGING-RELEASE-CHECKLIST.md`
+- **Keamanan & performa:** `docs/THREAT-MODEL.md`, `docs/SECURITY-TEST-OWASP-2025.md`, `docs/DYNAMIC-ROUTE-VERIFICATION.md`, `docs/PERFORMANCE-BASELINE.md`, `docs/UI-LOAD-TEST.md`
+- **Aturan repo & arsitektur:** `AGENTS.md`, `agents/rules/*.md`, `backend/README.md`, `frontend/README.md`
+
+---
+
+## Lampiran A — Matriks permission endpoint-per-endpoint
+
+> **Sumber dan batasan verifikasi**
+>
+> - **Kontrak terdokumentasi:** `docs/openapi.yaml` (135 path, 231 operasi; OpenAPI 3.1, direkonstruksi dari registrasi router 2026-11-15, diperluas 2026-11-16 saat pendaftaran rute master pensiun `DEC-088` dan baca SK `DEC-091`). Status dan permission mengikuti `x-implementation-status`/`x-required-permission` bila tersedia.
+> - **Grant runtime:** `backend/cmd/server/policy.go` (`RolePermissionMatrix()`, deny-by-default). Cakupan data (`:any/:homebase/:self`) ditegakkan di use case/query; grant permission saja tidak menjamin akses data.
+> - **Registrasi rute aktual:** `backend/internal/httpserver/*.go` dan `backend/cmd/server/main.go`.
+> - **Drift rute OpenAPI:** ditutup pada 14 November 2026 — seluruh 147 operasi yang terdaftar di backend kini terdokumentasi di `docs/openapi.yaml` (0 rute hilang/ekstra, YAML valid, `operationId` unik). Bukti: `docs/IMPLEMENTATION-PLAN.md` §3 dan `DEC-066`. Rute baru wajib didokumentasikan saat pendaftaran. **Pembaruan 2026-11-14:** dua operasi irisan ketiga didokumentasikan saat pendaftaran (`DEC-075`: `POST /api/v1/payroll/slips/generate`, `GET /api/v1/payroll/slips/{payrollId}/pdf`); delapan operasi pipeline presensi (`DEC-077`: `GET/POST/DELETE /api/v1/attendance/mesin-pin*`, `POST .../import`, `PUT /api/v1/attendance/presensi`, `POST .../presensi/derive`, `GET /api/v1/attendance/alpa-suspects`) — 103 path, 186 operasi, 0 ref hilang, 0 `operationId` duplikat. **Pembaruan 2026-11-14 (`DEC-078`):** satu operasi verifikasi publik slip (`GET /api/v1/verify/slip/{token}` — publik, tanpa sesi; hanya nama/periode/status, tanpa nominal) — **104 path, 187 operasi**, 0 ref hilang, 0 `operationId` duplikat. **Pembaruan 2026-11-14 (`DEC-080`):** satu operasi pembatalan cuti (`POST /api/v1/cuti/{cutiId}/cancel` — permission `cuti:approve`) — **105 path, 188 operasi**, 0 ref hilang, 0 `operationId` duplikat. **Pembaruan 2026-11-15 (`DEC-083`):** sebelas operasi modul pemberhentian/kontrak/pesangon (`POST/GET /api/v1/pemberhentian*`, `POST /api/v1/perpanjangan`, `GET /api/v1/kontrak`, `GET/POST/PATCH/DELETE /api/v1/pesangon-aturan*`) — **122 path, 209 operasi**, 0 ref hilang, 0 `operationId` duplikat. **Pembaruan 2026-11-15 (`DEC-084`):** empat operasi modul THR (`GET/POST /api/v1/payroll/thr/config`, `DELETE /api/v1/payroll/thr/config/{tahun}`, `POST /api/v1/payroll/thr/generate`) — **122 path, 209 operasi**, 0 ref hilang, 0 `operationId` duplikat. **Pembaruan 2026-11-15 (`DEC-083` lanjutan, `DEC-084` lanjutan):** dua operasi tambahan (`GET /api/v1/pemberhentian/{id}/kompensasi-preview` — admin, baca-saja; `POST /api/v1/payroll/slips/{payrollId}/terbit` — admin, DRAF → TERBIT) — **118 path, 205 operasi**, 0 ref hilang, 0 `operationId` duplikat. **Pembaruan 2026-11-15 (`DEC-085`):** satu operasi rencana THR (`GET /api/v1/payroll/thr/plan` — admin, baca-saja; kandidat + nominal otomatis + yang dilewati) — **122 path, 209 operasi**, 0 ref hilang, 0 `operationId` duplikat. **Pembaruan 2026-11-15 (rekonstruksi kontrak):** `docs/openapi.yaml` direkonstruksi dari registrasi router setelah regresi working-tree — **129 path, 221 operasi**, 0 ref hilang, 0 `operationId` duplikat (verifikasi `openapi_check.cjs`). **Pembaruan 2026-11-16 (`DEC-088`):** delapan operasi master pensiun (`GET/POST/PATCH/DELETE /api/v1/pensiun/konfigurasi*`, `GET/POST/PATCH/DELETE /api/v1/pensiun/kepesertaan*`) — **133 path, 229 operasi**, 0 ref hilang, 0 `operationId` duplikat. **Pembaruan 2026-11-16 (`DEC-091`):** dua operasi baca Surat Keputusan (`GET /api/v1/surat-keputusan`, `GET /api/v1/surat-keputusan/{id}`) — **135 path, 231 operasi**, 0 ref hilang, 0 `operationId` duplikat.
+> - **Perilaku aktual** harus diverifikasi pada handler, middleware, policy aktif, dan database target.
+
+### A.1 Ringkasan grant role (runtime)
+
+| Role       | Grant utama (ringkas)                                                                                                                                                                                                                                                                 | Cakupan                         |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| `admin`    | `employee:*:any/manage/import`, `employee:role:manage`, `organization:read/manage`, `audit:read`, `category:read`, `jabatan:read/manage`, `payroll:read:any/manage/schedule`, `holiday:read/manage`, `attendance:read:any/event:ingest`, `slo:read`, `ops:read`, `auth:session:issue` | Lintas organisasi               |
+| `operator` | `employee:read/create/update/import:homebase`, `organization:read/manage:homebase`, `audit:read:homebase`, `category:read`, `jabatan:read`, `attendance:read:homebase`, `payroll:read/schedule:homebase`, `holiday:read`                                                              | Unit penugasan + turunan        |
+| `atasan`   | `employee:read:homebase`, `organization:read:homebase`, `category:read`, `jabatan:read`, `attendance:read:homebase`, `holiday:read`                                                                                                                                                   | Unit penugasan + turunan (baca) |
+| `pegawai`  | `employee:read:self`, `attendance:read:self`, `payroll:read:self`, `jabatan:read`                                                                                                                                                                                                     | Data milik sendiri              |
+
+> Permission domain lain (mis. `cuti:*`, `arsip:*`, `keluarga:*`, `skp:*`, `tridharma:*`, dll.) **sudah diberikan** di `policy.go` dengan varian cakupan sesuai role (admin `:any`, operator/atasan `:homebase`, pegawai `:self`); grant yang tidak tercantum tetap ditolak (mis. `pegawai` tidak memiliki `category:read` — terverifikasi `403` pada 2026-11-14).
+
+### A.2 Endpoint sistem, autentikasi, upload, dan observability
+
+| Method  | Path                                  | Autentikasi / izin                 | Dokumentasi                                                       | Catatan                                                                                                            |
+| ------- | ------------------------------------- | ---------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `GET`   | `/health`                             | Publik                             | OpenAPI: `implemented`                                            | Liveness proses.                                                                                                   |
+| `GET`   | `/ready`                              | Publik                             | OpenAPI: `implemented`                                            | Readiness dependency.                                                                                              |
+| `GET`   | `/api/v1/me`                          | Bearer sesi (terautentikasi)       | OpenAPI: `implemented-deny-by-default`, `authenticated`           | Principal + permission efektif; dapat memuat `nama`/`noHp` bila layanan `Me` aktif.                                |
+| `PATCH` | `/api/v1/me`                          | Bearer sesi (terautentikasi)       | OpenAPI: `implemented-deny-by-default`, `authenticated` (DEC-062) | Profil mandiri (`nama`, `noHp`).                                                                                   |
+| `POST`  | `/api/v1/auth/logout`                 | Bearer sesi (terautentikasi)       | OpenAPI: `implemented`                                            | Mencabut sesi opaque.                                                                                              |
+| `POST`  | `/api/v1/auth/session`                | Bearer sesi + `auth:session:issue` | OpenAPI: `implemented-deny-by-default` (bootstrap)                | Hanya bila `SessionIssuer` aktif.                                                                                  |
+| `GET`   | `/api/v1/cloudinary/upload-signature` | Bearer sesi (terautentikasi)       | OpenAPI: `implemented-deny-by-default`                            | Hanya bila layanan Cloudinary aktif.                                                                               |
+| `GET`   | `/api/v1/admin/slo/metrics`           | Bearer sesi + `slo:read`           | OpenAPI: `implemented-deny-by-default` (DEC-050)                  | Agregat metrik SLO; admin.                                                                                         |
+| `GET`   | `/api/v1/admin/ops/status`            | Bearer sesi + `ops:read`           | OpenAPI: `implemented-deny-by-default` (DEC-065)                  | Status operasional/antrean outbox (agregat saja); admin. Terverifikasi `200` admin / `403` non-admin (2026-11-14). |
+
+### A.3 Endpoint terdokumentasi (OpenAPI) — matriks per operasi
+
+| Method   | Path                                           | Permission yang diminta                                            | Akses sesuai grant runtime saat ini                                                                                                                                                                                     | Dokumentasi                           |
+| -------- | ---------------------------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `POST`   | `/api/v1/attendance/events`                    | `attendance:event:ingest` atau kredensial perangkat                | `admin` (grant) atau perangkat valid                                                                                                                                                                                    | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/attendance/my-records`                | `attendance:read:self`                                             | `pegawai`                                                                                                                                                                                                               | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/attendance/unit-records`              | `attendance:read:any` / `attendance:read:homebase`                 | `admin`, `operator`, `atasan`                                                                                                                                                                                           | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/attendance/unit-summary`              | `attendance:read:any` / `attendance:read:homebase`                 | `admin`, `operator`, `atasan`                                                                                                                                                                                           | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/attendance/mesin-pin`                 | `attendance:presensi:manage`                                       | `admin`, `operator` (cakupan)                                                                                                                                                                                           | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/attendance/mesin-pin`                 | `attendance:presensi:manage`                                       | `admin` (semua), `operator` (cakupan)                                                                                                                                                                                   | `implemented-deny-by-default`         |
+| `DELETE` | `/api/v1/attendance/mesin-pin/{pinID}`         | `attendance:presensi:manage`                                       | `admin` (semua), `operator` (cakupan)                                                                                                                                                                                   | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/attendance/mesin-pin/import-template` | `attendance:presensi:manage`                                       | `admin`, `operator` (cakupan)                                                                                                                                                                                           | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/attendance/mesin-pin/import`          | `attendance:presensi:manage`                                       | `admin` (semua), `operator` (cakupan)                                                                                                                                                                                   | `implemented-deny-by-default`         |
+| `PUT`    | `/api/v1/attendance/presensi`                  | `attendance:presensi:manage`                                       | `admin` (semua), `operator` (cakupan)                                                                                                                                                                                   | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/attendance/presensi/derive`           | `attendance:presensi:manage`                                       | `admin` (semua), `operator` (cakupan)                                                                                                                                                                                   | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/attendance/alpa-suspects`             | `attendance:presensi:manage`                                       | `admin`, `operator` (cakupan)                                                                                                                                                                                           | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/employees`                            | `employee:read:any` / `:homebase` / `:self`                        | `admin`, `operator`, `atasan`, `pegawai` (cakupan)                                                                                                                                                                      | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/employees/summary`                    | `employee:read:any` / `:homebase` / `:self`                        | `admin`, `operator`, `atasan`, `pegawai` (cakupan)                                                                                                                                                                      | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/employees`                            | `employee:create` / `employee:create:homebase`                     | `admin`; `operator` bila grant tersedia                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/employees/import-template.csv`        | `employee:import` / `employee:import:homebase`                     | `admin`; `operator` bila grant tersedia                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/employees/import`                     | `employee:import` / `employee:import:homebase`                     | `admin`; `operator` bila grant tersedia                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/employees/{employeeId}`               | `employee:read:any` / `:homebase` / `:self`                        | `admin`, `operator`, `atasan`, `pegawai` (cakupan)                                                                                                                                                                      | `implemented-deny-by-default`         |
+| `PATCH`  | `/api/v1/employees/{employeeId}`               | `employee:update:any` / `employee:update:homebase`                 | `admin`, `operator` (cakupan)                                                                                                                                                                                           | `implemented-deny-by-default`         |
+| `DELETE` | `/api/v1/employees/{employeeId}`               | `employee:archive` / `employee:archive:homebase`                   | `admin`; `operator` bila grant tersedia                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `PUT`    | `/api/v1/employees/{employeeId}/role`          | `employee:role:manage`                                             | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/organizations`                        | `organization:read` / `organization:read:homebase`                 | `admin`, `operator`, `atasan` (cakupan)                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/organizations`                        | `organization:manage` / `organization:manage:homebase`             | `admin`, `operator` (cakupan)                                                                                                                                                                                           | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/organizations/{organizationID}`       | `organization:read` / `organization:read:homebase`                 | `admin`, `operator`, `atasan` (cakupan)                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `PATCH`  | `/api/v1/organizations/{organizationID}`       | `organization:manage` / `organization:manage:homebase`             | `admin`, `operator` (cakupan)                                                                                                                                                                                           | `implemented-deny-by-default`         |
+| `DELETE` | `/api/v1/organizations/{organizationID}`       | `organization:manage` / `organization:manage:homebase`             | `admin`, `operator` (cakupan)                                                                                                                                                                                           | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/audit-logs`                           | `audit:read` / `audit:read:homebase`                               | `admin`, `operator` (cakupan)                                                                                                                                                                                           | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/audit-logs/export`                    | `audit:read` / `audit:read:homebase`                               | `admin`, `operator` (cakupan)                                                                                                                                                                                           | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/cuti`                                 | `cuti:read:any` / `:homebase` / `:self`                            | Bergantung grant aktif                                                                                                                                                                                                  | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/cuti`                                 | `cuti:create:any` / `cuti:create:homebase` / `cuti:create`         | Bergantung grant aktif; admin (`:any`) seluruh pegawai, operator (`:homebase`) cakupan unit, pegawai (self) dirinya sendiri                                                                                             | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/cuti/{cutiId}`                        | `cuti:read:any` / `:homebase` / `:self`                            | Bergantung grant aktif                                                                                                                                                                                                  | `implemented-deny-by-default`         |
+| `PATCH`  | `/api/v1/cuti/{cutiId}`                        | `cuti:update:any` / `:homebase`                                    | Bergantung grant aktif                                                                                                                                                                                                  | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/cuti/{cutiId}/approve`                | `cuti:approve:any` / `:homebase`                                   | Bergantung grant aktif                                                                                                                                                                                                  | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/cuti/{cutiId}/reject`                 | `cuti:approve:any` / `:homebase`                                   | Bergantung grant aktif                                                                                                                                                                                                  | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/cuti/{cutiId}/cancel`                 | `cuti:approve:any` / `:homebase` / `cuti:cancel:self`              | `admin`, `operator` (cakupan), `pegawai` (milik sendiri); saldo TAHUNAN yang terpotong dikembalikan                                                                                                                     | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/pemberhentian`                        | `pemberhentian:propose:any` / `:homebase`                          | `admin` (semua), `operator` (cakupan), `pegawai` (ditolak)                                                                                                                                                              | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/pemberhentian`                        | `pemberhentian:read:any` / `:homebase`                             | `admin`, `operator` (cakupan)                                                                                                                                                                                           | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/pemberhentian/{id}`                   | `pemberhentian:read:any` / `:homebase`                             | `admin`, `operator` (cakupan)                                                                                                                                                                                           | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/pemberhentian/{id}/approve`           | `pemberhentian:approve`                                            | `admin` (kabiro pusat); mengeluarkan SK PHK (penerbit YAYASAN); **approve menonaktifkan pegawai**                                                                                                                       | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/pemberhentian/{id}/reject`            | `pemberhentian:approve`                                            | `admin` (kabiro pusat)                                                                                                                                                                                                  | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/perpanjangan`                         | `perpanjangan:manage`                                              | `admin` (kabiro pusat); memindahkan kategoriStatusId pegawai ke `DOSEN_TIDAK_TETAP` dan membuat kontrak PKWT tahunan; **tumpang tindih dengan kontrak AKTIF → `409`** (override `allowOverlap: true` tercatat di audit) | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/kontrak`                              | `kontrak:read:any` / `:homebase` / `:self`                         | `admin`, `operator` (cakupan), `pegawai` (milik sendiri)                                                                                                                                                                | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/pesangon-aturan`                      | `pesangon:manage`                                                  | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/pesangon-aturan`                      | `pesangon:manage`                                                  | `admin`; faktor pesangon input manual per kategori/tahun                                                                                                                                                                | `implemented-deny-by-default`         |
+| `PATCH`  | `/api/v1/pesangon-aturan/{id}`                 | `pesangon:manage`                                                  | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `DELETE` | `/api/v1/pesangon-aturan/{id}`                 | `pesangon:manage`                                                  | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/payroll/thr/config`                   | `thr:manage`                                                       | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/payroll/thr/config`                   | `thr:manage`                                                       | `admin`; buat/ganti konfigurasi THR per tahun (unik per tahun, `GAJI_KOTOR` bawaan)                                                                                                                                     | `implemented-deny-by-default`         |
+| `DELETE` | `/api/v1/payroll/thr/config/{tahun}`           | `thr:manage`                                                       | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/payroll/thr/generate`                 | `thr:manage`                                                       | `admin`; slip THR terpisah (`THR-<tahun>-NNNN`), nominal dari slip `TERBIT` terakhir pegawai, syarat masa kerja; slip `DRAF` digantikan                                                                                 | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/pensiun/konfigurasi`                  | `pensiun:manage` atau `pensiun:read:homebase`                      | `admin` (penuh); `operator`/`atasan` (`pensiun:read:homebase`, `DEC-089`) — master referensi organisasi, tanpa filter unit                                                                                              | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/pensiun/konfigurasi`                  | `pensiun:manage`                                                   | `admin`; upsert by (kategoriStatusId, berlakuMulai); audit `pensiun.konfigurasi.created/updated`                                                                                                                        | `implemented-deny-by-default`         |
+| `PATCH`  | `/api/v1/pensiun/konfigurasi/{id}`             | `pensiun:manage`                                                   | `admin`; audit `pensiun.konfigurasi.updated`                                                                                                                                                                            | `implemented-deny-by-default`         |
+| `DELETE` | `/api/v1/pensiun/konfigurasi/{id}`             | `pensiun:manage`                                                   | `admin`; audit `pensiun.konfigurasi.deleted`                                                                                                                                                                            | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/pensiun/kepesertaan`                  | `pensiun:manage` atau `pensiun:read:homebase`                      | `admin` (seluruh organisasi) & `operator`/`atasan` (`pensiun:read:homebase`, `DEC-089`) — **kepesertaan difilter di server pada cakupan unit principal beserta seluruh turunan**; pegawai unit lain tidak tampil        | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/pensiun/kepesertaan`                  | `pensiun:manage`                                                   | `admin`; upsert by `userId`; bila `tanggalMulaiPensiun` kosong dihitung dari tanggal lahir + BUP konfigurasi yang berlaku (atau periode berikutnya); audit `pensiun.kepesertaan.created/updated`                        | `implemented-deny-by-default`         |
+| `PATCH`  | `/api/v1/pensiun/kepesertaan/{id}`             | `pensiun:manage`                                                   | `admin`; audit `pensiun.kepesertaan.updated`                                                                                                                                                                            | `implemented-deny-by-default`         |
+| `DELETE` | `/api/v1/pensiun/kepesertaan/{id}`             | `pensiun:manage`                                                   | `admin`; menonaktifkan kepesertaan (riwayat tersimpan); audit `pensiun.kepesertaan.deactivated`                                                                                                                         | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/surat-keputusan`                      | `sk:read:any` atau `sk:read:homebase`                              | `admin` (seluruh organisasi) & `operator`/`atasan` (`DEC-091`) — **SK di luar cakupan unit principal tidak tampil**; baca-saja (SK terbit dari alur kerja)                                                              | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/surat-keputusan/{id}`                 | `sk:read:any` atau `sk:read:homebase`                              | `admin`, `operator`/`atasan` (cakupan unit); SK di luar cakupan → `404`                                                                                                                                                 | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/arsip`                                | `arsip:read:any` / `:homebase` / `:self`                           | Bergantung grant aktif                                                                                                                                                                                                  | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/arsip`                                | `arsip:create` / `:homebase`                                       | Bergantung grant aktif                                                                                                                                                                                                  | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/arsip/{arsipId}`                      | `arsip:read:any` / `:homebase` / `:self`                           | Bergantung grant aktif                                                                                                                                                                                                  | `implemented-deny-by-default`         |
+| `PATCH`  | `/api/v1/arsip/{arsipId}`                      | `arsip:update:any` / `:homebase`                                   | Bergantung grant aktif                                                                                                                                                                                                  | `implemented-deny-by-default`         |
+| `DELETE` | `/api/v1/arsip/{arsipId}`                      | `arsip:archive` / `:homebase`                                      | Bergantung grant aktif                                                                                                                                                                                                  | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/categories`                           | `category:read`                                                    | `admin`, `operator`, `atasan` (pegawai `403` — tidak di-grant)                                                                                                                                                          | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/jabatan`                              | `jabatan:read`                                                     | `admin`, `operator`, `atasan`, `pegawai`                                                                                                                                                                                | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/jabatan`                              | `jabatan:manage`                                                   | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/jabatan/{jabatanId}`                  | `jabatan:read`                                                     | `admin`, `operator`, `atasan`, `pegawai`                                                                                                                                                                                | `implemented-deny-by-default`         |
+| `PATCH`  | `/api/v1/jabatan/{jabatanId}`                  | `jabatan:manage`                                                   | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `DELETE` | `/api/v1/jabatan/{jabatanId}`                  | `jabatan:manage`                                                   | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/payroll/slips`                        | `payroll:read:any` / `:homebase` / `:self`                         | `admin`, `operator`, `pegawai` (cakupan)                                                                                                                                                                                | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/payroll/slips/{payrollId}`            | `payroll:read:any` / `:homebase` / `:self`                         | `admin`, `operator`, `pegawai` (cakupan)                                                                                                                                                                                | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/payroll/slips/generate`               | `payroll:manage`                                                   | `admin` (slip DRAF digantikan; TERBIT/TERBAYAR → `409`; periode setelah bulan pemberhentian pegawai → `409`; bulan pemberhentian memuat komponen `PESANGON`)                                                            | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/payroll/slips/{payrollId}/pdf`        | `payroll:read:any` / `:homebase` / `:self`                         | `admin`, `operator`, `pegawai` (cakupan)                                                                                                                                                                                | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/payroll/slips/{payrollId}/payment`    | `payroll:manage`                                                   | `admin` (idempoten: konfirmasi ulang → `409`)                                                                                                                                                                           | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/verify/slip/{token}`                  | tidak ada sesi (publik; token 22 karakter base64url)               | publik                                                                                                                                                                                                                  | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/payroll/schedules`                    | `payroll:schedule` / `payroll:schedule:homebase`                   | `admin`, `operator` (cakupan)                                                                                                                                                                                           | `implemented-deny-by-default`         |
+| `PUT`    | `/api/v1/payroll/schedules/{unitId}`           | `payroll:schedule` / `payroll:schedule:homebase`                   | `admin`, `operator` (cakupan)                                                                                                                                                                                           | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/payroll/scale`                        | `payroll:read:any` / `payroll:read:homebase`                       | `admin`, `operator` (cakupan)                                                                                                                                                                                           | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/payroll/scale`                        | `payroll:manage`                                                   | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/payroll/scale/{skalaID}`              | `payroll:read:any` / `payroll:read:homebase`                       | `admin`, `operator` (cakupan)                                                                                                                                                                                           | `implemented-deny-by-default`         |
+| `PATCH`  | `/api/v1/payroll/scale/{skalaID}`              | `payroll:manage`                                                   | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/payroll/scale/{skalaID}/detail`       | `payroll:read:any` / `payroll:read:homebase`                       | `admin`, `operator` (cakupan)                                                                                                                                                                                           | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/payroll/scale/{skalaID}/detail`       | `payroll:manage`                                                   | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `PATCH`  | `/api/v1/payroll/scale/detail/{detailID}`      | `payroll:manage`                                                   | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `DELETE` | `/api/v1/payroll/scale/detail/{detailID}`      | `payroll:manage`                                                   | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/payroll/scale/kategori-status`        | `payroll:read:any` / `payroll:read:homebase`                       | `admin`, `operator` (cakupan)                                                                                                                                                                                           | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/payroll/honor-rate`                   | `payroll:read:any` / `payroll:read:homebase`                       | `admin`, `operator` (cakupan)                                                                                                                                                                                           | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/payroll/honor-rate`                   | `payroll:manage`                                                   | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/payroll/honor-rate/current`           | `payroll:read:any` / `payroll:read:homebase`                       | `admin`, `operator` (cakupan)                                                                                                                                                                                           | `implemented-deny-by-default`         |
+| `PATCH`  | `/api/v1/payroll/honor-rate/{rateID}`          | `payroll:manage`                                                   | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/payroll/honor-periode`                | `payroll:read:any` / `payroll:read:homebase` / `payroll:read:self` | `admin`, `operator` (cakupan), `pegawai` (self)                                                                                                                                                                         | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/payroll/honor-periode`                | `payroll:manage`                                                   | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/payroll/honor-periode/{periodeID}`    | `payroll:read:any` / `payroll:read:homebase` / `payroll:read:self` | `admin`, `operator` (cakupan), `pegawai` (self)                                                                                                                                                                         | `implemented-deny-by-default`         |
+| `PATCH`  | `/api/v1/payroll/honor-periode/{periodeID}`    | `payroll:manage`                                                   | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `DELETE` | `/api/v1/payroll/honor-periode/{periodeID}`    | `payroll:manage`                                                   | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/payroll/bpjs/config`                  | `payroll:read:any` / `payroll:read:homebase`                       | `admin`, `operator` (cakupan)                                                                                                                                                                                           | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/payroll/bpjs/config`                  | `payroll:manage`                                                   | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `PATCH`  | `/api/v1/payroll/bpjs/config/{bpjsID}`         | `payroll:manage`                                                   | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/payroll/bpjs/peserta`                 | `payroll:read:any` / `payroll:read:homebase` / `payroll:read:self` | `admin`, `operator` (cakupan), `pegawai` (self)                                                                                                                                                                         | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/payroll/bpjs/peserta`                 | `payroll:manage`                                                   | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/payroll/bpjs/peserta/{pesertaID}`     | `payroll:read:any` / `payroll:read:homebase` / `payroll:read:self` | `admin`, `operator` (cakupan), `pegawai` (self)                                                                                                                                                                         | `implemented-deny-by-default`         |
+| `PATCH`  | `/api/v1/payroll/bpjs/peserta/{pesertaID}`     | `payroll:manage`                                                   | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/payroll/pph21-ter`                    | `payroll:read:any` / `payroll:read:homebase`                       | `admin`, `operator` (cakupan)                                                                                                                                                                                           | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/payroll/pph21-ter`                    | `payroll:manage`                                                   | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `PATCH`  | `/api/v1/payroll/pph21-ter/{terID}`            | `payroll:manage`                                                   | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `DELETE` | `/api/v1/payroll/pph21-ter/{terID}`            | `payroll:manage`                                                   | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `GET`    | `/api/v1/holidays`                             | `holiday:read`                                                     | `admin`, `operator`, `atasan`                                                                                                                                                                                           | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/holidays/{year}/refresh`              | `holiday:manage`                                                   | `admin`                                                                                                                                                                                                                 | `implemented-deny-by-default`         |
+| `POST`   | `/api/v1/internal/qstash/payroll/notify`       | Signature QStash (bukan bearer)                                    | Sistem terotorisasi signature                                                                                                                                                                                           | `implemented-signature-authenticated` |
+| `POST`   | `/api/v1/internal/qstash/audit/cleanup`        | Signature QStash (bukan bearer)                                    | Sistem terotorisasi signature                                                                                                                                                                                           | `implemented-signature-authenticated` |
+| `POST`   | `/api/v1/internal/qstash/slo/evaluate`         | Signature QStash (bukan bearer)                                    | Sistem terotorisasi signature                                                                                                                                                                                           | `implemented-signature-authenticated` |
+
+### A.4 Rute modul domain yang didokumentasikan di OpenAPI (drift ditutup 2026-11-14)
+
+Rute berikut sempat tercatat sebagai drift (DEC-056) dan kini **sudah terdokumentasi** di `docs/openapi.yaml` (135 path, 231 operasi terdaftar & terdokumentasi; seluruh operasi terdaftar terdokumentasi, direkonstruksi dari registrasi router 2026-11-15 dan diperluas 2026-11-16 saat `DEC-088` serta `DEC-091`). Permission domain ini diberikan di `policy.go` (HR extensions untuk semua role dengan varian `:any/:homebase/:self`; cuti untuk admin/operator/atasan/pegawai sesuai cakupan; SKP/tridharma; `ops:read` dan `slo:read` untuk admin). Akses efektif tetap bergantung cakupan/aktif/use case; permission yang tidak di-grant tetap ditolak (mis. `pegawai` tidak memiliki `category:read` — terverifikasi `403` pada 2026-11-14). Rute baru wajib ditambahkan ke kontrak OpenAPI pada saat pendaftaran.
+
+| Domain      | Pola method & path                                                                                                                                                  | Permission yang diminta rute                                   | Dokumentasi                            |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | -------------------------------------- |
+| Keluarga    | `GET/POST /api/v1/keluarga`, `GET/PATCH/DELETE /api/v1/keluarga/{keluargaId}`                                                                                       | `keluarga:read/create/update/archive` (`:any/:homebase/:self`) | OpenAPI: `implemented-deny-by-default` |
+| Golongan    | `GET/POST /api/v1/golongan`, `GET/PATCH/DELETE /api/v1/golongan/{golonganId}`                                                                                       | `golongan:read/create/update/archive`                          | OpenAPI: `implemented-deny-by-default` |
+| Sertifikasi | `GET/POST /api/v1/sertifikasi`, `GET/PATCH/DELETE /api/v1/sertifikasi/{sertifikasiId}`                                                                              | `sertifikasi:read/create/update/archive`                       | OpenAPI: `implemented-deny-by-default` |
+| Pelatihan   | `GET/POST /api/v1/pelatihan`, `GET/PATCH/DELETE /api/v1/pelatihan/{pelatihanId}`                                                                                    | `pelatihan:read/create/update/archive`                         | OpenAPI: `implemented-deny-by-default` |
+| Sister      | `GET/POST /api/v1/sister`, `GET/PATCH/DELETE /api/v1/sister/{sisterId}`, `POST /api/v1/sister/{sisterId}/sync`                                                      | `sister:read/create/update/archive`                            | OpenAPI: `implemented-deny-by-default` |
+| Penghargaan | `GET/POST /api/v1/penghargaan`, `GET/PATCH/DELETE /api/v1/penghargaan/{penghargaanId}`                                                                              | `penghargaan:read/create/update/archive`                       | OpenAPI: `implemented-deny-by-default` |
+| Tunjangan   | `GET/POST /api/v1/tunjangan`, `GET/PATCH/DELETE /api/v1/tunjangan/{tunjanganId}`                                                                                    | `tunjangan:read/create/update/archive`                         | OpenAPI: `implemented-deny-by-default` |
+| Potongan    | `GET/POST /api/v1/potongan`, `GET/PATCH/DELETE /api/v1/potongan/{potonganId}`                                                                                       | `potongan:read/create/update/archive`                          | OpenAPI: `implemented-deny-by-default` |
+| SKP         | `GET/POST/PATCH/DELETE /api/v1/skp/periode{,/...}`, `/skp/target{,/...}`, `/skp/log{,/...}`, `/skp/penilaian{,/...}`                                                | `skp:*:read/manage` (subdomain & cakupan)                      | OpenAPI: `implemented-deny-by-default` |
+| Tridharma   | `GET/POST/PATCH/DELETE /api/v1/tridharma/periode{,/...}`, `/evaluasi{,/...}`, `/pendidikan{,/...}`, `/penelitian{,/...}`, `/pengabdian{,/...}`, `/penunjang{,/...}` | `tridharma:*:read/manage` (subdomain & cakupan)                | OpenAPI: `implemented-deny-by-default` |
+
+---
+
+## Lampiran B — Rincian keputusan
+
+> **Sumber utama:** isi berikut disalin dari `docs/DECISIONS.md` (log keputusan) agar rincian tanggal, pemilik, status, catatan, dan bukti tersedia dalam PRD. Jika ada perbedaan penafsiran, `docs/DECISIONS.md` dan bukti implementasi/verifikasi menjadi acuan.
+
+Catatan keputusan produk dan arsitektur beserta pemilik, tanggal, dan statusnya.
+Decision log ini adalah daftar ringkas; **rincian lengkap ada di `docs/PRD.md` §11**
+dan bukti implementasinya ada di `backend/` serta `agents/rules/`.
+
+Status yang dipakai:
+
+| Status        | Arti                                                                                                         |
+| ------------- | ------------------------------------------------------------------------------------------------------------ |
+| **Disetujui** | Sudah diputuskan dan tercatat di PRD §11. Perubahan memerlukan persetujuan ulang.                            |
+| **Usulan**    | Rekomendasi teknis yang sudah diimplementasikan atau siap diimplementasikan, tetapi belum disetujui pemilik. |
+| **Menunggu**  | Butuh keputusan pemilik sebelum dikerjakan.                                                                  |
+| **Batal**     | Tidak lagi berlaku; alasan dicatat pada baris yang sama.                                                     |
+
+Pemilik produk dan kelompok pilot **belum ditetapkan** — lihat `DEC-016`. Sampai
+nama itu ditetapkan, setiap keputusan pada log ini tercatat atas nama "Pemilik
+produk (belum ditetapkan)".
+
+## Format entri
+
+```
+### DEC-NNN — Judul singkat
+
+- **Tanggal:** YYYY-MM-DD
+- **Pemilik:** namaInitiatorAtasan
+- **Status:** Disetujui | Usulan | Menunggu | Batal
+- **Rincian:** tautan ke PRD §11 atau bagian terkait
+- **Bukti:** file/tes yang membuktikan keputusan diterapkan
+```
+
+---
+
+## Keputusan produk
+
+### DEC-001 — Target institusi Universitas Subang
+
+- **Tanggal:** 2026-11-10
+- **Pemilik:** Pemilik produk (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Keputusan environment deployment"
+- **Bukti:** `docs/PRD.md` §11
+
+### DEC-002 — MVP dibatasi tahap 1
+
+- **Tanggal:** 2026-11-10
+- **Pemilik:** Pemilik produk (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Usulan tahapan ruang lingkup"
+- **Bukti:** `docs/PRD.md` §11
+
+### DEC-003 — Matriks peran dan cakupan data
+
+- **Tanggal:** 2026-11-10
+- **Pemilik:** Pemilik produk dan pemilik keamanan (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Matriks peran dan cakupan"
+- **Bukti:** `backend/cmd/server/main.go` (matriks `auth.StaticPolicy`), `backend/tests/httpserver/scope_handlers_test.go`, `backend/tests/httpserver/organization_scope_test.go`
+
+### DEC-004 — Cakupan operator adalah unit penugasan beserta turunannya
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik produk (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Matriks peran dan cakupan"
+- **Bukti:** `backend/internal/directory/repository/gorm_catalog.go` (recursive CTE pohon `Homebase`), `backend/tests/directory/repository/list_test.go`, `backend/tests/httpserver/scope_handlers_test.go`
+
+### DEC-005 — Provider autentikasi Better Auth
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik identitas/IT (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Keputusan autentikasi dan kontrak sesi"
+- **Bukti:** `backend/internal/auth/jwt.go`, `backend/internal/auth/gorm_resolver.go`, tabel `session`/`account`/`verification`/`twoFactor` pada skema acuan
+
+### DEC-006 — Kontrak sesi: cookie server-side dengan proteksi CSRF
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik identitas/IT (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Keputusan autentikasi dan kontrak sesi"
+- **Bukti:** `backend/internal/auth/jwt.go` (verifikasi JWT), `backend/internal/auth/revoker.go` (pencabutan sesi), `backend/internal/httpserver/auth_handlers.go` (`POST /api/v1/auth/logout`)
+
+### DEC-029 — Groundwork penerbitan sesi dan masa berlaku sesi (backend)
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik identitas/IT (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Keputusan autentikasi dan kontrak sesi" serta §8 (Backend). Backend disiapkan groundwork untuk penerbitan sesi sebelum runtime Better Auth tersedia: `auth.SessionIssuer` dengan implementasi GORM (`GormSessionIssuer`) yang menulis baris baru ke tabel `session` dengan token acak dan `expiresAt`; role/homebase diambil dari data server-side (tabel user/role) sehingga tidak dapat digunakan untuk naikkan role. Endpoint bootstrap `POST /api/v1/auth/session` didaftarkan bila resolver dan issuer tersedia, memerlukan sesi yang valid dan permission `auth:session:issue` (saat ini hanya admin). Masa berlaku sesi dikonfigurasi lewat `SESSION_LIFETIME` env (`config.SessionLifetime`, default 23 jam). Nilai final ditetapkan 23 jam oleh pemilik, efektif sejak 2026-11-11.
+- **Catatan:** Endpoint ini akan digantikan oleh flow login OAuth/password milik runtime Better Auth. Penerbitan token JWT tetap menjadi tanggung jawab runtime autentikasi, bukan backend Go.
+- **Bukti:** `backend/internal/auth/session_issuer.go`, `backend/tests/auth/session_issuer_test.go`, `backend/internal/httpserver/auth_handlers.go`, `backend/tests/httpserver/auth_handlers_test.go`, `backend/internal/httpserver/server.go` (`MuxOptions.SessionIssuer`), `backend/cmd/server/main.go`, `backend/internal/config/config.go` (`SESSION_LIFETIME`), `.env.example`
+
+### DEC-007 — Migration runner Goose
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik platform/DB (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Draf migrasi, backup, audit, dan ketersediaan"
+- **Bukti:** `backend/.goose.yaml`, `backend/migrations/`, `backend/tests/database/migrations_test.go`
+
+### DEC-008 — Versi API memakai prefix path `/api/v1`
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik arsitektur (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Keputusan versi API"
+- **Bukti:** `backend/internal/httpserver/version.go`, `docs/openapi.yaml`, `backend/tests/httpserver/version_test.go`
+
+### DEC-009 — Bentuk respons error seragam
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik arsitektur (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 dan `agents/rules/architecture.md`
+- **Bukti:** `backend/internal/apierror/`, `backend/internal/httpserver/errors.go`, `backend/tests/httpserver/health_test.go`
+
+### DEC-010 — Jejak audit append-only dengan akses dibatasi per unit
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik kebijakan (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Kebijakan jejak audit"
+- **Bukti:** `backend/internal/audit/` (termasuk tes penjaga append-only), `backend/migrations/000003_audit_log_unit.sql`, `backend/internal/httpserver/audit_handlers.go`
+
+### DEC-011 — Environment deployment pertama Supabase production
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik produk (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Keputusan environment deployment"
+- **Bukti:** `docs/RUNBOOK.md` §7 (prasyarat sebelum deploy), `backend/migrations/` (belum pernah diterapkan ke database nyata)
+
+### DEC-012 — Stack frontend: Bun, shadcn/ui, TanStack Start/Query/Table/Store
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik arsitektur (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Keputusan stack frontend"
+- **Bukti:** `agents/rules/frontend.md`
+
+### DEC-013 — Antrean keluar memakai outbox persisten di PostgreSQL
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik arsitektur (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Keputusan integrasi layanan pendukung"
+- **Bukti:** `backend/internal/outbox/`, `backend/migrations/000006_outbox_message.sql`
+
+### DEC-021 — Mata uang tunggal: Rupiah Indonesia (IDR)
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik produk (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Keputusan mata uang, zona waktu, dan struktur backend"
+- **Catatan:** sistem memakai satu mata uang tanpa konversi atau nilai tukar tersimpan. Format nominal dibentuk hanya oleh `internal/money` (`money.Format` → `Rp 1.500.000`; pemisah ribuan titik, desimal koma). Simbol atau kode mata uang lain tidak boleh muncul di API maupun dokumen.
+- **Bukti:** `backend/internal/money/`, `backend/internal/httpserver/payroll_handlers.go`
+
+### DEC-022 — Zona waktu operasional Asia/Jakarta, penyimpanan UTC
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik platform/DB (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Keputusan mata uang, zona waktu, dan struktur backend"
+- **Catatan:** tampilan dan aturan kalender memakai Asia/Jakarta (WIB) lewat `internal/timeutil`; timestamp disimpan UTC pada kolom `timestamp without time zone` dengan DSN yang dipaksa `timezone=UTC`; kolom `date` ditulis sebagai tengah malam UTC agar tanggal yang dibaca kembali tetap sama.
+- **Bukti:** `backend/internal/timeutil/`, `backend/internal/database/postgres.go`, `backend/tests/database/postgres_test.go`
+
+### DEC-023 — Struktur backend empat lapis per area bisnis
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik arsitektur (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Keputusan mata uang, zona waktu, dan struktur backend"
+- **Catatan:** tiap area bisnis dibedakan menjadi `domain` (aturan tanpa I/O), `app` (use case dengan pemeriksaan permission dan cakupan), `repository` (port persistensi + adapter GORM, satu-satunya yang menulis SQL), dan `httpserver` (transport, DTO, middleware). Kontrak daftar bersama ada di `internal/listing`. Handler tidak memuat aturan bisnis.
+- **Bukti:** `backend/internal/directory/{domain,app,repository}`, `backend/internal/payroll/{domain,app,repository}`, `backend/internal/listing/`
+
+### DEC-025 — Modul penggajian dan konfirmasi pembayaran
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik produk dan pemilik keuangan (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Keputusan modul penggajian dan konfirmasi pembayaran"
+- **Catatan:** permission `payroll:read:any` (admin), `payroll:read:homebase` (operator, slip pegawai unitnya beserta turunannya), `payroll:read:self` (pegawai), dan `payroll:manage` (hanya admin). Slip hanya dapat dibayar satu kali dan hanya dari status `TERBIT`; baris `pembayaran`, status slip `TERBAYAR`, antrean notifikasi gaji, dan jejak audit `payroll.payment.confirmed` ditulis dalam satu transaksi. Email gaji kini dapat terkirim karena sumber konfirmasi pembayaran sudah ada, dan tetap tidak memuat nominal.
+- **Bukti:** `backend/internal/payroll/{domain,app,repository}`, `backend/internal/httpserver/payroll_handlers.go`, `backend/migrations/000008_payment_confirmation.sql`
+
+### DEC-026 — Konfirmasi pembayaran manual pada MVP, adapter bank disiapkan
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik produk dan pemilik keuangan (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Keputusan modul penggajian dan konfirmasi pembayaran"
+- **Catatan:** integrasi langsung ke bank sulit dilakukan sekarang, maka pencatatan pembayaran pada MVP dilakukan manual oleh admin: referensi transaksi/rekapan bank, waktu, dan pengesah diisi manusia ke tabel `pembayaran`. Integrasi otomatis ke bank (REST dan websocket) disiapkan sebagai adapter lanjutan yang menulis bukti pembayaran lewat jalur transaksional yang sama dengan idempotensi; implementasinya menunggu kontrak API vendor bank dan tidak dibuat sebelum benar-benar dipakai.
+- **Bukti:** `backend/internal/payroll/domain/payment.go`, `backend/internal/payroll/repository/gorm.go`, `backend/internal/httpserver/payroll_handlers.go`
+
+### DEC-027 — Jadwal gajian per unit dan pemberitahuan slip H+1
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik produk (belum ditetapkan)
+- **Status:** Disetujui
+- **Catatan pembaruan (2026-11-14, `DEC-078`):** pemberitahuan ketersediaan slip berubah dari H+1 menjadi **H−1** sebelum tanggal gajian; isi pesan diperluas menjadi QR + tautan verifikasi publik slip; periode slip yang dikirim adalah **periode bulan sebelumnya**; slip tanpa token dilewati. Ini membatalkan isi DEC-027 untuk timing dan konten pesan.
+- **Rincian:** `docs/PRD.md` §11 "Keputusan jadwal gajian, pemberitahuan slip H+1, dan kalender hari libur"
+- **Catatan:** tanggal gajian bersifat tetap (1–28) per unit organisasi, diinput lewat `PUT /api/v1/payroll/schedules/{unitId}` dengan permission `payroll:schedule` (admin, seluruh unit) atau `payroll:schedule:homebase` (operator, unitnya beserta turunannya); nilai disimpan di tabel `jadwalGaji` (satu baris per unit). Pemberitahuan ketersediaan slip dikirim H+1 pada **tanggal kalender tetap** — tidak digeser karena akhir pekan atau hari libur nasional, dan tidak maju selama periode berjalan belum lewat jadwalnya. Jenis pesan outbox `email.slip-tersedia` dengan kunci idempotensi `slip-available:{slipId}`; pekerjaan dijalankan lewat job `payroll.notify` (`5 19 * * *` = 02:05 WIB) melalui RabbitMQ (self-hosted) atau QStash (cloud alternatif). Isi pesan hanya nama, periode, dan tautan — **tidak memuat nominal gaji dan tidak menyatakan gaji sudah dibayar**; itu pemberitahuan ketersediaan slip, bukan notifikasi gaji terbayar, yang tetap mensyaratkan konfirmasi pembayaran tersimpan.
+- **Bukti:** `backend/internal/payroll/domain/schedule.go`, `backend/internal/payroll/app/schedule.go`, `backend/internal/payroll/repository/schedule.go`, `backend/internal/notify/slip.go`, `backend/internal/httpserver/payroll_schedule_handlers.go`, `backend/migrations/000009_payroll_schedule.sql`
+
+### DEC-028 — Integrasi kalender hari libur nasional (api.co.id)
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Keputusan jadwal gajian, pemberitahuan slip H+1, dan kalender hari libur"
+- **Catatan:** kalender hari libur nasional diisi dari penyedia **api.co.id** (`GET /holidays/indonesia`, header `x-api-co-id`; sebelumnya dievaluasi date.nager.at dan tidak dipakai). Sinkronisasi hanya berjalan bila `HOLIDAY_API_URL` dan `HOLIDAY_API_KEY` terisi; dipicu admin lewat `POST /api/v1/holidays/{year}/refresh` (permission `holiday:manage`) dan disimpan dengan mengganti seluruh entri tahun tersebut dalam satu transaksi bersama jejak audit `holiday.refreshed`. Entri disimpan untuk `type` `Public Holiday`, `National Holiday`, dan `Joint Holiday`; `Observance` dilewati; tanggal di luar tahun diminta dan tanggal ganda dibuang; entri tanpa nama atau tanggal tidak sah menolak seluruh penyegaran. Pembacaan (`GET /api/v1/holidays?year=`, permission `holiday:read`) selalu dari tabel `HariLibur` lokal — tidak pernah bergantung pada penyedia — dan di-cache di Redis (`holiday:{year}`, TTL 24 jam). Kalender tidak mengubah tanggal gajian maupun pemberitahuan H+1.
+- **Catatan pembaruan (2026-11-14, `DEC-078`):** kunci api.co.id sekarang tersedia di `.env`; `POST /holidays/2026/refresh` terverifikasi dinamis — 25 libur nyata 2026 tersimpan di database disposable, dan derivasi LD memakai libur tersebut (Imlek, Nyepi, Idul Fitri). Pemberitahuan slip kini H−1 (lihat `DEC-078`), menggantikan H+1.
+- **Bukti:** `backend/internal/holiday/`, `backend/internal/httpserver/holiday_handlers.go`, `backend/cmd/server/main.go`, `backend/migrations/000010_holiday.sql`, `.env.example`, `.env`
+
+---
+
+## Keputusan integrasi
+
+### DEC-014 — Provider email SMTP
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik komunikasi/IT (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Keputusan integrasi layanan pendukung"
+- **Catatan:** Mekanisme SMTP sudah diimplementasikan (`backend/internal/notify`) dan konsisten dengan konfigurasi pada `.env.example` dan `README.md`. Schema menyebut Resend sebagai kandidat lain; Resend juga menyediakan API SMTP sehingga migrasi ke sana tidak memerlukan perubahan kode. **Alamat pengirim ditetapkan: `no-reply@simpeg.unisubang.ac.id`**, dengan origin aplikasi `https://simpeg.unisubang.ac.id`. Backend memvalidasi bentuk alamat pengirim saat start.
+- **Bukti:** `backend/internal/notify/smtp.go`, `backend/tests/notify/notify_test.go`, `backend/internal/notify/deliverer.go`, `backend/tests/config/config_test.go`, `.env.example`
+
+### DEC-015 — Use case Redis: cache daftar kategori pegawai
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Keputusan integrasi layanan pendukung"
+- **Catatan:** use case yang spesifik adalah cache daftar kategori pegawai: data referensi dengan kardinalitas rendah, dibaca setiap kali formulir pegawai dibuka, dan tidak termasuk data sensitif. TTL 5 menit, satu namespace `simpeg`, dan `ReadThrough` memuat ulang dari PostgreSQL saat cache miss atau Redis gagal. **Queue tidak wajib untuk alur kritis** karena durability dijamin outbox di PostgreSQL, bukan oleh Redis. Kunci cache memuat seluruh parameter daftar (page, size, sort, order, pencarian) supaya tiap kombinasi filter punya entri sendiri. Cache sudah disambungkan ke `GET /api/v1/categories`; tanpa Redis konfigurasi pembacaan tetap langsung ke PostgreSQL.
+- **Bukti:** `backend/internal/directory/app/catalog.go`, `backend/tests/directory/app/catalog_test.go`, `backend/internal/cache/`
+
+### DEC-016 — S3-compatible storage di luar scope
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik produk (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Keputusan integrasi layanan pendukung"
+- **Catatan:** mekanismenya sengaja tidak dibuat agar tidak ada kode tanpa pemakaian.
+
+### DEC-024 — Callback QStash dan pembersihan audit terjadwal
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Keputusan integrasi layanan pendukung" dan "Kebijakan jejak audit"
+- **Catatan:** QStash dipakai sebagai penjadwal, bukan sumber pekerjaan. Callback `POST /api/v1/internal/qstash/audit/cleanup` tidak memakai sesi bearer; pengesahnya signature HS256 atas raw request body dengan subjek yang cocok dengan URL tujuan. Pekerjaannya memangkas jejak audit lebih tua dari `AUDIT_RETENTION_DAYS` hari (default 90, `0` = tanpa pemangkasan) lewat `audit.Cleaner`, bersifat idempoten, dan menulis jejak `audit.cleaned`. Jadwal harian `0 19 * * *` (19:00 UTC = 02:00 WIB) didaftarkan lewat `internal/jobs.EnsureSchedule` yang idempoten, dengan 3 percobaan ulang.
+- **Bukti:** `backend/internal/httpserver/qstash_handlers.go`, `backend/internal/qstash/signature.go`, `backend/internal/qstash/schedule.go`, `backend/internal/jobs/jobs.go`, `backend/internal/audit/cleaner.go`, `backend/cmd/server/main.go`
+
+### DEC-030 — Autentikasi perangkat untuk ingestion presensi
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik platform/DB (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Keputusan fondasi presensi mesin". Endpoint `POST /api/v1/attendance/events` mendukung dua jalur autentikasi: (1) sesi pengguna dengan permission `attendance:event:ingest` (hanya `admin` melalui sesi API), dan (2) autentikasi perangkat melalui header `X-Device-ID` + `Authorization: Bearer <device-token>` yang diverifikasi terhadap tabel `machineCredential` (hash, bukan plaintext). Autentikasi perangkat terpisah dari sesi pengguna dan tidak dapat digunakan untuk mengakses data non-presensi.
+- **Catatan:** Tabel `machineCredential` ditambahkan via migrasi `000011_machine_credential.sql`. Role dan grant untuk autentikasi perangkat masih menunggu kontrak API/SDK vendor (Fingerspot Revo W-230N) — dokumentasi vendor belum tersedia, jadi adapter vendor dan format kredensial produksi belum dibuat.
+- **Bukti:** `backend/internal/attendance/device_auth.go`, `backend/tests/attendance/device_auth_test.go`, `backend/internal/httpserver/attendance_handlers.go`, `backend/tests/httpserver/attendance_handlers_test.go`, `backend/migrations/000011_machine_credential.sql`, `backend/internal/models/models_operations.go`
+
+### DEC-031 — Kebijakan idempotency key event presensi
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik platform/DB (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Keputusan fondasi presensi mesin". Idempotency key harus unik per pasangan `(machineId, tap event)`. Key dipanggil oleh adapter vendor dan dikirim dalam body request. Jika key sama digunakan dengan fakta tap yang berbeda (machinePin atau occurredAt berubah), server menolak dengan `409 Conflict`. Jika key sama dengan fakta tap yang sama, server mengembalikan event yang sama (`duplicate: true`) tanpa duplikasi.
+- **Catatan:** Sumber idempotency key yang dijamin vendor belum ditetapkan; menunggu kontrak API/SDK vendor. Format yang disarankan: UUID v4.
+- **Bukti:** `backend/internal/attendance/store.go`, `backend/tests/attendance/store_test.go`, `backend/internal/httpserver/attendance_handlers.go`, `backend/migrations/000002_attendance_events.sql` (unique index `(machineId, idempotencyKey)`)
+
+### DEC-032 — Retensi event presensi
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik platform/DB (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** Event presensi (`AttendanceEvent`) disimpan sebagai fakta tap mentah tanpa menentukan status harian. Masa retensi disetapkan sama dengan jejak audit: `AUDIT_RETENTION_DAYS` (default 90 hari, `0` = tanpa pemangkasan otomatis). Pembersihan event lewat mekanisme yang sama dengan `audit.Cleaner` (QStash callback) dapat ditambahkan saat kebutuhan operasional dikonfirmasi.
+- **Catatan:** Aturan retensi dan mekanisme pembersihan event masih menunggu konfirmasi pemilik. Event tidak mengubah tabel `Presensi` (satu status per orang/hari).
+- **Bukti:** `backend/internal/attendance/`, `backend/internal/audit/cleaner.go`, `.env.example` (`AUDIT_RETENTION_DAYS`)
+
+---
+
+## Keputusan yang masih menunggu
+
+### DEC-017 — Pemilik produk, kelompok pilot, dan pembagian peran approval
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Rektor Universitas Subang
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Keputusan environment deployment"
+- **Catatan:**
+  - **Pemilik produk:** Rektor Universitas Subang.
+  - **Kelompok pengguna pilot:** admin sistem dan operator kepegawaian dari satu fakultas dan satu biro.
+  - **Pembagian peran approval:** matriks peran disetujui bersama Rektor dan Kabiro.
+  - Nama perorangan untuk admin sistem, operator, dan anggota Kabiro belum ditetapkan; yang dibutuhkan agar pilot dapat berjalan adalah daftar akun dengan peran (`admin`, `operator`) beserta unit penugasannya.
+- **Bukti:** matriks peran di `docs/PRD.md` §11, grant di `backend/cmd/server/main.go`
+
+### DEC-018 — Arsip dan ekspor jejak audit
+
+- **Tanggal:** 12 November 2026
+- **Pemilik:** Pemilik kebijakan (Rektor Universitas Subang, belum ditetapkan perorangan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §11 "Kebijakan jejak audit"
+- **Catatan:** Ekspor CSV disediakan melalui `GET /api/v1/audit-logs/export` dengan permission `audit:read` (admin, seluruh jejak) atau `audit:read:homebase` (operator, jejak unit penugasannya beserta turunannya). Filter sama dengan endpoint daftar (hanya `aksi` dan `search`); sort dan pagination diabaikan, urutan kronologis naik (`createdAt` ASC, `id` ASC), tanpa batas jumlah baris (streaming per batch via keyset pagination). Berkas dikirim dengan `text/csv; charset=utf-8` dan BOM UTF-8; setiap ekspor yang berhasil dicatat sebagai aksi `audit.exported` dengan jumlah baris. Kewajiban arsip ke media lain dan prosedur pemangkasan di luar retensi otomatis tetap belum ditetapkan. Masa retensi otomatis (90 hari, `AUDIT_RETENTION_DAYS`) dan pekerjaan pembersihan terjadwalnya sudah disetujui terpisah — lihat `DEC-024`.
+- **Bukti:** `backend/tests/audit/audit_test.go` (penjaga append-only), `backend/internal/httpserver/audit_handlers.go` (`exportAuditLogs`), `docs/openapi.yaml`
+
+### DEC-019 — Paparan Supabase Data API dan kebijakan RLS
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik platform/DB (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §8 (Backend dan Frontend): aplikasi mengakses database hanya melalui GORM di backend (koneksi server-side dengan TLS, role database berhak minimum); frontend berkomunikasi dengan backend lewat kontrak HTTP API, **bukan** langsung ke database/Supabase Data API.
+- **Catatan:** Keputusan final: **GORM-only, Supabase Data API tidak diekspos** untuk tabel aplikasi, sehingga tidak diperlukan policy RLS per tabel pada waktu ini. RLS default-deny tetap aktif pada seluruh 45 tabel aplikasi sebagai pertahanan dalam-dalam (mengakapi kebocoran bila kebijakan berubah di masa depan). Jika Data API diekspos di masa depan, policy per tabel wajib dibuat dan diuji satu per tabel sebelum tabel diakses melalui Data API.
+- **Bukti:** `docs/PRD.md` §8, `backend/migrations/000004_row_level_security.sql`, `backend/tests/database/migrations_test.go` (`TestRowLevelSecurityMigrationCoversEveryTable`)`
+
+### DEC-020 — Target ketersediaan, RPO, RTO, dan SLO
+
+- **Tanggal:** —
+- **Pemilik:** Pemilik platform/DB dan pemilik operasi (belum ditetapkan)
+- **Status:** Menunggu
+- **Rincian:** `docs/PRD.md` §11 "Draf migrasi, backup, audit, dan ketersediaan"
+- **Catatan:** default `RPO_HOURS` (24 jam), `RTO_HOURS` (4 jam), dan `SLO_TARGET` (`99.9`) sudah dapat dikonfigurasi lewat environment dan dibaca `config.Load()`, tetapi angka final tetap menunggu persetujuan pemilik platform/DB dan pemilik operasi sesuai tier layanan dan anggaran. Nilai awal 24 jam / 4 jam telah diratifikasi pengguna pada 13 November 2026 (`DEC-050`) — itu ratifikasi nilai awal, bukan penetapan target produksi; final tetap menunggu.
+- **Bukti:** `backend/internal/config/`, `backend/tests/config/config_test.go`
+
+### DEC-033 — Workflow deployment migrasi Goose
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik platform/DB (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §8 (Backend) dan `docs/RUNBOOK.md` §7 (Pemulihan setelah penerapan migrasi). Workflow GitHub Actions `.github/workflows/deploy-migrations.yml` dibuat untuk menjalankan migrasi Goose secara terkendali. Workflow dipicu secara manual (`workflow_dispatch`) dengan pilihan environment `staging` atau `production`, bukan berjalan otomatis pada setiap push. Setiap jalankan memverifikasi format, vet, tes, paritas skema, nomor migrasi urut, dan header migrasi sebelum menjalankan `goose status` lalu `goose up` terhadap database target. `DATABASE_URL` disimpan sebagai secret GitHub, tidak ada di repo.
+- **Catatan:** Workflow siap digunakan, tetapi migrasi masih belum pernah diterapkan pada database nyata. Sebelum menjalankan di production, operator wajib mencoba di staging dengan data sintetis dan memastikan backup/restore sudah diuji (lihat `docs/RUNBOOK.md` §7).
+- **Bukti:** `.github/workflows/deploy-migrations.yml`, `backend/.goose.yaml`, `backend/migrations/`, `backend/tests/database/migrations_test.go`, `docs/RUNBOOK.md` §7
+
+### DEC-034 — Kebijakan akses Google OAuth, allowlist domain, undangan, dan MFA
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik produk (belum ditetapkan nama perorangan)
+- **Status:** Disetujui
+- **Rincian:** `docs/PRD.md` §4 FR-01 Akses pengguna dan §11 Keputusan integrasi yang masih terbuka. Autentikasi SIMPEG menggunakan Google OAuth via runtime Better Auth. Kebijakan akses ditetapkan sebagai berikut:
+  1. Eligibility ditentukan oleh kombinasi **domain email yang diizinkan** (`ALLOWED_EMAIL_DOMAINS`) dan **undangan**. Kedua mekanisme aktif secara bersamaan (keduanya).
+  2. Masa berlaku sesi (opaque session backend) ditetapkan final **23 jam** (`SESSION_LIFETIME=23h`), menggantikan groundwork 24 jam.
+  3. MFA bersifat opsional dan tidak diwajibkan untuk semua peran. Aktivasi MFA hanya untuk pengguna yang menginginkan keamanan ekstra; tidak ada kewajiban peran berisiko.
+- **Catatan:** Implementasi backend menyediakan konfigurasi `GoogleClientID`, `GoogleClientSecret`, `AllowedEmailDomains`, dan `InviteOnly` via environment. Validasi konfigurasi menolak kombinasi allowlist/undangan tanpa Google OAuth terkonfigurasi. Runtime Better Auth pada frontend/layer autentikasi yang akan menegakkan allowlist dan undangan. Backend tidak mengimplementasikan alur OAuth secara langsung; backend hanya memverifikasi JWT/sesi Better Auth.
+- **Bukti:** `backend/internal/config/config.go` (field Google/allowlist/invite), `.env.example` (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `ALLOWED_EMAIL_DOMAINS`, `INVITE_ONLY`, `SESSION_LIFETIME=23h`), `docs/PRD.md` §4 FR-01, `docs/DECISIONS.md` DEC-029
+
+### DEC-035 — Versi Go minimum dan versi alat CI yang dikunci
+
+- **Tanggal:** 2026-11-11
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `backend/go.mod` mengunci versi Go minimum modul (`go 1.26.11`), dan `.github/workflows/backend.yml` menjalankan `staticcheck@v0.8.2` serta `govulncheck@latest`. CI memakai `go-version-file: backend/go.mod`, sehingga versi Go yang diuji CI sama persis dengan versi minimum yang dinyatakan modul.
+- **Catatan:** Versi Go dikunci pada rilis patch yang sudah menambal advisori `GO-2026-6859` (CVE-2026-97054,FP race pada `net/http.MaxBytesReader` yang dapat membuat HTTP/1 server panic). Rilis `go 1.26.0` yang sebelumnya dipakai masih rentan, dan `govulncheck` di CI akan gagal pada versi itu. `staticcheck@2025.1.1` yang sebelumnya dipin tidak lagi membaca export data Go 1.26 ("export data version 5 is greater than maximum supported version 2"), sehingga CI tidak dapat menyelesaikan pemeriksaan statis; `v0.8.2` membaca export data Go 1.26 dengan benar dan melaporkan nol temuan pada kode saat ini. `golang.org/x/crypto` dinaikkan ke `v0.58.1-0.20261009181718-2f1f834330b2` untuk menutup advisori `GO-2026-5932` pada paket `openpgp` yang tidak lagi dipelihara. Kenaikan versi Go tidak mengubah kode sumber dan tidak mengubah kontrak API.
+- **Bukti:** `backend/go.mod`, `backend/go.sum`, `.github/workflows/backend.yml`, `docs/PERFORMANCE-BASELINE.md` §1 (angka benchmark diukur memakai Go 1.26.11), `docs/IMPLEMENTATION-PLAN.md` §8
+
+### DEC-036 — Perkakas pengukuran performa dan database pengukuran terpisah
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** Perkakas pengukuran performa dibuat sebagai `backend/cmd/perfbench` dengan subcommand `seed`, `schema`, `explain`, `latency`, `e2e`, dan `deps`. Perkakas measuring menjalankan binari `cmd/server` asli sebagai proses anak, sehingga pengukuran memakai rantai handler produksi tanpa duplikasi. SQL yang dianalisis direkam pada level connection pool GORM, sehingga `EXPLAIN` dijalankan atas statement yang benar-benar diterima PostgreSQL.
+- **Catatan:** Database pengukuran dibuat sebagai database terpisah (`simpeg_perf`) pada proyek Supabase yang sama. Database `postgres` yang dipakai production tidak dipakai untuk seeding, dan datanya tetap nol baris. Pemeriksaan keselarasan skema (`perfbench schema`) membandingkan kolom yang dinyatakan model GORM dengan kolom yang benar-benar ada pada database target, karena keberadaan migrasi tidak membuktikan migrasi sudah diterapkan maupun model sudah selaras dengan tabel. Perkakas hanya membaca kredensial dari environment; tidak ada nilai rahasia yang ditulis di dalam repo.
+- **Bukti:** `backend/cmd/perfbench/`, `backend/migrations/000016_payment_updated_at.sql`, `docs/PERFORMANCE-BASELINE.md` §2–§4, `docs/RUNBOOK.md` §8
+
+### DEC-037 — Perbaikan jalur konfirmasi pembayaran gaji pada skema nyata
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** Model `models.Pembayaran` memakai `BaseModel`, sehingga GORM menulis kolom `updatedAt` pada setiap `INSERT`. Tabel `pembayaran` yang dibuat migrasi `000008_payment_confirmation.sql` hanya memiliki `createdAt`. Akibatnya setiap konfirmasi pembayaran gaji pada `POST /api/v1/payroll/slips/{payrollId}/payment` gagal dengan `SQLSTATE 42703`.
+- **Catatan:** Perbaikan dibuat sebagai migrasi `000016_payment_updated_at.sql`, bukan dengan mengubah migrasi lama, agar jejak versi tetap utuh. Migrasi menambahkan kolom yang sudah dinyatakan model sehingga tidak ada perubahan perilaku aplikasi. Keselarasan model dan skema diverifikasi ulang oleh `perfbench schema` terhadap seluruh 67 model. Temuan ini sekaligus membatalkananggapan bahwa migrasi belum pernah diterapkan pada database nyata: `goose_db_version` pada database `postgres` sudah memuat 16 versi sejak 2026-11-11.
+- **Bukti:** `backend/migrations/000016_payment_updated_at.sql`, `backend/internal/models/models_payroll.go`, `backend/internal/payroll/repository/gorm.go`, `docs/RUNBOOK.md` §8
+
+### DEC-038 — Perbaikan endpoint QStash dan jadwal regional
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `qstash.Publisher` menempelkan URL tujuan langsung ke `BaseURL`. Nilai `QSTASH_URL` pada environment adalah root API regional (`https://qstash-us-east-1.upstash.io`), bukan endpoint lengkap, sehingga URL tujuan menjadi `https://qstash-us-east-1.upstash.io/<tujuan>` dan QStash menjawab `404`. Endpoint jadwal juga jatuh ke region global karena `QSTASH_SCHEDULES_URL` kosong.
+- **Catatan:** Publisher kini menambah jalur `/v2/publish` bila `BaseURL` belum memuatnya, dan endpoint jadwal diturunkan dari `BaseURL` yang sama sehingga token, publikasi, dan jadwal berada pada satu region. Nilai `QSTASH_SCHEDULES_URL` yang diisi eksplisit tetap dipakai apa adanya. Pemeriksaan nyata menunjukkan format URL tujuan harus berupa URL mentah pada jalur, bukan ter-encode: QStash menolak bentuk ter-encode dengan "endpoint has invalid scheme".
+- **Bukti:** `backend/internal/qstash/publisher.go`, `backend/internal/qstash/schedule.go`, `backend/tests/qstash/publisher_endpoint_test.go`, `docs/PERFORMANCE-BASELINE.md` §5
+
+### DEC-039 — Dukungan STARTTLS pada transport SMTP
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** `notify.smtpTransport` hanya knewa dua mode: TLS langsung (`UseTLS`) dan koneksi polos tanpa peningkatan. Server submission pada porta 587 menerima koneksi polos lalu menawarkan `STARTTLS`. Dengan `SMTP_HOST=smtp.gmail.com` dan `SMTP_PORT=587`, mode TLS langsung gagal dengan `tls: first record does not look like a TLS handshake`, sehingga tidak ada email yang pernah terkirim.
+- **Catatan:** Transport kini menaikkan koneksi ke TLS otomatis bila server menawarkan `STARTTLS`, dan peningkatan dilakukan sebelum autentikasi karena kredensial tidak boleh dikirim lewat koneksi polos. Penentuan mode dipindah ke `config.SMTPConfig`: `SMTP_SECURE=true` berarti TLS langsung, `SMTP_SECURE=false` berarti koneksi polos yang dinaikkan lewat STARTTLS, dan bila `SMTP_SECURE` tidak disetel, mode ditebak dari porta (465 memakai TLS langsung, porta lain memakai STARTTLS). Nilai bawaan lama `SMTP_SECURE=true` tidak lagi berlaku karena tidak sesuai dengan porta submission.
+- **Bukti:** `backend/internal/notify/smtp.go`, `backend/internal/config/smtp.go`, `backend/tests/notify/smtp_starttls_test.go`, `docs/PERFORMANCE-BASELINE.md` §5
+
+### DEC-040 — Penyimpanan metrik SLO di PostgreSQL dan alert lewat antrean keluar
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik platform dan pemilik operasi (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** Alert SLO dijalankan sebagai pekerjaan terjadwal QStash (`slo.evaluate`, cron `*/5 * * * *`) yang memanggil `POST /api/v1/internal/qstash/slo/evaluate`. Callback memakai autentikasi signature QStash, sama seperti callback lain. Metrik dikumpulkan pengoleki di dalam proses backend dan disimpan ke tabel `sloMetric` di PostgreSQL.
+- **Catatan:** Metrik disimpan di PostgreSQL, bukan Redis, karena Redis pada repo ini diperuntukkan hanya untuk cache data referensi dan ditolak untuk data historis maupun status. Alert tidak dikirim langsung melainkan diantrekan ke antrean keluar persisten dengan kunci idempotensi yang memuat awal jendela, sehingga percobaan ulang callback QStash tidak menghasilkan email ganda. Persentil dihitung dari histogram bucket; keputusan pelanggaran memakai batas atas bucket sehingga tidak pernah lolos karena perkiraan yang terlalu kecil, dan ambang 800 ms sengaja ada sebagai batas bucket karena angka itu target SLO bawaan.
+- **Bukti:** `backend/internal/slo/`, `backend/internal/httpserver/slo_handlers.go`, `backend/migrations/000017_slo_metric.sql`, `backend/internal/jobs/jobs.go`, `docs/RUNBOOK.md` §8
+
+### DEC-041 — Bentuk alamat email pengirim dan pemisahan pengirim amplop
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui
+- **Rincian:** Bentuk baku RFC 5322 `"Nama Tampilan" <alamat@domain>` ditolak oleh validasi `SMTP_FROM` yang hanya menerima alamat polos. Konsekuensinya backend menolak start dengan `config: SMTP_FROM must be a valid email address`, sehingga layanan tidak dapat dijalankan sama sekali dengan konfigurasi email yang lazim.
+- **Catatan:** Pemisahan alamat kini berada di `notify.SplitAddress`: bentuk polos dikembalikan apa adanya, bentuk nama tampilan menghasilkan alamat polos di dalam kurung sudut. Header `From` memakai nilai yang dikonfigurasi apa adanya, sedangkan perintah SMTP `MAIL FROM` memakai alamat polos karena perintah itu tidak menerima bentuk nama tampilan. Validasi dipindah ke `notify.ValidateAddress` dan menerima kedua bentuk. Bentuk polos tetap menjadi default pada `.env.example`.
+- **Bukti:** `backend/internal/notify/address.go`, `backend/internal/notify/smtp.go`, `backend/internal/config/config.go`, `backend/tests/notify/address_test.go`, `docs/PERFORMANCE-BASELINE.md` §8
+
+### DEC-042 — RabbitMQ menggantikan QStash sebagai pengangkut pekerjaan terjadwal pada deployment self-hosted
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui (arah pengguna), rincian ditetapkan pada pengerjaan ini
+- **Rincian:** Deployment docker/podman memakai RabbitMQ self-hosted untuk pekerjaan terjadwal. Penjadwal `cmd/jobsched` (container terpisah) menerbitkan pesan `{"kind": ...}` ke exchange `simpeg.jobs` sesuai cron UTC yang sama dengan jadwal QStash; server mengonsumsi antrean `simpeg.jobs` dan menjalankan logika yang sama dengan callback QStash, lalu mengakui pesan hanya setelah sukses. Pesan gagal pindah ke `simpeg.jobs.dead` untuk diperiksa operator; tick cron berikutnya memicu eksekusi baru.
+- **Catatan:** Bentuk payload dan kind identik dengan callback QStash, sehingga kedua transport setara dan pekerjaan tetap idempoten. Mode QStash tetap tersedia sebagai alternatif cloud (bila `RABBITMQ_URL` kosong dan kredensial QStash terisi); bila `RABBITMQ_URL` diisi, pendaftaran jadwal QStash dilewati. Pemeriksaan SLO hanya diterbitkan bila pengoleki metrik aktif (`SLO_EVALUATE_ENABLED` penjadwal = `SLO_ENABLED` backend) agar pesan tidak menumpuk di dead-letter pada deployment tanpa SLO.
+- **Bukti:** `backend/internal/mq/`, `backend/cmd/jobsched/`, `backend/cmd/server/workers.go`, `docker-compose.yml`, `rabbitmq/docker-compose.yml`, `rabbitmq/README.md`, dan verifikasi end-to-end pada Docker lokal (publish `audit.cleanup` → `mq_job_done`; publish kind tanpa handler → antrean `simpeg.jobs.dead` berisi 1 pesan). Broker dipisah menjadi stack tersendiri pada `rabbitmq/docker-compose.yml` atas arah pengguna agar pengembangan broker tidak terikat siklus hidup stack backend; stack backend bergabung ke jaringan `simpeg-broker` sebagai external network.
+
+### DEC-043 — Kenaikan versi Go modul ke 1.27.3
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Direktif `go` pada `backend/go.mod` naik dari `1.26.11` ke `1.27.3`, mengikuti toolchain yang tersedia pada mesin pengembang. Versi 1.27.3 lebih baru daripada 1.26.11 sehingga tetap memuat tambalan advisori `GO-2026-6859` yang menjadi alasan penguncian sebelumnya (DEC-039). CI memakai `go-version-file: backend/go.mod` sehingga otomatis menguji 1.27.3; `staticcheck@v0.8.2` di CI terbukti tetap dapat membaca export data Go 1.27.3. Image builder `backend/Dockerfile` memakai `golang:1.27.3-alpine` dengan `GOTOOLCHAIN=local`.
+- **Bukti:** `backend/go.mod`, `backend/Dockerfile`, dan verifikasi lokal pada Go 1.27.3: `gofmt -l` bersih, `go vet`, `go test`, `go build`, `go mod verify`, dan `go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...` tanpa temuan.
+
+**Koreksi (12 November 2026):** klaim pada entri ini bahwa "1.27.3 tetap memuat tambalan advisori `GO-2026-6859`" sudah tidak benar. Advisori `GO-2026-6859` (`net/http` race `MaxBytesReader`, CVE-2026-97054) diperbarui pada 11 November 2026 dengan tambalan pada `go1.27.4`; `go1.27.3` rentan karena kode backend memakai `http.MaxBytesReader`. Modul dinaikkan ke `go1.27.4` dan image dibangun ulang tanpa `gosu` — lihat `DEC-045`.
+
+### DEC-044 — Aturan eviden pengajuan cuti
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik produk (belum ditetapkan)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Cuti melahirkan (`BERSALIN`), cuti sakit (`SAKIT` dan `SAKIT_BERKEPANJANGAN`), dan cuti harian (`IZIN_PENTING`) wajib menyertakan eviden saat pengajuan dibuat; pengajuan tanpa eviden ditolak `422`, dan eviden dicek ulang saat persetujuan. Bentuk eviden: `SURAT_DOKTER` (berkas, nomor, tanggal surat dokter wajib) hanya untuk cuti sakit dan melahirkan; `FOTO` (berkas dan waktu tangkap wajib) atau `LAINNYA` (waktu dan keterangan wajib) untuk cuti harian. Metadata disimpan pada kolom baru tabel `Cuti`: `jenisEviden` (enum `SURAT_DOKTER`/`FOTO`/`LAINNYA`), `fileEvidenUrl`, `waktuEviden`, `catatanEviden`. Kolom lama `fileSuratUrl` di-`RENAME` menjadi `fileEvidenUrl` (bukan drop) lewat migrasi `000019_cuti_eviden.sql`.
+- **Bukti:** `backend/migrations/000019_cuti_eviden.sql`, `backend/internal/directory/domain/leave_eviden.go`, `backend/internal/directory/app/leave.go`, `backend/internal/httpserver/hr_leave_handlers.go`, dan tes di `backend/tests/httpserver/hr_leave_handlers_test.go` serta `backend/tests/directory/domain/leave_eviden_test.go`; kontrak di `docs/openapi.yaml`; kebijakan di `docs/PRD.md` §11.
+
+### DEC-045 — Go dinaikkan ke 1.27.4; image container tidak lagi mengandung gosu
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Direktif `go` pada `backend/go.mod` dan `ARG GO_VERSION` pada `backend/Dockerfile` naik dari `1.27.3` ke `1.27.4`. Alasan: advisori `GO-2026-6859` (race `MaxBytesReader` pada `net/http`, CVE-2026-97054, ditemukan pada `go1.27.3`) diperbaiki pada `go1.27.4`; backend memakai `http.MaxBytesReader` di 3 jalur handler. Hasil: `govulncheck@latest` melaporkan "No vulnerabilities found." Semua CVE standar Go yang dilaporkan sebelumnya (CVE-2025-68121, CVE-2026-39821, CVE-2026-39822; CVE-2026-56857 dan CVE-2026-78663 dengan rentang <1.26.9) tidak memengaruhi `go1.27.4` karena tambalan sudah ada pada cabang 1.27 yang lebih lama atau rentangnya tidak mencakup 1.27.x. Image runtime adalah `gcr.io/distroless/static-debian12:nonroot` yang hanya memuat 3 binary statis (`/bin/server`, `/bin/jobsched`, `/bin/migrate`); `usr/sbin/` kosong dan tidak ada `gosu` — temuan CVE lama pada `/usr/sbin/gosu` berasal dari image Alpine-lawas yang sudah tidak dibangun.
+- **Bukti:** `backend/go.mod`, `backend/Dockerfile`, `go version -m` binary image (`go1.27.4`), `docker export` image (tanpa `/usr/sbin/gosu`), `govulncheck` bersih, `gofmt`/`vet`/`test`/`build` hijau.
+
+### DEC-046 — Workflow migrasi Goose diperkuat (belum dijalankan di GitHub)
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui (arah pengguna), file workflow diperkuat di repo dan urutan perintah diuji manual terhadap DB uji `simpeg_perf`
+- **Rincian:** Workflow `.github/workflows/deploy-migrations.yml` belum pernah ada di repo remote (belum pernah di-commit/push), GitHub environment `staging`/`production` belum dibuat, dan secret `DATABASE_URL` belum ada, sehingga workflow belum pernah dijalankan. Workflow diperkuat: pakai runner migrasi milik repo (`backend/cmd/migrate` dengan goose v3.30.0 ter-pinning lewat `backend/go.mod`, bukan `go install ...@latest`), gagal cepat bila `DATABASE_URL` kosong, `timeout-minutes: 30`, grup concurrency, `migrate status` sebelum dan sesudah `migrate up`. Environment dan secret harus dibuat di GitHub sebelum workflow dapat dijalankan; penerapan harus dicoba di `staging` (DB uji) terlebih dahulu sebelum `production`.
+- **Bukti:** `.github/workflows/deploy-migrations.yml`, `backend/cmd/migrate/main.go`, dan verifikasi urutan perintah manual terhadap `simpeg_perf` (status → up no-op versi 19 → status).
+
+### DEC-047 — Manajemen dokumen pegawai/dosen melalui arsip dokumen + Cloudinary
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik produk (belum ditetapkan)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Modul arsip dokumen pegawai (`ArsipDokumenPegawai`) sudah ada dan diperluas untuk menampung 11 jenis dokumen pegawai/dosen (KTP, NPWP, Kartu Keluarga, Rekening Bank, SK Pengangkatan Yayasan, SK Mendikbud, Pakta Integritas, Lainnya, Foto, Ijazah Terakhir, SK Kepegawaian/Kontrak, BPJS Ketenagakerjaan, BPJS Kesehatan, Sertifikat Serdos). Setiap jenis memiliki aturan format MIME dan ukuran maksimal yang divalidasi pada metadata berkas (backend tidak menangani unggah berkas; berkas diunggah langsung ke Cloudinary oleh klien, backend hanya menyimpan URL + metadata). Migrasi `000020_arsip_dokumen_tambahan.sql` menambah nilai enum baru pada `JenisDokumenArsip` dan kolom `fileSize`, `mimeType`, `cloudinaryPublicId` pada tabel `arsipDokumenPegawai`. Endpoint: `GET/POST/PATCH/DELETE /api/v1/arsip{...}`. Konfigurasi Cloudinary dibaca dari `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` (`.env.example`). `no_rek` dan `nama_rek` sudah tersedia sebagai `BankRekening` dan `BankAtasNama` pada tabel `user`. Timestamps `createdAt`/`updatedAt` disimpan UTC di database dan ditampilkan Asia/Jakarta.
+- **Bukti:** `backend/migrations/000020_arsip_dokumen_tambahan.sql`, `backend/internal/models/models_hr.go`, `backend/internal/models/enums.go`, `backend/internal/directory/domain/arsip.go`, `backend/internal/directory/app/arsip.go`, `backend/internal/directory/repository/gorm_arsip.go`, `backend/internal/httpserver/hr_arsip_handlers.go`, `backend/internal/config/config.go` (`CloudinaryConfig`), `.env.example`, `docs/openapi.yaml`.
+
+### DEC-048 — Fondasi frontend: sesi token di memori, satu lockfile Bun, dan gerbang mutu frontend
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Frontend SIMPEG dibuat di `frontend/` memakai TanStack Start + shadcn/ui dan diintegrasikan ke repo utama (repo Git nested yang kosong di `frontend/` dihapus). Tiga keputusan diambil. (1) Package manager hanya Bun: `frontend/bun.lock` menjadi satu-satunya lockfile; `frontend/package-lock.json` yang tertinggal dari scaffolding awal dihapus karena aturan repo melarang lockfile lain. (2) Sesi dibawa lewat header `Authorization: Bearer <token>` sesuai skema `bearerSession` pada `docs/openapi.yaml`. Token hanya hidup di memori tab (`frontend/src/lib/auth-token.ts`, TanStack Store) dan tidak pernah ditulis ke `localStorage` atau `sessionStorage`, sesuai PRD §11. Request browser ke backend memakai `credentials: 'omit'` karena middleware CORS backend hanya mengirim `Access-Control-Allow-Origin` tanpa `Access-Control-Allow-Credentials`, sehingga request lintas origin dengan cookie akan ditolak browser. Bila deployment nanti memakai cookie lintas origin, backend harus menambah `Access-Control-Allow-Credentials` dan frontend harus beralih ke `credentials: 'include'`. (3) Backend Go tidak menambah endpoint pencatatan masuk; pencatatan masuk tetap milik runtime Better Auth dan dipanggil frontend lewat `VITE_AUTH_BASE_URL`. Halaman masuk menonaktifkan formulir bila runtime belum dikonfigurasi, bukan mengirim permintaan yang pasti gagal. Quality tooling dipasang sejak awal (Vitest + jsdom + Testing Library, ESLint flat config, Prettier, Playwright, Zod) dan dijalankan sebagai gerbang CI pada `.github/workflows/frontend.yml`. Keterbatasan lingkungan dicatat: Vitest 5 menjalankan worker jsdom dengan runtime Node karena runtime Bun 1.4.2 belum dapat menjalankannya (galat `EventTarget` lintas realm). Judul halaman memakai elemen heading semantik karena `CardTitle` shadcn merender `div`.
+- **Bukti:** `frontend/package.json`, `frontend/bun.lock`, `frontend/src/lib/api.ts`, `frontend/src/lib/auth-token.ts`, `frontend/src/lib/session.ts`, `frontend/src/lib/require-auth.tsx`, `frontend/src/features/auth/login-form.tsx`, `frontend/vite.config.ts`, `frontend/eslint.config.js`, `frontend/vitest.config.ts`, `frontend/playwright.config.ts`, `frontend/README.md`, `.github/workflows/frontend.yml`, `backend/internal/httpserver/security.go` (CORS), `docs/openapi.yaml` (`bearerSession`).
+
+### DEC-049 — Runtime autentikasi tertanam di frontend dan pengalaman publik SIMPEG
+
+- **Tanggal:** 2026-11-12
+- **Pemilik:** Pemilik platform (belum ditetapkan)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Runtime Better Auth dipasang tertanam di server TanStack Start pada `/api/auth/*` (`frontend/src/lib/server/better-auth.ts`, catch-all `frontend/src/routes/api/auth/$.tsx`). Konfigurasi: `pg.Pool` langsung sebagai database adapter (Kysely tidak dipakai), `advanced.database.generateId: () => crypto.randomUUID()` karena tabel auth tidak memiliki DEFAULT pada primary key, `disableSignUp: true` (pendaftaran publik dimatikan; akun dibuat administrator lewat `frontend/scripts/provision-accounts.ts` terhadap database uji sekali pakai di Docker), sesi 7 hari dengan rolling refresh 1 hari, `user.fields.name` dipetakan ke kolom `nama`, `sameSite: 'lax'`/`httpOnly`/`secure` + `useSecureCookies` di produksi, `trustedOrigins` dari `TRUSTED_ORIGINS`, dan plugin `tanstackStartCookies()`. Browser menyimpan token sesi hanya di memori tab dan mengirimnya ke Go API sebagai `Authorization: Bearer <token>`; Go memverifikasi lewat resolver GORM `session`. `/api/v1/me` tidak dipanggil bila tidak ada token di memori (hasil pasti 401 dan hanya membisingkan konsol). `POST /api/auth/sign-out` Better Auth menolak permintaan tanpa `Content-Type: application/json` dan body JSON (`415`); pemanggilan kini mengirim `{}` dengan `Content-Type: application/json`. Pengembangan harian memakai proksi Vite same-origin: `VITE_API_BASE_URL=/api/v1` dan `VITE_API_PROXY_TARGET=http://localhost:8080` pada environment proses dev (`server.proxy` di `frontend/vite.config.ts`), sehingga browser tidak membutuhkan CORS lintas origin. Pengalaman publik dibangun di atasnya: halaman depan publik, header (tombol Masuk saat keluar; avatar inisial + dropdown dengan Ruang kerja/Keluar saat masuk), footer tiga kolom, saklar bahasa Indonesia/English (default `id`) berbasis kamus, tema light bawaan dengan toggle dark (`useSyncExternalStore`), sonner untuk umpan balik masuk/keluar, dan halaman About, Privacy Policy, Terms of Service, Terms of Reference, serta komponen error/loading/not-found global. Seluruh gerbang mutu frontend hijau (format, lint nol galat nol peringatan, `tsc --noEmit`, 27 tes Vitest, build produksi, 12 tes Playwright, dan asap browser langsung: pegawai dan admin masuk, mendarat di `/workspace`, lalu keluar tanpa error konsol). `DESIGN.md` disusun sebagai draf yang **menunggu persetujuan pemilik produk**. Verifikasi memakai database disposable `simpeg-verify-pg` (postgres:16-alpine, porta 55432) dengan migrasi Goose 000001–000020; bukan Supabase production.
+- **Catatan:** Skrip `provision-accounts.ts` mencetak kata sandi sekali pakai dan hanya boleh dijalankan terhadap database uji yang memang sekali pakai; kredensial verifikasi tidak pernah masuk repo dan tidak dicatat di sini. Akun produksi tetap dibuat administrator lewat proses yang disepakati, bukan lewat pendaftaran publik. Klaim "seluruh karyawan dapat masuk" belum terbukti di produksi — yang terverifikasi adalah bahwa jalur masuk/keluar dan kontrak sesi bekerja untuk keempat role pada database uji. Audit visual antislop masih menunggu (lihat `IMPLEMENTATION-PLAN.md`).
+- **Bukti:** `frontend/src/lib/server/better-auth.ts`, `frontend/src/routes/api/auth/$.tsx`, `frontend/scripts/provision-accounts.ts`, `frontend/src/lib/session.ts`, `frontend/src/lib/auth-token.ts`, `frontend/vite.config.ts`, `frontend/.env.example`, `frontend/src/routes/index.tsx`, `frontend/src/routes/{about,privacy,terms,terms-of-reference}.tsx`, `frontend/src/components/{Header,Footer,ThemeToggle,AppToaster,GlobalError,GlobalLoading,GlobalNotFound}.tsx`, `frontend/src/i18n/`, `frontend/src/test/`, `frontend/e2e/app.spec.ts`, `DESIGN.md`, `agents/rules/{project,architecture,backend,frontend}.md`.
+
+### DEC-050 — RPO/RTO awal (24 jam / 4 jam), drill restore lokal, dasbor SLO internal, dan log auth_failed
+
+- **Tanggal:** 2026-11-13
+- **Pemilik:** Pemilik produk/operasi (ratifikasi awal oleh pengguna, belum ada penetapan resmi)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Empat keputusan observability/pemulihan. (1) **RPO/RTO awal diratifikasi 24 jam / 4 jam**, sejalan dengan bawaan `RPO_HOURS`/`RTO_HOURS` (dicocokkan pada 13 November 2026); keduanya baru nilai awal, belum target produksi yang diukur. (2) **Drill backup/restore dijalankan pada database disposable lokal** (`simpeg-verify-pg`, postgres:16-alpine, bukan Supabase production): dump 134.982 byte dalam 0,35 detik; restore ke database `simpeg_restore_drill` dalam 1,36 detik tanpa galat; perbandingan skema hasil restore vs sumber identik (Goose 20 versi, 69 tabel, 181 indeks, 167 constraint, 68 tabel dengan RLS aktif, `user`=4, `session`=8, `account`=4, `auditLog`=8); database drill dihapus setelah verifikasi. PITR (point-in-time recovery) dan restore pada database target produksi **belum pernah diuji**. (3) **Dasbor SLO internal** dibangun sebagai halaman admin di frontend (`/admin/slo`) dengan sumber data `sloMetric` lewat endpoint baru read-only `GET /api/v1/admin/slo/metrics` (permission baru `slo:read`, admin saja, deny-by-default); kontrak di `docs/openapi.yaml`. Cakupan: laju galat dan latensi (rata-rata, p95, p99, maks) per rute + agregat, pada jendela 24 jam atau 7 hari. **Tidak** mencakup saturasi, health dependency, keterlambatan antrean, atau kegagalan notifikasi; **aturan alert belum terpasang pada infrastruktur mana pun** — bagian 7 dan A09 tetap terbuka untuk itu. Selama pengoleki metrik (`SLO_ENABLED`) belum menulis data, halaman menampilkan tabel kosong (respons 200 dengan total nol), bukan klaim "tidak ada lalu lintas". (4) **Login gagal pada lapisan runtime Better Auth (frontend) kini dapat diamati**: hook `after` pada konfigurasi Better Auth menulis satu baris JSON `{ event: 'auth_failed', path, reason, ts }` ke stdout; `reason` hanya kode yang dikenali (huruf/angka/`_.-`, maksimum 64 karakter) atau `http_<status>`; tidak pernah berisi body formulir, email, atau kata sandi. Kegagalan sign-in email terverifikasi pada database uji: respons publik tetap seragam (`401 INVALID_EMAIL_OR_PASSWORD`), sedangkan log internal mencatat alasan spesifik (`reason=INVALID_EMAIL` untuk email tidak dikenal, `reason=INVALID_PASSWORD` untuk kata sandi salah). Ini **bukan** alert dan **bukan** pengganti SIEM; eskalasi otomatis belum ada.
+- **Bukti:** `backend/internal/slo/app/dashboard.go`, `backend/internal/httpserver/slo_dashboard_handlers.go` (+`backend/tests/httpserver/slo_dashboard_handlers_test.go`), `backend/cmd/server/main.go`, `backend/cmd/server/policy.go`, `frontend/src/components/SloMetricsPage.tsx`, `frontend/src/lib/server/better-auth.ts` (`logAuthFailure`), `frontend/src/test/auth-failure-logger.test.ts`, `frontend/src/test/slo-metrics-page.test.tsx`, `frontend/e2e/app.spec.ts`, `docs/RUNBOOK.md` §8E/§9, `docs/openapi.yaml`, `docs/PRD.md` §11.
+
+### DEC-051 — Atasan melihat kehadiran timnya (agregat + detail per pegawai); `note` terlihat dalam cakupan
+
+- **Tanggal:** 2026-11-13
+- **Pemilik:** Pemilik produk (arah langsung dari pengguna, 13 November 2026)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Atasan (`atasan`, termasuk rektor/pimpinan yang ditugaskan pada akar pohon `Homebase`) dan operator melihat kehadiran timnya dalam dua kedalaman, dibatasi cakupan yang sama dengan `attendance:read:homebase` (unit penugasan beserta seluruh turunannya); admin memakai `attendance:read:any` (lintas organisasi): (1) agregat per tanggal (`H/I/S/A/C/LD`) lewat `GET /api/v1/attendance/unit-summary` — sudah ada; (2) detail per pegawai untuk satu tanggal lewat `GET /api/v1/attendance/unit-records?date=YYYY-MM-DD` — semua pegawai **aktif** dalam cakupan ditampilkan (LEFT JOIN ke `Presensi`); pegawai tanpa catatan pada tanggal itu tampil dengan `status` null; artinya "belum tercatat", **bukan** alpa — aturan penurunan status harian belum disetujui. Keterangan (`note`/`keterangan`) presensi **boleh terlihat** oleh atasan yang memegang cakupan (mis. alasan sakit/izin untuk keputusan operasional); karena bisa memuat informasi kesehatan/pribadi, `note` tidak pernah terlihat di luar cakupan atasan (lintas unit hanya lewat `attendance:read:any`, admin). Endpoint **tidak** menambah permission baru; memakai `attendance:read:any` atau `attendance:read:homebase` yang sudah ada. Endpoint tidak menurunkan status dari `AttendanceEvent`; PIN mesin belum dipetakan ke pegawai.
+- **Bukti:** `backend/internal/attendance/{store.go, read.go, gorm_read.go}`, `backend/tests/attendance/read_test.go`, `backend/internal/httpserver/attendance_records_handlers.go` (+`backend/tests/httpserver/attendance_records_handlers_test.go`), `docs/PRD.md` §11, `docs/openapi.yaml`, `frontend/src/routes/_app/attendance/unit-records.tsx`, `frontend/src/components/TeamAttendanceTable.tsx`.
+
+### DEC-052 — NIK, NPWP, nomor ijazah, NIP, NIDN/NIDK unik di level database
+
+- **Tanggal:** 2026-11-13
+- **Pemilik:** Pemilik produk (arah langsung dari pengguna, 13 November 2026)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** NIK, NIP, NIDN, dan NIDK sudah unik (`000001_directory_crud.sql`; NIDN/NIDK di migrasi `000012_nidn_nidk_user.sql`), masing-masing indeks unik parsial `WHERE … IS NOT NULL` bila nullable. Migrasi `000021_npwp_no_ijazah_unique.sql` melengkapi: (1) `user.npwp` dijadikan unik lewat indeks parsial `user_npwp_idx`; string kosong/spasi dinormalkan ke NULL lebih dulu agar tidak menghalangi pembuatan indeks (nilai blank tidak membawa informasi; normalisasi tidak dapat dibalik pada `Down`). (2) Nomor ijazah ditambahkan pada `RiwayatPendidikan."noIjazah"` (kolom baru, `text`, nullable) dengan indeks unik parsial `riwayat_pendidikan_no_ijazah_idx` — uniknya di level **baris**, bukan per pegawai, karena satu pegawai bisa punya beberapa ijazah (S1/S2/S3). Penegakan ada di level database/Goose; API dan DTO saat ini belum mengekspos `npwp` maupun `noIjazah`, jadi tidak ada perubahan kontrak HTTP. Diterapkan pada database Supabase `postgres` dan `simpeg_perf` (13 November 2026, versi Goose 21); pada `simpeg_perf` migrasi diterapkan setelah pra-pemeriksaan read-only (5000 baris user seed sintetis; NPWP 0 terisi/kosong/duplikat, 0 baris `RiwayatPendidikan`), dan verifikasi pasca-migrasi mengonfirmasi indeks `user_npwp_idx`, indeks `riwayat_pendidikan_no_ijazah_idx`, serta kolom `RiwayatPendidikan."noIjazah"` terpasang; `perfbench schema` menyatakan 68 model selaras pada kedua DB. Bila data target nanti berisi NPWP terduplikasi, migrasi gagal dan duplikat harus diselesaikan pemilik data — nilai yang benar tidak boleh ditebak.
+- **Bukti:** `backend/migrations/000021_npwp_no_ijazah_unique.sql`, `backend/internal/models/models.go`, `backend/tests/database/migration_schema_test.go`, `docs/IMPLEMENTATION-PLAN.md`.
+
+### DEC-053 — Kolom identitas PII dienkripsi pada level aplikasi (AES-256-GCM + blind index HMAC)
+
+- **Tanggal:** 2026-11-13
+- **Pemilik:** Pemilik produk (arah langsung dari pengguna, 13 November 2026)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Kolom `user.nik`, `user.nip`, `user.npwp`, dan `RiwayatPendidikan.noIjazah` disimpan terenkripsi pada level aplikasi, **bukan** pada level database/transparent encryption. Format nilai: `enc1:` + base64url(nonce 12 byte ‖ AES-256-GCM(ciphertext ‖ tag)); nonce dibangkitkan acak pada setiap enkripsi sehingga kesamaan plaintext tidak terlihat di database. Untuk keunikan dan kesetaraan (pencarian), setiap kolom plaintext berpasangan dengan kolom blind index `nikHash`/`nipHash`/`npwpHash` (`user`) dan `noIjazahHash` (`RiwayatPendidikan`) berisi HMAC-SHA256 atas bentuk ternormalisasi dari nilai (trim, huruf besar, tanpa spasi/tab/titik/strip/garis bawah). Indeks unik parsial `WHERE "...Hash" IS NOT NULL` pada kolom-kolom itu menggantikan unique index plaintext lama yang dijatuhkan migrasi `000022_pii_identity_encrypt.sql` (`user_nik_key`, `user_nip_key`, `user_npwp_idx`, `riwayat_pendidikan_no_ijazah_idx`). Pencarian pegawai pada NIP menjadi **kesetaraan persis** lewat blind index (bukan substring `ILIKE`); substring `ILIKE` hanya berlaku untuk `nama`. Pengurutan kolom `nip` dihapus dari allowlist (`EMPLOYEE_SORT_FIELDS` di `frontend/src/lib/employees.ts`, `domain.EmployeeSortColumns` di `backend/internal/directory/domain/list.go`); sort `nama`/`createdAt`/`updatedAt` tetap. Kunci berasal dari environment `PII_ENCRYPTION_KEY` (base64, tepat 32 byte / AES-256); kunci blind index diturunkan dari kunci yang sama (HMAC dengan label domain `simpeg/pii-blind-index/v1`), sehingga hanya satu rahasia yang perlu dikelola. Production menolak start bila `PII_ENCRYPTION_KEY` kosong atau tidak valid; di luar production, jalur PII gagal dengan galat eksplisit. `cmd/perfbench seed` mewajibkan kunci yang sama. Enkripsi dan dekripsi terjadi di driver.Valuer/Scanner (`backend/internal/crypto`), sehingga kontrak HTTP tidak berubah: backend mendekripsi sebelum mengirim respons dan mengenkripsi saat menyimpan; plaintext tidak pernah ditulis ke log. Nilai pra-migrasi (plaintext) akan ditolak saat dibaca (prefix wajib `enc1:`) — fail-closed, sengaja. Migrasi `000022` tidak mengenkripsi data lama: database produksi `postgres` kosong; database uji `simpeg_perf` dikosongkan dan diisi ulang (`perfbench seed`: 5000 pegawai sintetis, 2500 dengan NIP, semuanya ciphertext, `nipHash` unik semua). Kehilangan `PII_ENCRYPTION_KEY` berarti data PII tidak dapat dibaca; salinan cadangan wajib dibuat sebelum kunci dipakai untuk data nyata, dan rotasi kunci belum didukung (perubahan kunci harus disertai backfill ulang seluruh kolom PII). Blind index membocorkan **kesetaraan** nilai kepada siapa pun yang memegang database (itu tujuannya) dan tidak melindungi dari penebakan berbasis kamus untuk ruang nilai kecil — keterbatasan inheren blind index, bukan cacat implementasi; pembatasan akses baca kolom PII tetap lewat matriks permission `docs/PRD.md` §11. `KeluargaPegawai.nik` (identitas anggota keluarga/tanggungan) awalnya di luar cakupan; cakupannya diperluas pada `DEC-054` (13 November 2026). Diterapkan 13 November 2026: kedua database pada Goose 22; `perfbench schema` menyatakan 68 model selaras pada keduanya; pada `simpeg_perf` 0 plaintext tersisa (2500 ciphertext, 2500 `nipHash` unik).
+- **Bukti:** `backend/internal/crypto/pii.go` (+`backend/tests/crypto/pii_test.go`), `backend/internal/models/models.go`, `backend/migrations/000022_pii_identity_encrypt.sql`, `backend/internal/config/pii.go`, `backend/internal/config/config.go`, `backend/cmd/server/main.go`, `backend/cmd/perfbench/seed.go` (+`seed_data.go`), `backend/internal/directory/{domain/list.go, app/employee.go, repository/{gorm_employee.go, gorm_import.go, identity_hash.go}}`, `backend/tests/directory/repository/{main_test.go, gorm_store_test.go, gorm_import_test.go, list_test.go}`, `backend/internal/attendance/{store.go, gorm_read.go}`, `backend/internal/httpserver/{directory_types.go, employee_import_parse.go, attendance_records_handlers.go}`, `frontend/src/lib/employees.ts`, `frontend/src/components/EmployeeTable.tsx`, `docs/PRD.md`, `docs/IMPLEMENTATION-PLAN.md`.
+
+### DEC-054 — KeluargaPegawai.nik ikut dienkripsi (memperluas DEC-053)
+
+- **Tanggal:** 2026-11-13
+- **Pemilik:** Pemilik produk (arah langsung dari pengguna, 13 November 2026)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Kolom `KeluargaPegawai.nik` (identitas suami/istri/anak yang ditanggung pegawai, dipakai administrasi BPJS dan tunjangan keluarga) sebelumnya di luar cakupan DEC-053 karena permintaan awal hanya menyebut empat kolom. Atas penegasan pengguna 13 November 2026, kolom ini dienkripsi dengan mekanisme yang sama: nilai tersimpan `enc1:` + base64url(nonce acak 12 byte ‖ AES-256-GCM(ciphertext ‖ tag)), berpasangan dengan blind index HMAC-SHA256 `keluargaPegawai."nikHash"` untuk pencarian **kesetaraan persis** (setelah normalisasi); tidak ada keunikan yang ditegakkan (NIK anggota keluarga tidak diwajibkan unik lintas keluarga), sehingga indeks `nikHash` bersifat non-unik (`keluarga_pegawai_nik_hash_idx`) menggantikan indeks plaintext `keluarga_pegawai_nik_idx` yang dijatuhkan migrasi `000023_keluarga_nik_encrypt.sql`. Pencarian daftar keluarga pada NIK menjadi kesetaraan persis; substring `ILIKE` hanya berlaku untuk `nama`; sort `nik` dihapus dari `domain.KeluargaSortColumns`. NIK keluarga bersifat **wajib** pada formulir (domain `CreateKeluargaPegawai.Validate` menolak kosong/null), sehingga kolom `nik` tetap `NOT NULL` dan patch tidak dapat mengosongkannya (`KeluargaPatch.NIK.Null` ditolak validasi). Enkripsi/dekripsi terjadi di driver.Valuer/Scanner (`backend/internal/crypto`); kontrak HTTP `/api/v1/keluarga` tidak berubah (backend mendekripsi sebelum mengirim). Kedua database (`postgres`, `simpeg_perf`) diverifikasi tidak memiliki baris keluarga saat migrasi diterapkan, sehingga tidak ada data plaintext tertinggal dan tidak ada backfill; migrasi tidak mengenkripsi data lama. Perbaikan kunci sama seperti DEC-053 (`PII_ENCRYPTION_KEY`, wajib pada production); rotasi kunci belum didukung. Diterapkan 13 November 2026: kedua database pada Goose 23; `perfbench schema` menyatakan 68 model selaras pada keduanya.
+- **Bukti:** `backend/migrations/000023_keluarga_nik_encrypt.sql`, `backend/internal/models/models_hr.go`, `backend/internal/directory/{domain/list.go, app/keluarga.go, repository/{gorm_keluarga.go, identity_hash.go}}`, `backend/internal/httpserver/hr_keluarga_handlers.go`, `docs/PRD.md`, `docs/IMPLEMENTATION-PLAN.md`.
+
+### DEC-055 — Endpoint agregat ringkasan pegawai `GET /api/v1/employees/summary`
+
+- **Tanggal:** 2026-11-13
+- **Pemilik:** Pemilik produk (arah pengguna 13 November 2026 menyetujui penambahan endpoint; definisi ringkasan belum diratifikasi secara tertulis)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** PRD FR-05 meminta ringkasan pegawai (jumlah per status dan unit organisasi), sepanjang definisi status serta izin akses telah disepakati. Ringkasan sebelumnya dihitung client-side dengan membaca seluruh halaman daftar (`pageSize=100` berulang), yang tidak cukup untuk dataset besar. Endpoint read-only baru `GET /api/v1/employees/summary` mengembalikan `{total, active, inactive, byUnit:[{unitId,count}]}` dengan cakupan identik daftar pegawai: `employee:read:any` (lintas organisasi), `employee:read:homebase` (unit penugasan beserta turunannya), atau `employee:read:self` (hanya record sendiri). Cakupan dipaksa di lapisan aplikasi (`EmployeeService.Summary`), bukan di transport; deny-by-default untuk permission lain. **Populasi yang diringkas adalah seluruh baris pegawai dalam cakupan, termasuk baris nonaktif** (`user.aktif = false`) — perlu diratifikasi pemilik produk sebagai definisi "status"; bila definisi disepakati lain (mis. hanya aktif), endpoint disesuaikan. Pegawai tanpa unit dikelompokkan dengan `unitId` null. `unitName` sengaja tidak dikemas di endpoint; frontend memetakan `unitId` ke nama lewat daftar organisasi. Kontrak di `docs/openapi.yaml` (`EmployeeSummary`). Sisi frontend, `/dashboard` membaca endpoint ini (`lib/dashboard.ts`). Endpoint tidak menambah permission baru; memakai permission baca yang sudah ada.
+- **Bukti:** `backend/internal/directory/{domain/summary.go, app/employee.go, repository/{repository.go, gorm_employee.go}}`, `backend/internal/httpserver/{directory_api.go, employee_handlers.go, directory_types.go}`, `backend/tests/httpserver/{directory_handlers_test.go, load_test.go}`, `docs/openapi.yaml`, `docs/IMPLEMENTATION-PLAN.md`, `frontend/src/lib/dashboard.ts`, `frontend/src/validations/schemas.ts`, `frontend/src/components/DashboardPage.tsx`.
+
+### DEC-056 — Perbaikan temuan keamanan F-03 sampai F-08 dan sinkronisasi kontrak OpenAPI
+
+- **Tanggal:** 2026-11-13
+- **Pemilik:** Pemilik produk/platform (arah pengguna 13 November 2026 meminta penutupan F-03 sampai F-08, terutama untuk target MVP)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** (1) **F-03:** sembilan rute terdokumentasi menjawab `404` karena struct `directoryAPI` tidak diisi field `keluarga`, `golongan`, `arsip`, `sertifikasi`, `pelatihan`, `sister`, `penghargaan`, `tunjangan`, `potongan` di `RegisterDirectoryRoutes`; seluruh field kini diisi sehingga seluruh rute terdaftar. (2) **F-04:** server dev dan preview frontend mengirim `Content-Security-Policy` enforcing (`default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`; CSP ditegakkan pada dev/preview, sedangkan header pada lapisan deployment produksi menunggu keputusan deployment. (3) **F-05:** kontrak diperbaiki (referensi `CutiDTO`/`ArsipDTO` menunjuk `Cuti`/`Arsip`; parameter `UserID` dan `ArsipId` dideklarasikan; path `DELETE /api/v1/arsip/{arsipId}/archive` digabung menjadi `DELETE /api/v1/arsip/{arsipId}` sesuai pola `DELETE /employees/{employeeId}`); seluruh `$ref` resolve dan tidak ada operasi terdokumentasi yang tidak terdaftar. Sisa drift: 94 penanganan rute terdaftar (modul SKP, tridharma, sebagian absensi internal) belum terdokumentasi; ini didokumentasikan, bukan disembunyikan. (4) **F-06:** setiap respons API mengirim `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'`. (5) **F-08:** validasi identifier asing di lapisan transport (`requireUUID`/`requireOptionalUUID`) menolak identifier bukan UUID dengan `422`; mencakup `tridharma` (5), `skp` (3), modul `hr` (10), pegawai (create/patch), organisasi (create/patch), dan cuti. Verifikasi: `go build`, `go vet`, `go test ./...` lulus (termasuk `backend/tests/httpserver/foreign_id_validation_test.go` dan tes CSP; lihat `backend/tests/httpserver/security_test.go`); tidak diverifikasi terhadap database produksi dan tidak diuji ulang dinamis dengan ZAP.
+- **Bukti:** `backend/internal/httpserver/{directory_api.go, directory_types.go, employee_handlers.go, organization_handlers.go, security.go}`, `backend/tests/httpserver/{security_test.go, foreign_id_validation_test.go}`, `frontend/vite.config.ts`, `docs/openapi.yaml`, `docs/IMPLEMENTATION-PLAN.md`, `docs/SECURITY-TEST-OWASP-2025.md` §11, PRD §11.
+- **Pembaruan status (2026-11-14):** drift rute yang tercatat pada poin (3) sudah ditutup. Seluruh 147 operasi yang terdaftar di backend kini terdokumentasi di `docs/openapi.yaml` (78 path, 0 hilang/ekstra, 0 `operationId` duplikat), termasuk modul HR/SKP/Tridharma, `POST /api/v1/auth/session`, dan `POST /api/v1/internal/qstash/slo/evaluate`; entri `auth/session` dikoreksi ke perilaku aktual pada `DEC-069`. Lihat `DEC-066` dan `docs/IMPLEMENTATION-PLAN.md` §3.
+
+### DEC-057 — Master jabatan sebagai entitas (`Jabatan`)
+
+- **Tanggal:** 2026-11-13
+- **Pemilik:** Pemilik produk (arah pengguna 13 November 2026 menyetujui entitas baru beserta permission `jabatan:read` untuk semua role dan `jabatan:manage` untuk admin)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** PRD FR-03 meminta data jabatan dapat dikelola dan penempatan pegawai hanya memakai jabatan yang valid. Entitas baru `Jabatan`: `id` uuid, `nama` unik (indeks unik), `jenis` enum `STRUKTURAL`/`FUNGSIONAL` (default `STRUKTURAL`), `aktif` boolean, `createdAt`/`updatedAt`. Migrasi Goose `000024_jabatan.sql` (type `JabatanJenis`); RLS default deny tanpa policy (jabatan adalah data referensi; backend sebagai pemilik tabel tetap dapat mengakses). Model GORM `models.Jabatan` terdaftar di `models.All()` dan `postgresTableNames`. Endpoint: `GET /api/v1/jabatan` (pencarian/sort `nama|jenis|createdAt|updatedAt`, filter `jenis`, paginasi), `POST /api/v1/jabatan`, `GET/PATCH/DELETE /api/v1/jabatan/{jabatanId}` — baca memakai `jabatan:read` (semua role terautentikasi), tulis memakai `jabatan:manage` (admin saja); arsip bersifat satu arah (konsisten dengan kategori/organisasi). Penempatan pegawai pada jabatan **belum** dipindahkan ke referensi ini: `user.jabatanStruktural/jabatanFungsional` tetap teks bebas sampai ada keputusan produk. Kontrak di `docs/openapi.yaml` (`JabatanPage`). Frontend: halaman `/jabatan` (daftar, pencarian, filter jenis, sort, page size 10/25/50/100, paginasi; dialog tambah/ubah/arsip khusus admin), item sidebar untuk semua role. Migrasi `000024_jabatan.sql` sudah diterapkan pada database disposable lokal `simpeg_verify` (migrasi 000001–000024, 2026-11-13) — `GET /api/v1/jabatan` menjawab 200 dengan daftar kosong. Pada database produksi migrasi **belum** diterapkan (23 versi Goose per 2026-11-13); workflow `.github/workflows/deploy-migrations.yml` menerapkannya setelah persetujuan pemilik (`DEC-033`); verifikasi skema (`perfbench schema`) belum dijalankan.
+- **Bukti:** `backend/migrations/000024_jabatan.sql`, `backend/internal/models/{models.go, enums.go, registry.go}`, `backend/internal/database/postgres.go`, `backend/internal/directory/{domain/jabatan.go, domain/list.go, app/jabatan.go, repository/{repository.go, gorm_jabatan.go}}`, `backend/internal/httpserver/{directory_api.go, directory_types.go, jabatan_handlers.go}`, `backend/tests/httpserver/directory_handlers_test.go`, `backend/cmd/server/{main.go, policy.go}`, `frontend/src/lib/jabatan.ts`, `frontend/src/components/{JabatanPage, JabatanTable, JabatanDialogs}.tsx`, `frontend/src/routes/_app/jabatan.tsx`, `frontend/src/components/Sidebar.tsx`, `frontend/src/validations/schemas.ts`, `frontend/src/i18n/messages/ui.{id,en}.ts`, `docs/openapi.yaml`, `docs/PRD.md` §11.
+
+### DEC-058 — Google OAuth dan MFA TOTP di runtime Better Auth (frontend)
+
+- **Tanggal:** 2026-11-13
+- **Pemilik:** Pemilik produk (arah pengguna 13 November 2026 menyetujui implementasi nomor 7 dari daftar MVP yang tersisa: Google OAuth + MFA; MFA opsional per akun; tampilan URI dan QR)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Runtime Better Auth (`frontend/src/lib/server/better-auth.ts`, `DEC-049`) kini memuat: (1) `socialProviders.google` yang hanya aktif bila `GOOGLE_CLIENT_ID` dan `GOOGLE_CLIENT_SECRET` diisi — kosong berarti tombol Google tetap terlihat tetapi menjawab `PROVIDER_NOT_FOUND` dan antarmuka menampilkan "Masuk dengan Google belum dikonfigurasi oleh administrator." (2) plugin `twoFactor({ issuer: 'SIMPEG' })`; tabel `twoFactor` dan kolom `user.twoFactorEnabled` sudah ada sejak migrasi `000001` (verifikasi `2026-11-13`: skrip enable→verify TOTP, kode cadangan, penguncian akun tersedia di runtime; tidak ada skema baru). Antarmuka: tombol "Masuk dengan Google" pada halaman masuk (memulai `POST /api/auth/sign-in/social` dan mengalihkan ke URL otorisasi Google), halaman tantangan `/mfa` (kode 6 digit TOTP atau kode cadangan), halaman `/account/mfa` (enrollment: scan QR dari URI yang dirender lokal via paket `qrcode`, daftar kode cadangan, verifikasi kode; atau penonaktifan dengan kata sandi), item "Keamanan akun" pada menu akun di header. MFA bersifat **opsional per akun**; tidak ada role yang dipaksa mendaftar. **Belum diverifikasi langsung terhadap penyedia Google nyata maupun terhadap database produksi** — `BETTER_AUTH_SECRET`, `GOOGLE_CLIENT_ID`, dan `GOOGLE_CLIENT_SECRET` pada `.env.example` dibiarkan sebagai placeholder kosong; pada `.env` akar repo ketiganya juga kosong pada saat dicatat. Verifikasi yang sudah dilakukan: build, lint (0 galat), `tsc --noEmit`, 54 tes Vitest, e2e 30/30 (termasuk `e2e/mfa.spec.ts`: tantangan 2FA → verifikasi TOTP/kode cadangan → ruang kerja), dan pengujian header keamanan F-04 pada `bun run preview`. Verifikasi live menunggu pemilik produk mengisi kredensial pada lingkungan yang memakai database disposable dan mendaftarkan redirect URI `<origin>/api/auth/callback/google` di Google Cloud Console.
+- **Bukti:** `frontend/src/lib/server/better-auth.ts`, `frontend/src/lib/session.ts`, `frontend/src/validations/schemas.ts`, `frontend/src/features/auth/login-form.tsx`, `frontend/src/routes/_auth/mfa.tsx`, `frontend/src/routes/_app/account/mfa.tsx`, `frontend/src/routes/_app/account/mfa.tsx`, `frontend/src/components/Header.tsx`, `frontend/e2e/mfa.spec.ts`, `frontend/.env.example`, `frontend/package.json` (dependency `qrcode`, devDependency `@types/qrcode`), `docs/PRD.md` §11, `docs/IMPLEMENTATION-PLAN.md`, `docs/openapi.yaml` (tidak ada perubahan kontrak backend).
+
+### DEC-059 — Pembagian commit besar (enam chunk) dan fitur tambahan
+
+- **Tanggal:** 2026-11-13
+- **Pemilik:** Pemilik produk (arah pengguna)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Working tree berisi ~211 berkas yang belum di-commit. Disetujui pembagian menjadi enam chunk dalam urutan:
+  - **(1) tes backend** — pindah semua `backend/internal/**/*_test.go` ke `backend/tests/` (93 berkas, tanpa perubahan isi).
+  - **(6) backend** — perbaikan keamanan (F-03/F-06/F-08), master data (jabatan, impor massal 250 baris), SLO, PII (`internal/crypto/`, `config/pii.go`, `config/validate.go`, `config/config.go`), sumber payroll (`gorm_potongan.go`, `gorm_tunjangan.go`, `schedule.go`), migrasi `000021`–`000024`, `cmd/perfbench/seed*.go`, dan **Setting backend** (`internal/me/` domain/app/repository, `PATCH /api/v1/me`, jejak audit `profile.updated`, `ProfileResponse` dilengkapi `nama`/`noHp`).
+  - **(3) Zod relokasi** — `frontend/src/validations/schemas.ts` saja (tidak ada sisa impor ke `@/lib/schemas`).
+  - **(2) frontend core** — seluruh `frontend/` kecuali 8 berkas payroll dan `validations/schemas.ts`, termasuk berkas bersama (`Sidebar.tsx`, `i18n/messages/ui.{id,en}.ts`, `routeTree.gen.ts`, `vite.config.ts`, tabel shadcn, `LoadingBars`/`LoadingRadar`, `package.json` dan seluruh tooling) serta **Setting frontend** (`/settings`, `ProfileForm`, `ChangePasswordForm`, perubahan `Sidebar`, i18n, `lib/session`).
+  - **(4) UI penggajian** — 8 berkas payroll saja.
+  - **(5) dokumen + root/infra** — `docs/*.md`, `docs/openapi.yaml`, `.env.example`, `.gitignore`, dependabot, `frontend.yml`, `agents/rules/`, `DESIGN.md`, `SECURITY-TEST-OWASP-2025.md`.
+  - Setting adalah fitur di luar rencana enam chunk; **frontend-nya masuk (2)**, **backend-nya masuk (6)**.
+- **Bukti:** 7 commit di master (6 chunk + 1 cuti frontend), tidak ada push; `zap-report-frontend.md` dan `.serena/` sengaja tetap untracked.
+
+### DEC-060 — Fitur Setting (tema, bahasa, profil, ganti kata sandi, pintasan 2FA)
+
+- **Tanggal:** 2026-11-13
+- **Pemilik:** Pemilik produk (arah pengguna: "setting mulai di front dan jika perlu tambahan pada back maka tambahkan"; ruang lingkup dipilih "Standar + edit profil sendiri")
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Halaman baru `/settings` (`frontend/src/routes/_app/settings.tsx`) dengan lima tab: Tampilan (tema terang/gelap via `useThemeMode`/`setThemeMode`, persist `localStorage 'theme'`), Bahasa (id/en via `useLocale`/`setLocale`, persist `localStorage 'simpeg:locale'`), Akun (read-only: email, peran, unit dari `GET /api/v1/me`), Profil saya (ubah `nama` dan `noHp` via **baru** `PATCH /api/v1/me`; backend `internal/me/` domain/app/repository; jejak audit `profile.updated` tanpa mencatat nilai), Keamanan (ganti kata sandi via runtime Better Auth `POST /api/auth/change-password` tanpa perubahan backend Go, pintasan ke `/account/mfa`). Entri sidebar `nav.settings` ditambahkan untuk semua pengguna terautentikasi. Pesan i18n blok `settings.*` ditambahkan ke `messages/ui.{id,en}.ts`; `en` memenuhi `Record<keyof typeof uiMessagesId, string>`. Tidak ada perubahan OpenAPI untuk tema/bahasa (client-side); OpenAPI diperbarui untuk `PATCH /api/v1/me` dan `CurrentAccount` dilengkapi `nama`/`noHp`.
+- **Bukti:** `frontend/src/routes/_app/settings.tsx`, `frontend/src/components/ProfileForm.tsx`, `frontend/src/components/ChangePasswordForm.tsx`, `frontend/src/components/Sidebar.tsx`, `frontend/src/lib/session.ts`, `frontend/src/validations/schemas.ts`, `frontend/src/i18n/messages/ui.id.ts`, `frontend/src/i18n/messages/ui.en.ts`, `backend/internal/me/`, `backend/internal/httpserver/me_handlers.go`, `backend/internal/httpserver/server.go`, `backend/internal/audit/audit.go` (`ActionProfileUpdated`), `backend/cmd/server/main.go`, `docs/openapi.yaml`, `docs/IMPLEMENTATION-PLAN.md`.
+
+### DEC-061 — Antarmuka pengajuan cuti frontend (`/cuti`)
+
+- **Tanggal:** 2026-11-13
+- **Pemilik:** Pemilik produk (item 1/4 dari daftar fitur tersisa: cuti)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Halaman baru `frontend/src/routes/_app/cuti.tsx` dengan daftar pengajuan cuti berpaginasi (search/sort/filter, ukuran halaman 10/25/50/100), form buat/ubah pengajuan cuti, dan tombol setujui/tolak untuk status `MENUNGGU` (hanya `cuti:approve[:homebase]`). Backend cuti (`GET/POST/PATCH /api/v1/cuti`, `POST /api/v1/cuti/{id}/approve,reject`) sudah tersedia dari sebelum; hanya antarmuka frontend yang belum ada sesuai `docs/PRD.md` ("Cuti belum memiliki antarmuka"). Sidebar menampilkan entri `nav.cuti` dengan ikon kalender, gated permission `cuti:read:any|homebase|self`. Skema Zod `cutiSchema`, `cutiPageSchema`, `cutiCreateSchema`, `cutiUpdateSchema`, `cutiActionSchema` ditambahkan ke `frontend/src/validations/schemas.ts`; data layer `frontend/src/lib/cuti.ts`; dialog `frontend/src/components/CutiDialogs.tsx`; tabel `frontend/src/components/CutiTable.tsx`; pesan i18n blok `cuti.*` ditambahkan ke `messages/ui.{id,en}.ts`; `routeTree.gen.ts` digenerate ulang (termasuk `/cuti`). Semua gate frontend lolos (tsc, eslint, prettier, build, vitest 59/59).
+- **Bukti:** `frontend/src/routes/_app/cuti.tsx`, `frontend/src/lib/cuti.ts`, `frontend/src/components/CutiTable.tsx`, `frontend/src/components/CutiDialogs.tsx`, `frontend/src/components/Sidebar.tsx`, `frontend/src/validations/schemas.ts`, `frontend/src/i18n/messages/ui.id.ts`, `frontend/src/i18n/messages/ui.en.ts`, `frontend/src/routeTree.gen.ts`, `docs/PRD.md`, `docs/IMPLEMENTATION-PLAN.md`, `docs/openapi.yaml`.
+
+### DEC-062 — Endpoint `PATCH /api/v1/me` untuk profil mandiri (nama, nomor HP)
+
+- **Tanggal:** 2026-11-13
+- **Pemilik:** Pemilik produk (bagian fitur Setting)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** `GET /api/v1/me` sebelumnya hanya mengembalikan identitas sesi (`userId`, `email`, `roleName`, `homebaseId`, `permissions`). Ditambahkan `PATCH /api/v1/me` (hanya principal sendiri, identifier dari sesi bukan body) untuk mengubah `nama` dan `noHp` (nomor Indonesia, awalan 0/62/+62, 8–15 digit; teks kosong mengosongkan). Backend baru `backend/internal/me/` (domain aturan validasi, app use case, repository GORM dengan transaksi + jejak audit `profile.updated` tanpa mencatat nilai), handler `backend/internal/httpserver/me_handlers.go`, terdaftar di `server.go` dan di-wire di `cmd/server/main.go` (`MuxOptions.Me`). `ProfileResponse` dilengkapi `nama`/`noHp`. OpenAPI diperbarui: skema `CurrentAccount` + `UpdateProfileRequest`, operasi `PATCH /api/v1/me` (200/400/401/404/422/500). Tidak ada endpoint untuk mengubah email, NIP, PII terenkripsi, role, atau unit (hendak administrator). Pengujian: `backend/tests/me/domain/profile_test.go`, `backend/tests/me/app/service_test.go`, `backend/tests/httpserver/me_handlers_test.go`.
+- **Bukti:** `backend/internal/me/domain/profile.go`, `backend/internal/me/app/service.go`, `backend/internal/me/repository/gorm.go`, `backend/internal/httpserver/me_handlers.go`, `backend/internal/httpserver/server.go`, `backend/internal/audit/audit.go` (`ActionProfileUpdated`), `backend/cmd/server/main.go`, `docs/openapi.yaml`, `docs/IMPLEMENTATION-PLAN.md`.
+
+### DEC-063 — Penyesuaian frontend untuk CSP enforcing dan verifikasi ulang ZAP serta e2e
+
+- **Tanggal:** 2026-11-13
+- **Pemilik:** Pemilik produk (item 5 dan 6 daftar pekerjaan MVP: pemindaian ulang OWASP ZAP dan e2e ulang)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Verifikasi ulang memunculkan empat hal yang perlu keputusan teknis. (1) **Font brand:** `styles.css` mengimpor Fraunces dan Manrope dari `fonts.googleapis.com`, tetapi CSP enforcing `style-src 'self'; font-src 'self'` menolaknya, sehingga kedua font tidak pernah termuat dan aplikasi bergantung pada host pihak ketiga. Font kini disajikan sendiri dari `frontend/public/fonts/` (subset latin variabel) beserta lisensi OFL 1.1; aturan `@import` ke Google Fonts dihapus. (2) **Konfigurasi e2e:** `playwright.config.ts` memakai `VITE_API_BASE_URL` absolut ke port 8080, sehingga browser memblokir panggilan API sebelum `page.route` sempat menanganinya karena `connect-src 'self'`. Konfigurasi kini memakai path same-origin `/api/v1`, sesuai proksi Vite pada pengembangan harian dan tanpa melonggarkan CSP. (3) **Warna tautan:** aturan global `a { color: ... }` berada di luar layer Tailwind sehingga menimpa utilitas warna tombol primer; aturan itu dipindahkan ke `@layer base`, tombol utama kembali putih di hijau, dan rasio kontrasnya 6,40 (ambang 4,5). (4) **Risiko residual CSP:** `'unsafe-inline'` pada script dan style dipakai untuk inline SSR; ini dicatat sebagai F-09 dan diterima untuk sekarang karena sudah menjadi bagian kebijakan `DEC-056`. Menghilangkannya memerlukan nonce atau hash, yang belum dikerjakan. Alert `SQL Injection` dari pemindaian ulang ditriage menjadi positif palsu, lihat `docs/SECURITY-TEST-OWASP-2025.md` §5.2.
+- **Bukti:** `frontend/src/styles.css`, `frontend/public/fonts/` (Fraunces dan Manrope subset latin, `OFL-Fraunces.txt`, `OFL-Manrope.txt`), `frontend/playwright.config.ts`, `docs/SECURITY-TEST-OWASP-2025.md` §5.2, `docs/IMPLEMENTATION-PLAN.md`.
+
+### DEC-064 — Keseragaman tabel TanStack Table dan perbaikan cacat presensi pribadi
+
+- **Tanggal:** 2026-11-14
+- **Pemilik:** Pemilik produk (arah pengguna: semua tabel wajib mengikuti aturan TanStack Table)
+- **Status:** Disetujui (arah pengguna)
+- **Rincian:** Seluruh tabel data frontend kini memakai mesin bersama `DataTable` + `useTableControls` (`frontend/src/components/DataTable.tsx`, `frontend/src/lib/table-state.ts`): paginasi/sortir/filter manual, `rowCount`, reset `pageIndex` ke 1 saat sort/filter/ukuran halaman berubah, keadaan loading/kosong/error eksplisit, dan kolom sort dari allowlist backend. Tabel yang dimigrasi: Pegawai, Organisasi, Jabatan, Kategori, Cuti, Slip gaji, Presensi, Jejak audit, dan Peran admin. Dua cacat ditemukan lewat verifikasi nyata dan diperbaiki: (1) `attendance/gorm_read.go` memanggil `Select("p.*")` sebelum `Count()`, sehingga GORM menyusun `COUNT("p"."*")` yang ditolak PostgreSQL (SQLSTATE 42703) dan endpoint `GET /api/v1/attendance/my-records` menjawab 503 — diperbaiki dengan helper `myRecordsScope` yang tidak memakai `Select`, dan `Select("p.*")` hanya pada query baris; tes regresi DB-less `backend/internal/attendance/gorm_read_test.go`; (2) `OrganizationDialogs.tsx` memakai `.extend()` pada skema Zod 4 yang punya refinement, sehingga halaman Organisasi gagal dirender — diganti `.safeExtend()`. Pencarian by nama pegawai dihapus dari UI riwayat presensi pribadi karena cakupan endpoint sudah milik principal sendiri; `search`/`onSearchChange` dibuat opsional di `AttendanceTable` dan `AttendanceListParams`.
+- **Bukti:** `frontend/src/components/DataTable.tsx`, `frontend/src/lib/table-state.ts`, `frontend/src/components/AttendanceTable.tsx`, `frontend/src/routes/_app/attendance/my-records.tsx`, `frontend/src/lib/attendance.ts`, `frontend/src/components/OrganizationDialogs.tsx`, `backend/internal/attendance/gorm_read.go`, `backend/internal/attendance/gorm_read_test.go`, `docs/IMPLEMENTATION-PLAN.md`.
+
+### DEC-065 — Kepemilikan dan kebijakan observabilitas, alerting, log, dan pemulihan (Docker + RabbitMQ self-hosted + Supabase)
+
+- **Tanggal:** 2026-11-14
+- **Pemilik:** adhitiad (admin)
+- **Status:** Disetujui (arah pengguna) untuk kepemilikan, kebijakan/prosedur, dan pilihan stack; **Menunggu verifikasi produksi/infrastruktur** untuk pemasangan alert, pengumpulan metrik/log end-to-end, dan uji backup/restore pada database target.
+- **Rincian:** Konteks target yang dinyatakan: backend di-hosting dengan Docker, pekerjaan terjadwal memakai RabbitMQ self-hosted, log aplikasi JSON ke stdout, dan database Supabase (tier **Free**; region/project produksi wajib dicatat pada catatan operasi, belum diverifikasi di repo). (1) **Kepemilikan:** adhitiad (admin) adalah pemilik pekerjaan bagian 7 yang tersisa — monitoring menyeluruh, alerting infrastruktur, uji backup/restore/PITR produksi, dan retensi/operasi log produksi — termasuk penetapan kebijakan, prosedur, dan bukti verifikasi. (2) **Stack monitoring/alerting yang dipilih (sesuai stack):** observability self-hosted berbasis Docker: Prometheus (pengumpulan metrik & evaluasi aturan), Alertmanager (routing/notifikasi alert), Grafana (dasbor), Loki + Promtail/Grafana Alloy (agregasi log stdout JSON container), node-exporter + cAdvisor (saturasi host/container), blackbox-exporter (probe `/health`/`/ready` dan endpoint kritis), serta metrik RabbitMQ melalui plugin/endpoint Prometheus management RabbitMQ. Sumber sinyal aplikasi: `GET /api/v1/admin/slo/metrics` (`slo:read`, agregat error/latensi), `GET /api/v1/admin/ops/status` (`ops:read`, agregat antrean keluar/outbox untuk keterlambatan antrean dan kegagalan notifikasi/pengiriman), log JSON terstruktur (`X-Request-ID`, peristiwa keamanan/pekerjaan), metrik platform Supabase (sesuai fitur tier) dan metrik broker. Templat awal disediakan di `observability/` sebagai titik awal; wiring ke lingkungan target, kredensial, dan aktivasi aturan alert tetap harus dibuktikan di infrastruktur. (3) **Kebijakan retensi/operasi log produksi:** log aplikasi (stdout JSON) diagregasi ke Loki/stack log terpilih; retensi log aplikasi/akses **30 hari** (dapat diubah sesuai kapasitas/kebijakan, nilai efektif wajib dicatat); akses log dibatasi admin/operator yang berwenang; pencarian insiden memakai `request_id`/`msg`/`path` tanpa mengekspos kredensial, body, atau nilai query string. Retensi jejak audit database tetap `AUDIT_RETENTION_DAYS` (bawaan 90 hari, terjadwal) dan metrik SLO database tetap `SLO_RETENTION_DAYS` (bawaan 30 hari) — keduanya terpisah dari retensi log agregasi. (4) **Prosedur backup/restore/PITR:** target awal RPO 24 jam / RTO 4 jam mengikuti `DEC-050` (nilai awal, belum terukur pada produksi). Kemampuan PITR/restore mengikuti tier dan fitur project Supabase aktual; **tier Free umumnya menyediakan backup harian/pemulihan terbatas dan tidak setara PITR penuh**, sehingga prosedur wajib: (a) verifikasi fitur backup/restore/PITR yang tersedia pada project Supabase target, (b) lakukan uji restore secara berkala ke database terpisah/disposable (atau salinan non-produksi yang disetujui) memakai mekanisme yang tersedia pada tier tersebut dan/atau `pg_dump`/`pg_restore` yang tervalidasi, (c) ukur durasi pulih dan titik data, bandingkan dengan RPO/RTO, (d) verifikasi pascapulih (`/ready`, `goose_db_version`/skema, hitung baris kunci, sampel baca), (e) catat hasil (tanggal, metode, durasi, temuan) di runbook/catatan operasi. Uji pada database target produksi Supabase dan bukti RPO/RTO aktual **belum** dilakukan. (5) **Alerting infrastruktur:** ambang awal mengikuti `docs/RUNBOOK.md` §9 (error rate/latensi, pool/saturasi, outbox dead-letter/backlog, kegagalan notifikasi/QStash, sinyal keamanan) dan wajib dipasang sebagai aturan Alertmanager/monitoring terpilih dengan penerima & eskalasi yang ditetapkan; aktivasi dan uji tembak alert adalah syarat penutupan, belum terpenuhi di repo.
+- **Bukti:** `backend/internal/httpserver/ops_handlers.go`, `backend/internal/outbox/{outbox.go,gorm_store.go}`, `backend/cmd/server/{main.go,policy.go}`, `backend/internal/httpserver/server.go`, `backend/tests/httpserver/ops_handlers_test.go`, `docs/openapi.yaml`, `observability/` (templat & konfigurasi $0: Prometheus/Grafana/Loki/Alertmanager, retensi log 30 hari), `docs/backup-restore-drill.md`, `scripts/backup-restore-drill.ps1`, `docs/RUNBOOK.md` §7, §8E, §9, §9A, `docs/IMPLEMENTATION-PLAN.md` §7.
+
+### DEC-066 — Penutupan tinjauan OWASP Top 10:2025 (bagian 6) dengan penerimaan risiko residual
+
+- **Tanggal:** 2026-11-14
+- **Pemilik:** pemilik produk/platform (kebijakan & keputusan residual) dan adhitiad (admin, mitigasi/operasi deployment target)
+- **Status:** Disetujui (berbasis bukti tersedia); **prasyarat rilis** tetap mencakup verifikasi produksi/staging representatif, aktivasi alerting/monitoring end-to-end, dan verifikasi integrasi/provider nyata.
+- **Rincian:** Seluruh kategori OWASP Top 10:2025 (A01–A10) ditinjau dengan bukti yang tersedia: pemindaian dinamis ZAP (`docs/SECURITY-TEST-OWASP-2025.md`), verifikasi dinamis seluruh rute terdaftar dan skenario IDOR/lintas cakupan pada DB disposable terkontrol (`docs/DYNAMIC-ROUTE-VERIFICATION.md`, 2026-11-14), pengujian otomatis dan tinjauan kode/konfigurasi (RBAC/cakupan, RLS, validasi/parameterisasi, idempotensi, signature, logging/audit, enkripsi PII), serta penutupan drift kontrak OpenAPI (147/147 rute, 2026-11-14). Tidak ada temuan kritis/tinggi terbuka pada cakupan/bukti uji (F-01–F-08 diperbaiki/terverifikasi sesuai bukti; alert SQLi ZAP ditriage positif palsu). Risiko residual **diterima secara eksplisit** dan tercatat: F-09 (`'unsafe-inline'` CSP frontend/SSR, `DEC-056`/`DEC-063`), header keamanan pada lapisan deployment produksi belum diverifikasi, verifikasi produksi/staging & data nyata, OAuth Google nyata/kebijakan MFA operasional, integritas artefak/pipeline deploy, perilaku integrasi/provider nyata, alerting/log/monitoring end-to-end belum aktif di target, dan drift kebijakan `category:read` untuk `pegawai` (perlu keputusan pemilik, bukan bypass). Keputusan ini menandai penyelesaian tinjauan bagian 6, bukan klaim produksi/seluruh integrasi telah diverifikasi.
+- **Bukti:** `docs/IMPLEMENTATION-PLAN.md` §6, `docs/SECURITY-TEST-OWASP-2025.md`, `docs/DYNAMIC-ROUTE-VERIFICATION.md`, `docs/THREAT-MODEL.md`, `docs/openapi.yaml`, `docs/DECISIONS.md` (`DEC-056`, `DEC-063`, `DEC-065`), `docs/RUNBOOK.md`.
+
+### DEC-067 — Penggajian naik menjadi scope inti: komponen gaji, kategori status, kontrak kerja, struktur yayasan, pensiun
+
+- **Tanggal:** 2026-11-14
+- **Pemilik:** Pemilik produk (arah pengguna 2026-11-14; aturan bisnis per komponen ditetapkan pada `DEC-070`)
+- **Status:** Disetujui (2026-11-14) — penggajian diratifikasi sebagai scope inti oleh pemilik. Parameter aturan bisnis per komponen (skala gaji, tunjangan, honor, BPJS, TER, THR, potongan, slip digital, kontrak/pesangon, BUP/DPLK, pelaporan LLDikti) ditetapkan pada `DEC-070`; asumsi kerja yang masih menunggu konfirmasi pemilik tercatat pada `DEC-071`. Target rilis belum ditetapkan.
+- **Rincian:** Scope penggajian diperluas dari modul lanjutan menjadi **inti**. Ruang lingkup yang dinyatakan:
+  1. **Komponen penggajian inti:** gaji pokok per skala yayasan; tunjangan fungsional/struktural; honor mengajar per SKS (dosen LB); BPJS Kesehatan/Ketenagakerjaan; PPh 21 skema TER (PMK 168/2023); THR; potongan koperasi/pinjaman; slip digital.
+  2. **Kategori status kepegawaian:** dosen tetap yayasan; dosen DPK (gaji dari negara, dikelola via LLDikti); dosen tidak tetap/LB; tendik tetap; tendik kontrak. Tiap kategori memiliki aturan gaji, cuti, dan pelaporan yang berbeda (mis. dosen DPK tidak menerima gaji pokok yayasan; pelaporan via LLDikti).
+  3. **Kontrak kerja:** tracking PKWT/PKWTT; alert perpanjangan; validasi batas PKWT (PP 35/2021); kalkulasi pesangon/uang penghargaan masa kerja.
+  4. **Struktur yayasan:** yayasan → universitas → fakultas → prodi (memetakan ke pohon `Homebase` yang sudah ada). SK Yayasan (pengangkatan, mutasi, PHK) dipisahkan dari SK Rektor (jabatan struktural, penugasan).
+  5. **Pensiun:** BUP (batas usia pensiun) ditentukan yayasan; integrasi DPLK/dana pensiun, bukan BKN.
+- **Hal yang memerlukan keputusan pemilik sebelum implementasi:** sumber skala gaji pokok yayasan (nominal per tingkat/kategori status, tahun berlaku), aturan tunjangan fungsional/struktural (daftar jabatan & nominal), tarif honor per SKS per periode, tarif BPJS per periode (batas atas), pemetaan PTKP → TER A/B/C dan tarif TER yang berlaku, kebijakan THR (besaran, syarat masa kerja, tanggal bayar), potongan koperasi/pinjaman (cicilan/sisa), retensi/format slip digital (verifikasi publik `tokenVerifikasi`?), kebijakan DPLK (penyedia, iuran), batas alert kontrak (H-berapa), dan pelaporan LLDikti (format, periode).
+- **Bukti (status saat dicatat):** `docs/PRD.md`, `docs/IMPLEMENTATION-PLAN.md`, `backend/migrations/000025_payroll_core.sql` (rancangan usulan skema, DEC-068), `backend/migrations/000001_directory_crud.sql` (tabel `gaji`, `gajiTunjangan`, `gajiPotongan`, `pengaturanGaji`), `backend/migrations/000015_hr_extensions.sql` (`komponenTunjangan`, `komponenPotongan`, `riwayatGolongan`, `keluargaPegawai`).
+
+### DEC-068 — Migrasi `000025_payroll_core.sql` (skema penggajian inti; disetujui, belum diterapkan)
+
+- **Tanggal:** 2026-11-14
+- **Pemilik:** Pemilik platform (penerapan via workflow `deploy-migrations.yml` dengan persetujuan pemilik; staging lebih dulu)
+- **Status:** Disetujui (2026-11-14) — `000025_payroll_core.sql` disetujui. Penerapan hanya lewat workflow/migrate pada staging lebih dulu (`migrate status` sebelum/sesudah), lalu verifikasi `perfbench schema`, baru produksi via `deploy-migrations.yml` dengan persetujuan pemilik. GORM model/endpoint/payload belum ada; implementasi adalah pekerjaan terpisah setelah aturan bisnis `DEC-067` ditetapkan.
+- **Rincian:** Rancangan skema usulan di `backend/migrations/000025_payroll_core.sql`, menambahkan: `kategoriStatusPegawai` (+seed 5 kategori; kolom `user.kategoriStatusId`), `skalaGaji`/`skalaGajiDetail` (skala gaji pokok yayasan, effective-dated), `suratKeputusan` (+`TingkatSk` `YAYASAN`/`REKTOR`), `honorSksRate`/`honorSksPeriode` (honor per SKS dosen LB, FK `periodeAkademik`), `bpjsKonfigurasi`/`bpjsPeserta`, `pph21TerTarif` (TER A/B/C), `thrKonfigurasi`, `kontrakKerja` (PKWT/PKWTT) + `pesangonAturan` (faktor PP 35/2021 per kategori status), `pensiunKonfigurasi` (BUP per kategori status + iuran DPLK) + `pensiunKepesertaan`. Seluruh tabel baru `ENABLE ROW LEVEL SECURITY` (default-deny, tanpa policy, konsisten dengan `000004`). verifikasi pada 2026-11-14: diterapkan bersih pada database disposable lokal (migrasi 000001–000025, versi 25, `relrowsecurity=true` untuk 14 tabel baru; `go test ./tests/database/...` hijau). **Penting:** karena berkas migrasi sudah terdaftar di repo, `migrate up` pada database mana pun akan menerapkannya — `DEC-068` disetujui 2026-11-14; penerapan hanya lewat workflow pada staging lebih dulu, baru produksi dengan persetujuan pemilik. Overlap dengan `kategoriPegawai`, `komponenTunjangan`/`komponenPotongan`, dan `riwayatGolongan` sengaja dipertahankan untuk kompatibilitas; konsolidasi (bila disetujui) menjadi keputusan terpisah. PPh 21 dibatasi pada perhitungan bulanan TER di usulan ini; perhitungan tahunan/final settlement di luar usulan.
+- **Bukti:** `backend/migrations/000025_payroll_core.sql`, `backend/migrations/000015_hr_extensions.sql`, verifikasi disposable lokal (2026-11-14), `docs/DECISIONS.md` (DEC-067), `docs/PRD.md`, `docs/IMPLEMENTATION-PLAN.md`.
+
+### DEC-069 — Koreksi kontrak `POST /api/v1/auth/session` dan perbaikan referensi `$ref` OpenAPI
+
+- **Tanggal:** 2026-11-14
+- **Pemilik:** Pemilik platform (koreksi dokumentasi kontrak; tidak mengubah perilaku backend)
+- **Status:** Disetujui (koreksi faktual)
+- **Rincian:** (1) Entri `/api/v1/auth/session` di `docs/openapi.yaml` (dirilis pada pekerjaan penutupan drift rute) menggambarkan perilaku yang tidak ada di backend: "menetapkan cookie `better-auth.session_token` dari token opaque, `security: []`" — padahal perilaku aktual terdaftar di `server.go`/`auth_handlers.go` adalah: endpoint hanya aktif bila `SessionIssuer` tersedia; memerlukan sesi bearer valid dan permission `auth:session:issue` (admin); body `{userId}`; menerbitkan sesi baru (role/homebase dari data server-side, tidak dapat dipakai menaikkan peran) dan mengembalikan `{userId, expiresAt, token}` (201). `operationId` `setSessionCookie` diganti `issueSessionBootstrap`; skema `SetSessionRequest` diganti `IssueSessionRequest` dan `IssueSessionResponse`; responses `401/403/404/503` ditambahkan sesuai implementasi. (2) Sebanyak 37 referensi `$ref` rusak diperbaiki otomatis dengan pemeriksaan eksistensi target: 19 `responses/InvalidJSON` → `responses/BadRequest`, dan 18 `schemas/*DTOPage` → `schemas/*Page` yang sesuai (mis. `GolonganDTOPage` → `GolonganPage`). Validasi pascaperbaikan: YAML valid, 78 path, 1156 `$ref`, 0 hilang, 0 `operationId` duplikat. (3) Tidak ada perubahan kode backend/frontend; `docs/PRD.md` Lampiran A sudah selaras (`auth/session` dicatat sebagai bootstrap `auth:session:issue`).
+- **Bukti:** `docs/openapi.yaml`, `backend/internal/httpserver/auth_handlers.go`, `backend/internal/httpserver/server.go`, `backend/cmd/server/policy.go`, `docs/PRD.md` (Lampiran A), `docs/IMPLEMENTATION-PLAN.md` §3.
+
+### DEC-070 — Aturan bisnis per komponen penggajian inti (penetapan pemilik 2026-11-14)
+
+- **Tanggal:** 2026-11-14
+- **Pemilik:** Pemilik produk (penetapan via tanya jawab 2026-11-14)
+- **Status:** Disetujui — aturan berikut menjadi acuan implementasi Tahap 2 (penggajian inti). Perubahan memerlukan persetujuan ulang.
+- **Rincian:** (1) **Skala gaji pokok yayasan:** master data dikelola **manual di SIMPEG** (admin); sumber bukan impor otomatis dari dokumen yayasan. **Kenaikan per masa kerja setiap 2 tahun** (nominal naik tingkat pada skala; mekanisme persis (koefisien/kenaikan berkala) ditetapkan saat implementasi modul). (2) **THR:** **100% gaji kotor**, dibayar **H-7 Idulfitri**, syarat masa kerja minimal **3 bulan**. (3) **Honor mengajar per SKS (dosen LB):** **nominal flat Rp 100.000 per SKS** untuk semua dosen LB, per periode; tarif efektif dicatat di `honorSksRate` dan tidak menulis ulang periode berjalan. (4) **PPh 21:** ikut **PMK 168/2023** penuh (TER A/B/C dari status PTKP; perhitungan bulanan; final settlement tahunan di luar usulan). (5) **BPJS Kesehatan/Ketenagakerjaan:** **ikut regulasi berlaku penuh** (iuran pegawai dan pemberi kerja sesuai aturan; batas atas mengikuti `bpjsKonfigurasi`). (6) **Alert perpanjangan PKWT:** **H-30** sebelum masa kontrak berakhir. (7) **Pesangon/uang penghargaan:** **PP 35/2021 sebagai lantai + aturan yayasan: tambahan 1 (satu) bulan upah per 5 tahun masa kerja** (di atas faktor PP 35/2021; implementasi di `pesangonAturan`/logika aplikasi). (8) **BUP (batas usia pensiun) per kategori:** **Tendik 57, Dosen tetap 60, Guru Besar/Profesor 65**; pensiun via **DPLK** (bukan BKN). **Penyedia DPLK dan iuran belum ditetapkan.** (9) **Pelaporan LLDikti (dosen DPK):** belum diketahui/ditunda — di luar cakupan implementasi awal; status terbuka. (10) **Slip digital:** **PDF + verifikasi via token**; token unik per slip; halaman verifikasi publik menampilkan minimal (nama, periode, status) **tanpa nominal**; tidak mengganti konfirmasi pembayaran. (11) Tidak ada aturan yayasan tambahan (cuti/tunjangan/keluarga/benefit) yang dinyatakan saat penetapan ini.
+- **Masih terbuka (perlu keputusan berikutnya):** penyedia DPLK dan besaran iuran; pelaporan LLDikti (format, periode, jalur); besaran tarif honor per SKS untuk periode berikutnya (saat ini flat Rp 100.000/SKS); daftar jabatan & nominal tunjangan fungsional/struktural (input admin di `komponenTunjangan`); apakah guru besar 65 berlaku juga untuk kategori lain; skala gaji pokok awal (data yang diisi admin sebelum perhitungan nyata).
+- **Bukti:** keputusan ini tertaut ke `DEC-067` (scope inti) dan `DEC-068` (migrasi). Implementasi: `backend/migrations/000025_payroll_core.sql`; dokumen `docs/PRD.md` §3.3/§5.9, `docs/IMPLEMENTATION-PLAN.md` §3B.
+
+### DEC-071 — Asumsi sementara (isi kemungkinan) dan arah desain slip gaji + target rilis draft
+
+- **Tanggal:** 2026-11-14
+- **Pemilik:** Pemilik produk (penetapan via tanya jawab 2026-11-14)
+- **Status:** Disetujui sebagai **asumsi kerja** — bukan komitmen publikasi; harus dikonfirmasi pemilik sebelum rilis Tahap 2. Perubahan tidak memerlukan persetujuan ulang bila hanya mengisi/mengganti nilai asumsi dengan keputusan resmi.
+- **Rincian:** (1) **Penyedia DPLK dan iuran (ditunda, diisi kemungkinan):** `pensiunKepesertaan.penyediaDplk` dan `pensiunKonfigurasi.penyediaDplk` diisi teks **"DPLK Bank Mandiri"** sebagai placeholder (dipilih karena jangkauan nasional; mudah diganti karena disimpan sebagai teks konfigurasi). Iuran asumsi: **pegawai 5%, pemberi kerja 10% dari gaji pokok** (`pensiunKonfigurasi.iuranPegawaiPct`/`iuranPemberiKerjaPct`). BUP per kategori tetap sesuai `DEC-070` (Tendik 57/Dosen 60/Guru Besar 65). Menunggu keputusan resmi (apakah yayasan memakai mitra lain, mis. DPLK BJB/BPRD/mandiri yang berbeda, dan besaran iuran sebenarnya). (2) **Pelaporan LLDikti (ditunda, diisi kemungkinan):** karena pelaporan belum diketahui, cakupan awal hanya menyediakan **ekspor rekap BKD semesteran (Excel/PDF)** dari SIMPEG untuk kebutuhan dosen DPK; pengiriman/format resmi ke LLDikti ditunda/manual; **bukan** integrasi API; tidak masuk janji rilis awal. Menunggu petunjuk resmi LLDikti. (3) **Tunjangan fungsional/struktural:** **master data tunjangan dikelola manual di SIMPEG via frontend (admin input)** — `komponenTunjangan` (`JenisTunjangan` `STRUKTURAL`/`FUNGSIONAL`) diisi dari halaman admin; nominal per jenis/tingkat jabatan; integrasi `Jabatan` tetap keputusan terpisah. (4) **Target rilis Tahap 2 (draft dari pemilik runtime/platform, menunggu keputusan pemilik):** draft usulan — implementasi modul ±6–8 minggu; dilanjutkan migrasi staging (`000025`); UAT pilot (1 fakultas + beberapa pegawai berbeda kategori) Desember 2026–Januari 2027; rilis terbatas pembayaran pertama untuk pilot Februari 2027; cutover penuh Tahap 2 Maret 2027. Sumber: perkiraan kapasitas tim; **bukan** tanggal yang disetujui — perlu konfirmasi pemilik dan disesuaikan kalender akademik/keuangan yayasan. (5) **Alur PHK vs pengunduran diri (ditunda, diisi kemungkinan):** asumsi kerja — **PHK oleh yayasan/Hormat (SK Yayasan jenis `PENGANGKATAN`/`MUTASI`/`PHK`, `penerbit=YAYASAN`):** berhak pesangon sesuai lantainya (PP 35/2021 + tambahan yayasan `1 bulan/5 tahun`, `DEC-070`), kategori dibedakan `HORMAT` (berhak penuh) vs `TIDAK_HORMAT` (tidak berhak pesangon) sesuai PP 35/2021 dan aturan yayasan yang disetujui; **pengunduran diri (atas permintaan sendiri):** tidak memperoleh uang pesangon; berhak uang penggantian hak (cuti tahunan tidak terpakai) bila memenuhi syarat kontrak/PP 35/2021, kecuali diatur lebih menguntungkan di yayasan; **BUP:** pensiun sesuai DPLK + pesangon per aturan yayasan; **status** kontrak di `kontrakKerja.status` dan SK disimpan di `suratKeputusan`. Semua sub-item ini asumsi kerja, menunggu konfirmasi (pihak yayasan, kabiro, dan aturan kepegawaian). (6) **Slip digital — arah desain:** slip PDF berukuran **½ kertas A4 (A5)**, tampilan modern profesional, tidak generik: identitas yayasan/universitas + fakultas/prodi, nama & NIK/NIP, periode, rincian gaji pokok/tunjangan/potongan terstruktur dua kolom, **take home pay** menonjol, QR/kode verifikasi token, catatan hak audit, footer kecil. Desain terpisah dari dashboard biasa agar terlihat seperti dokumen resmi; tidak menampilkan nominal di jalur publik (halaman verifikasi hanya status).
+- **Bukti:** `docs/PRD.md` §5.9, `docs/IMPLEMENTATION-PLAN.md` §3B, `docs/DECISIONS.md` (`DEC-070`), `backend/migrations/000025_payroll_core.sql`.
+
+### DEC-072 — Konfirmasi target rilis Tahap 2, format LLDikti, alur PHK, scope menu, slip bermerek
+
+- **Tanggal:** 2026-11-14
+- **Pemilik:** Pemilik produk (penetapan via tanya jawab 2026-11-14)
+- **Status:** Disetujui — target rilis Tahap 2 = **2027-04-01 (1 April 2027)**; keputusan lain masih bisa berubah bila pemilik menetapkan lain, tetapi dipakai sebagai acuan perencanaan.
+- **Rincian:** (1) **Target rilis Tahap 2 (penggajian inti) = 1 April 2027.** Draft sebelumnya (Februari/Maret 2027) digantikan tanggal ini; menunggu konfirmasi pemilik tetap berlaku untuk cakupan/fitur vs tanggal, tetapi tanggal perencanaan dipakai sejak sekarang. (2) **Pelaporan LLDikti (dosen DPK):** format resmi (Excel/PDF) sebagaimana arahan LLDikti; **bukan** integrasi API; pekerjaan awal = ekspor rekap (BKD semesteran) dari SIMPEG. (3) **Konfirmasi alur PHK/pengunduran diri:** keputusan PHK/pengunduran diri diajukan/dirancang **Kabiro Kepegawaian dengan tembusan Rektor dan Ketua Yayasan**. SK tetap memakai `suratKeputusan` (`penerbit=YAYASAN` untuk PHK per `DEC-071`; pengunduran diri diajukan pegawai & diproses Kabiro dengan tembusan yang sama). Sub-temah (HORMAT vs TIDAK_HORMAT, pesangon) tetap sesuai `DEC-070`/`DEC-071`. (4) **Scope menu Tahap 2 diperluas menjadi mencakup:** Master (pegawai, riwayat, kontrak, struktur organisasi, cuti, presensi) — sebagian sudah ada dan dipakai sebagai dasar Tahap 2; dan **Dashboard Akreditasi dan Analitik SDM** sebagai modul baru (agregasi lintas modul, indikator untuk kebutuhan akreditasi/LLDikti/ban-pt; spesifikasi metrik menunggu keputusan terpisah). (5) **Slip digital bermerek per PT/industri:** logo dan nama PT **diinput manual** — bukan hardcode; kontras dengan contoh di mock (`docs/design/slip-gaji-mock.png`) yang memakai identitas contoh Universitas Subang; sumber data = logo/nama disimpan pada konfigurasi (mis. `unitBranding` di sistem/konfigurasi) dan dipakai saat menghasilkan slip; dukung pengisian manual tanpa deploy ulang.
+- **Catatan status:** rilis 2027-04-01 adalah acuan perencanaan; bila meleset, perbarui keputusan ini secara eksplisit — jangan menggeser diam-diam di dokumen lain.
+- **Bukti:** `docs/PRD.md` §3.3, §5.9, §10.2; `docs/IMPLEMENTATION-PLAN.md` §3B; `docs/DECISIONS.md` (`DEC-070`, `DEC-071`); `docs/design/`.
+
+### DEC-073 — Implementasi modul master skala gaji pokok yayasan (Tahap 2, irisan pertama)
+
+- **Tanggal:** 2026-11-14
+- **Pemilik:** Pemilik produk/platform (arah persetujuan 2026-11-14: mulai implementasi Tahap 2 dengan master skala gaji)
+- **Status:** Disetujui (implementasi, irisan pertama) — modul **diimplementasikan** dan terverifikasi dinamis; migrasi `000025_payroll_core.sql` diterapkan pada database disposable lokal `simpeg_tahap2` (bukan staging/produksi) untuk pengujian; penerapan pada target tetap lewat workflow staging lebih dulu.
+- **Rincian:** Irisan pertama penggajian inti: **master skala gaji pokok yayasan** (effective-dated, sesuai `DEC-070` master data manual admin). Implementasi backend lapis penuh: `internal/payscale/{domain,app,repository,httpserver}`; endpoint `GET/POST /api/v1/payroll/scale`, `GET/PATCH /api/v1/payroll/scale/{id}`, `GET/POST /api/v1/payroll/scale/{id}/detail`, `PATCH/DELETE /api/v1/payroll/scale/detail/{detailID}`, `GET /api/v1/payroll/scale/kategori-status` — baca untuk admin+operator (`payroll:read:any`/`payroll:read:homebase`), tulis hanya admin (`payroll:manage`); deny-by-default; pegawai `403`. GORM model ditambahkan: `SkalaGaji`, `SkalaGajiDetail`, `KategoriStatusPegawai`, kolom `user.kategoriStatusId` (diperlukan alignment `perfbench schema`; sisa selisih `user.role_name` pre-existing). Audit transaksional: actions `skala.created`, `skala.updated`, `skala.detail.created/updated/deleted`. OpenAPI terdokumentasi (`PayrollScale*` + `KategoriStatusPegawai` schemas; 9 operasi; total 83 path, 0 ref hilang, 0 `operationId` duplikat). Tes: domain validation + service dengan repository sintetis (`backend/tests/payscale/{domain,app}`); `perfbench schema` → 72 model; sisa selisih hanya pre-existing `user.role_name`. Verifikasi dinamis pada DB disposable `simpeg_tahap2` (dengan data sintetis): 18 skenario lulus — 401 tanpa sesi, 201 create, 409 duplikat, 403 pegawai, 422 nominal/tanggal tidak sah, 200 dengan detail, 204 delete. **Frontend:** halaman admin `/admin/payroll-scale` (`frontend/src/routes/_app/admin/payroll-scale.tsx`, `frontend/src/components/PayrollScalePage.tsx`, `frontend/src/components/PayrollScaleDetailDialog.tsx`, `frontend/src/lib/payroll-scale.ts`) — daftar/cari/sortir/paginasi, tambah/ubah/aktif-nonaktif, rincian tingkat × kategori (edit/hapus per baris, nominal rupiah), dialog rincian; e2e `frontend/e2e/payroll-scale.spec.ts` (2 uji); seluruh 36 e2e hijau; typecheck/lint/Prettier/Vitest hijau; sidebar item `nav.payrollScale` (gated `payroll:read:*`). Catatan: nilai `skalaGajiDetail` nominal disimpan sebagai `double precision` (bukan numeric/money); pemetaan ke `internal/money` dilakukan di lapisan slip saat implementasi slip. Migrasi `000025` **belum** diterapkan pada `postgres`/`simpeg_perf`/staging/produksi; `simpeg_tahap2` adalah DB disposable lokal untuk verifikasi.
+- **Bukti:** `backend/internal/payscale/`, `backend/internal/models/{models_payroll.go,registry.go,models.go}`, `backend/internal/database/postgres.go`, `backend/internal/audit/audit.go`, `backend/internal/httpserver/{payscale_handlers.go,server.go}`, `backend/cmd/server/main.go`, `backend/tests/payscale/`, `frontend/src/routes/_app/admin/payroll-scale.tsx`, `frontend/src/components/{PayrollScalePage.tsx,PayrollScaleDetailDialog.tsx}`, `frontend/src/lib/payroll-scale.ts`, `frontend/e2e/payroll-scale.spec.ts`, `docs/openapi.yaml`, `docs/DYNAMIC-ROUTE-VERIFICATION.md`, `docs/IMPLEMENTATION-PLAN.md` (§3B), `docs/PRD.md` (§5.9, Lampiran A).
+
+### DEC-074 — Irisan kedua penggajian inti: honor SKS, BPJS, PPh 21 TER (backend lapis penuh)
+
+- **Tanggal:** 2026-11-14
+- **Pemilik:** Pemilik produk/platform (arah persetujuan 2026-11-14: lanjutkan komponen gaji)
+- **Status:** Disetujui (implementasi, irisan kedua, backend-only) — modul **diimplementasikan dan terverifikasi dinamis**; migrasi `000025_payroll_core.sql` hanya diterapkan pada DB disposable lokal `simpeg_tahap2` (dihapus setelah selesai), **belum** pada staging/produksi; halaman admin frontend untuk ketiganya belum dibuat.
+- **Rincian:** (1) **Honor mengajar per SKS (dosen LB):** `HonorSksRate` (tarif per SKS per periode berlaku, efektif terakhir `asOf`), `HonorSksPeriode` (`userId`, `periodeAkademikId`, `sks`, `ratePerSks`, `totalHonor` — dihitung server); endpoint `/api/v1/payroll/honor-rate{,/current,/{rateID}}`, `/api/v1/payroll/honor-periode{,/{periodeID}}`. (2) **BPJS Kesehatan/Ketenagakerjaan:** `BpjsKonfigurasi` (tarif pegawai/pemberi kerja per jenis & periode; unique `(jenis, berlakuMulai)`), `BpjsPeserta` (kepesertaan per pegawai & jenis, unique `(userId, jenis)`); endpoint `/api/v1/payroll/bpjs/config{,/{bpjsID}}`, `/api/v1/payroll/bpjs/peserta{,/{pesertaID}}`. (3) **PPh 21 skema TER (PMK 168/2023):** `Pph21TerTarif` (tabel tarif efektif A/B/C per `berlakuMulai`); endpoint `/api/v1/payroll/pph21-ter{,/{terID}}`; `domain.ResolveTarif` tersedia sebagai logika domain untuk pemakaian di lapisan slip. Cakupan data: admin melihat seluruh (`payroll:read:any`), operator hanya unitnya beserta turunannya (`payroll:read:homebase`), pegawai hanya baris miliknya (`payroll:read:self`) pada honor-periode dan bpjs/peserta; tarif/konfigurasi hanya admin baca (`payroll:manage` untuk tulis). OpenAPI terdokumentasi (**94 path**, 21 operasi baru; 0 ref hilang, 0 `operationId` duplikat). Audit transaksional: actions `honor.rate.*`, `honor.periode.*`, `bpjs.konfigurasi.*`, `bpjs.peserta.*`, `pph21.ter.*`. Verifikasi dinamis pada DB disposable lokal `simpeg_tahap2`: 21 skenario lulus — 401 tanpa sesi, 403 pegawai pada tulis/baca di luar scope, 201 create, 409 duplikat `honorSksPeriode(userId, periodeAkademikId)` dan 409 duplikat `bpjsKonfigurasi(jenis, berlakuMulai)`, 422 nominal negatif, `totalHonor` dihitung server, `asOf` menghormati tanggal berlaku terakhir. Catatan: nilai `skalaGajiDetail/honorSksRate` disimpan sebagai `double precision` (pemetaan `money` saat slip diimplementasikan); honor `totalHonor` dihitung ulang server saat `sks`/`ratePerSks` diubah; `periodeAkademikId` direferensikan apa adanya (FK di DB enfora).
+- **Bukti:** `backend/internal/honorsks/`, `backend/internal/bpjs/`, `backend/internal/pph21ter/`, `backend/internal/httpserver/{honor_handlers.go,bpjs_handlers.go,pph21ter_handlers.go}`, `backend/internal/httpserver/server.go`, `backend/cmd/server/main.go`, `backend/internal/models/models_payroll.go`, `backend/internal/database/postgres.go`, `backend/internal/audit/audit.go`, `docs/openapi.yaml`, `docs/DYNAMIC-ROUTE-VERIFICATION.md` (§8), `docs/IMPLEMENTATION-PLAN.md` (§3B), `docs/PRD.md` (§5.9, Lampiran A/B).
+
+### DEC-075 — Mesin hitung slip otomatis, API generate + PDF slip (tahap 2, irisan ketiga)
+
+- **Tanggal:** 2026-11-14
+- **Pemilik:** Pemilik produk/platform (arah persetujuan 2026-11-14: lanjutkan ke mesin slip + PDF)
+- **Status:** Disetujui (implementasi, irisan ketiga) — mesin hitung slip dan PDF **diimplementasikan dan terverifikasi dinamis**; migrasi `000025_payroll_core.sql` tetap **belum** diterapkan pada staging/produksi; keputusan `DEC-070`(9–10) masih berlaku: **halaman verifikasi publik slip belum dibuat** (token `KodeVerifikasi` sudah disimpan di slip, halaman verifikasi publik adalah pekerjaan terpisah), **slip A5 bermerek** belum dikerjakan (PDF saat ini satu halaman A4 polos dengan nama instansi dari konfigurasi).
+- **Rincian:** (1) **Mesin hitung:** logika murni `internal/calculasi/domain` — bruto (gaji pokok + tunjangan + honor SKS), BPJS pegawai/pemberi kerja per jenis dengan dasar `GAJI_POKOK|TOTAL_GAJI` dan batas atas konfigurasi, PPh 21 skema TER bulanan (PMK 168/2023) via tabel `pph21TerTarif` efektif pada tanggal akhir periode; pemetaan PTKP → kategori TER (`TK/*`→A, `K/*`→B, `K/I/*`→C — **belum diverifikasi terhadap teks resmi PMK 168/2023**; web search gagal pada waktu implementasi). (2) **Use case:** `payroll/app.GenerateSlipService` — hanya admin (`payroll:manage`); mengambil status PTKP & unit pegawai, skala efektif (bila `kategoriStatusId`+`tingkat` diisi; gaji pokok 0 bila tidak), honor LB dari periode akademik yang memuat periode gaji, komponen tunjangan/potongan aktif pegawai, BPJS berlaku terakhir per jenis, tabel TER berlaku terakhir; upsert slip DRAF `(userId, periode)` dalam satu transaksi (slip DRAF diganti, TERBIT/TERBAYAR → `409`); nominal potongan persentase dihitung dari gaji pokok; slip menyimpan bruto (`totalGaji`), `PotonganPph21`, dan komponen (`gajiTunjangan`/`gajiPotongan`). (3) **Endpoint:** `POST /api/v1/payroll/slips/generate` (`payroll:manage`; body `{userId, periode, kategoriStatusId?, tingkat?}`; `200` slip DTO; `409` bila slip TERBIT/TERBAYAR; `422` bila data referensi — skala/TER — tidak tersedia); `GET /api/v1/payroll/slips/{payrollId}/pdf` (`payroll:read:any|homebase|self`; `application/pdf`; `Cache-Control: private, no-store`; `X-Content-Type-Options: nosniff`; nama instansi dari env `PAYROLL_SLIP_ORG_NAME`, fallback `SIMPEG`). (4) **PDF:** paket `internal/pdf` (font Tinos SIL OFL di-embed via `go:embed`; lisensi di `internal/pdf/assets/OFL.txt`); satu halaman A4; kop instansi, identitas slip, tabel penerimaan/potongan, gaji bersih, kode verifikasi bila ada; tidak ada QR/branding penuh (belum memenuhi arah `DEC-071`/`DEC-072` — pekerjaan terpisah). (5) **Audit:** action `payroll.slip.generated`, `unitId` = unit penugasan pegawai (selaras invariant AGENTS.md; entri lama `NULL`). (6) OpenAPI terdokumentasi (**96 path**, 178 operasi; 0 ref hilang, 0 `operationId` duplikat). (7) Verifikasi dinamis pada DB disposable lokal `simpeg_tahap2` (migrasi 000001–000025 + seed sintetis): 25 skenario lulus — 401/403/400/422/200 pada generate, regenerate DRAF mempertahankan id slip, bruto/BPJS/PPh 21/gaji bersih benar secara hitungan manual (9.500.000 + 1.500.000 = 11.000.000; BPJS 95.000/190.000; PPh 21 550.000; bersih 10.065.000), 409 pada slip TERBIT, PDF 200 `application/pdf` (35.140 byte, magic `%PDF-`), `unitId` terisi, jejak audit tertulis. Database disposable **dihapus** setelah selesai. (8) Pemetaan `TK/*→A`, `K/*→B`, `K/I/*→C` dan tarif TER resmi PMK 168/2023 **harus diverifikasi terhadap regulasi sebelum penerapan produksi**; tabel TER resmi wajib diisi admin (endpoint `pph21-ter`) sebelum slip nyata dihitung. (9) **Frontend honor/BPJS/PPh21 TER:** halaman admin `/admin/honor-sks`, `/admin/bpjs`, `/admin/pph21-ter` diimplementasikan pada periode yang sama (React + e2e stub; seluruh 36 e2e hijau) — bagian dari irisan kedua yang tuntas di frontend.
+- **Bukti:** `backend/internal/calculasi/domain/calculasi.go`, `backend/internal/payroll/{app,repository}/generate.go`, `backend/internal/payroll/repository/gorm_generate.go`, `backend/internal/pdf/`, `backend/internal/httpserver/payroll_handlers.go`, `backend/internal/httpserver/server.go`, `backend/cmd/server/main.go`, `backend/internal/config/config.go`, `backend/internal/audit/audit.go`, `backend/internal/models/`, `backend/tests/calculasi/`, `docs/openapi.yaml`, `docs/DYNAMIC-ROUTE-VERIFICATION.md` (§10), `docs/IMPLEMENTATION-PLAN.md` (§3B), `docs/PRD.md` (§5.9, Lampiran A/B), `backend/README.md`, `frontend/src/{components,routes/_app/admin,lib,i18n/messages}/` (honor/BPJS/TER pages).
+
+### DEC-076 — Potongan alpa pada slip gaji pegawai tetap (aturan disetujui + sisi mesin terimplementasi)
+
+- **Tanggal:** 2026-11-14
+- **Pemilik:** Pemilik produk (penetapan via tanya jawab 2026-11-14)
+- **Status:** Disetujui (aturan gaji) — **sisi mesin terimplementasi dan terverifikasi dinamis**; **penurunan `AttendanceEvent` → `Presensi`** dan **penegakan SP1** adalah pekerjaan terpisah yang **belum diimplementasikan** (butuh keputusan aturan H/I/S/A/C/LD dan pemetaan PIN mesin → pegawai).
+- **Rincian:** (1) **Aturan (disetujui 2026-11-14):** pegawai tetap **dosen** (dosen tetap yayasan) dan **pegawai tetap bukan dosen** (tendik) **serta tendik kontrak** — dosen LB dan dosen DPK **tidak** tercakup — yang alpa tanpa keterangan ('A') pada bulan berjalan dipotong **Rp 25.000 per hari alpa**, **maksimal Rp 750.000 per bulan**, sebagai komponen potongan `ALPA` pada slip; izin ('I'), sakit ('S'), cuti ('C'), libur ('LD'), dan hadir ('H') **tidak** memotong; perhitungan otomatis dari tabel `Presensi` (`tanggal` dalam bulan berjalan, `status='A'`). (2) **SP1:** bila alpa berulang pada bulan berikutnya → **SP1 (surat peringatan tertulis I)**; **hanya sanksi administratif** — tidak mengubah hitungan gaji; penegakan otomatis SP1 (ambang, penerbitan) belum diimplementasikan dan bukan bagian dari DEC ini. (3) **Cakupan kategori:** `DOSEN_TETAP_YAYASAN`, `TENDIK_TETAP`, `TENDIK_KONTRAK` (pemetaan kode dari `kategoriStatusPegawai`; jenis lain tidak terpotong, komponen ALPA tidak dibuat). (4) **Implementasi:** `GenerateSlipService` membaca `GetEmployeeKategoriStatus` + `CountPresensiAlpa` saat generate; potongan ALPA dihitung `min(25.000 × jumlah hari 'A', 750.000)`; disimpan sebagai `gajiPotongan{jenis:"ALPA"}` dan ikut memotong neto; unit test (`tests/payroll/domain/alpa_test.go`, `tests/payroll/app/generate_test.go` — 5 skenario: 3 hari → 75.000; 40 hari → cap 750.000; DOSEN_LB/DOSEN_DPK/kosong tidak tercakup; 0 alpa tanpa komponen; pegawai 403). (5) **Verifikasi dinamis** (DB disposable `simpeg_tahap2`, dihapus setelah selesai): Juni 2026 (3 alpa + 1 izin + 1 sakit) → ALPA **75.000**; Juli 2026 (31 alpa) → **750.000** (cap); DOSEN_LB (honor-only) → tanpa ALPA; LB dengan `kategoriStatusId` → 404 (tidak ada skala); pegawai → 403; regenerate DRAF idempotent; PDF slip tetap 200; `auditLog payroll.slip.generated` terisi `unitId`. (6) **Belum diimplementasikan / menunggu keputusan terpisah:** penurunan status harian `Presensi` dari `AttendanceEvent` (aturan masuk/pulang, alpa bila tidak ada tap pada hari kerja terjadwal, `LD` dari kalender libur/`HariLibur`, `I`/`S` dari izin/cuti/sakit); **pemetaan `machinePin` → pegawai** (belum ada skema/endpoint; mesin belum dipetakan); pengisian `Presensi` oleh admin/operator (form/impor); penegakan SP1 otomatis dan hubungannya dengan `Peringatan`; absensi terhadap honor LB; aturan alpa untuk kontrak lain. (7) **Catatan:** potongan alpa dibaca dari `Presensi`, bukan dari `AttendanceEvent`; sampai penurunan event→presensi tersedia, angka ALPA di slip hanya seakurat pengisian tabel tersebut — **jangan gunakan untuk pembayaran nyata sebelum keputusan sumber data disepakati dan diimplementasikan**.
+- **Bukti:** `backend/internal/payroll/domain/alpa.go`, `backend/internal/payroll/app/generate.go`, `backend/internal/payroll/repository/generate.go`, `backend/internal/payroll/repository/gorm_generate.go`, `backend/tests/payroll/domain/alpa_test.go`, `backend/tests/payroll/app/generate_test.go`, `docs/DYNAMIC-ROUTE-VERIFICATION.md` (§11), `docs/IMPLEMENTATION-PLAN.md` (§3B), `docs/PRD.md` (§5.7, §5.9, Lampiran A/B), `docs/DECISIONS.md` (`DEC-075`).
+
+### DEC-077 — Pipeline presensi: pemetaan PIN mesin, penurunan Presensi, pengisian manual, laporan alpa (terimplementasi)
+
+- **Tanggal:** 2026-11-14
+- **Pemilik:** Pemilik produk (penetapan via tanya jawab 2026-11-14: kerjakan pipeline DEC-076)
+- **Status:** Disetujui (implementasi) — pipeline **terimplementasi dan terverifikasi dinamis**; migrasi `000026_mesin_absensi_pin.sql` hanya diterapkan pada DB disposable lokal; **belum** pada staging/produksi. **SP1 hanya laporan** — SP diterbitkan manual oleh Kabiro/yayasan, bukan oleh sistem.
+- **Rincian:** (1) **Pemetaan `machinePin` → pegawai** (`mesinAbsensiPin`, migrasi `000026`): `machinePin` **unik global** (mesin sejenis — 6 unit — dapat dipakai pegawai mana pun dari titik mana pun; bukan unik per mesin); `userId` unik; CRUD admin dan impor massal (CSV/XLSX satu sheet, kolom `pin`+`email`, maks 2000 baris, resolusi email kesetaraan, impor dilaporkan per baris: `imported` + `issues` dengan kode `duplicate`/`not_found`/`out_of_scope`); operator hanya pegawai pada unit penugasannya beserta turunannya; admin semua. Endpoint `GET/POST /api/v1/attendance/mesin-pin`, `DELETE /api/v1/attendance/mesin-pin/{pinID}`, `GET /api/v1/attendance/mesin-pin/import-template`, `POST /api/v1/attendance/mesin-pin/import`. (2) **Penurunan `Presensi` dari `AttendanceEvent`** (`POST /api/v1/attendance/presensi/derive`, rentang ≤ 93 hari): hari kerja = **Senin–Sabtu**; Minggu dan hari libur nasional (tabel `HariLibur`) → `LD`; tap ≥1 → `H` (tap pada hari libur pun `H`); tanpa tap: cuti disetujui (`DISETUJUI`) → `C` (jenis `SAKIT`/`SAKIT_BERKEPANJANGAN` → `S`); selain itu → `A`. Baris manual (`sumber` ≠ `derivasi_mesin`, termasuk tanpa sumber) **tidak pernah ditimpa** derivasi; baris turunan diperbarui in-place saat rentang dihitung ulang. Kalender hari dihitung pada **Asia/Jakarta** (perbaikan bug nyata: pemotongan hari awal tidak boleh UTC — tap 00:00–07:00 WIB jatuh pada tanggal Jakarta-nya, bukan tanggal UTC sebelumnya). (3) **Pengisian manual admin/operator** (`PUT /api/v1/attendance/presensi`): upsert per (userId, tanggal) dengan validasi enum status; admin semua unit, operator hanya unit penugasannya beserta turunannya; jejak audit `attendance.presensi.upserted` dengan unit penugasan pegawai. (4) **Laporan SP1 (`GET /api/v1/attendance/alpa-suspects`)**: pegawai alpa ≥1 hari pada **semua** bulan berturut-turut dalam rentang `months` (2–12, bawaan 2) yang berakhir `until` (`YYYY-MM`, zone Asia/Jakarta); **hanya laporan untuk ditindaklanjuti manual** — sistem tidak menerbitkan SP. (5) **Audit:** actions `attendance.pin.created`, `attendance.pin.deleted`, `attendance.presensi.upserted`, `attendance.presensi.derived` (best-effort, `auditFailed` pada respons) — seluruh entri terisi `unitId` pegawai/actor. (6) Permission baru `attendance:presensi:manage` (admin + operator; pegawai ditolak `403`). (7) **Verifikasi dinamis** (DB disposable `simpeg_tahap2` + seed sintetis): **20 pemeriksaan lulus** — CRUD pin, import CSV (imported=1, 2 issues seperti diharapkan), derive (121 baris turunan, 1 baris manual dilewati, status benar — dikonfirmasi langsung ke DB), laporan suspects (a2 dan honorer muncul dengan jumlah per bulan sesuai DB), slip honorer Juni terpotong ALPA **525.000** (21 hari × 25.000 — cocok dengan hitungan DB), pegawai → 403, tanpa sesi → 401, delete → 204/404. Database disposable **dihapus** setelah selesai. **Verifikasi libur nyata (2026-11-14):** `POST /api/v1/holidays/2026/refresh` terhadap provider api.co.id sungguhan (kunci dari env lokal, bukan nilai statis di repo) → 25 libur nasional 2026 tersimpan; derivasi Februari–Maret 2026 menghasilkan `LD` pada Imlek (16–17 Feb), Nyepi dan Idul Fitri (18–24 Mar), serta Minggu. (8) **Frontend:** halaman admin `/admin/mesin-pin` (tab Pemetaan PIN: daftar/tambah/hapus + impor CSV/XLSX + templat; tab Derivasi & pengisian manual; tab Laporan alpa; gated `attendance:presensi:manage`; item sidebar `nav.mesinPin`); e2e 2 uji; seluruh 38 e2e hijau. (9) **Masih diperlukan sebelum produksi:** penetapan mesin yang akan dipetakan (6 unit), migrasi `000026` lewat workflow staging, verifikasi `HariLibur` target (arahan: refresh 2026 dari provider nyata sudah terbukti bekerja), uji tap nyata dari satu mesin.
+- **Bukti:** `backend/migrations/000026_mesin_absensi_pin.sql`, `backend/internal/attendance/{admin.go,admin_pin.go,admin_presensi.go,admin_suspects.go,admin_store.go,admin_store_presensi.go}`, `backend/internal/httpserver/attendance_admin_handlers.go`, `backend/internal/httpserver/server.go`, `backend/cmd/server/main.go`, `backend/cmd/server/policy.go`, `backend/internal/models/{models_operations.go,registry.go}`, `backend/internal/database/postgres.go`, `backend/internal/audit/audit.go`, `backend/tests/attendance/admin_test.go`, `docs/openapi.yaml` (**103 path**, 186 operasi), `docs/DYNAMIC-ROUTE-VERIFICATION.md` (§12), `docs/IMPLEMENTATION-PLAN.md` (§3B), `docs/PRD.md` (§5.7, Lampiran A/B), `frontend/src/{components,routes/_app/admin,lib,i18n/messages}/` (mesin-pin admin page).
+
+### DEC-078 — Slip digital A5 bermerek + QR + verifikasi publik slip + pemberitahuan H-1 + batas unduh 3× (terimplementasi)
+
+- **Tanggal:** 2026-11-14
+- **Pemilik:** Pemilik produk (arah dari chat 2026-11-14; beberapa poin diputuskan via tanya jawab 2026-11-14)
+- **Status:** Disetujui (implementasi) — diimplementasikan dan terverifikasi dinamis. **Supersedes** bagian isi pesan dan timing dari `DEC-027`/`DEC-075` (H+1 menjadi H−1; QR ditambahkan ke pesan; slip periode bulan sebelumnya).
+- **Catatan pembaruan (2026-11-14, tanya jawab):** pengunduhan PDF slip kini dicatat di jejak audit (`payroll.slip.pdf.downloaded`: aktor = pengunduh, target = slip, `unitId` = unit pemilik slip; best-effort, tidak membatasi jumlah unduhan). Batas 3× tetap di klien (rem UX), server hanya mencatat.
+- **Rincian:** (1) **Format slip PDF diubah dari A4 polos menjadi A5 (½ A4) bermerek** (`internal/pdf/slip_pdf.go`): masthead gelap `SLIP GAJI` + nama instansi dari env `PAYROLL_SLIP_ORG_NAME`; strip identitas (nomor slip, status, nama) berlatar sand; tabel penerimaan dan potongan dua kolom; pita take-home pay hijau `GAJI BERSIH`; footer kode verifikasi + QR + catatan rahasia. QR menunjuk ke `APP_BASE_URL/verify/slip/{token}` (QR di-generate dari link, bukan dari data slip). (2) **Token verifikasi slip** (`payroll/domain.NewSlipVerificationToken`): 128-bit acak, base64url 22 karakter, dibuat oleh mesin hitung saat slip DRAF baru dibuat (slip lama yang digenerate ulang tetap memakai token lama); disimpan pada kolom `gaji."kodeVerifikasi"`. (3) **Halaman verifikasi publik slip** (baru): `GET /api/v1/verify/slip/{token}` tanpa sesi (tanpa autentikasi) — jawaban hanya `nama`, `periode`, `periodeLabel`, `status`, `statusLabel`; **nominal tidak pernah ditampilkan**; 400 untuk token bentuk salah (bukan 22 karakter base64url), 404 untuk token bentuk sah tapi tidak dikenal, `Cache-Control: no-store`; halaman frontend `/verify/slip/{token}` (tanpa auth) menampilkan isi slip terverifikasi atau pesan tidak valid. (4) **Email pemberitahuan H−1** (mengganti H+1 dari `DEC-027`): isi pesan = **QR inline (image/png, CID) + tautan verifikasi publik**, nama, periode — tanpa nominal, tanpa klaim "sudah dibayar". Dikirim ke **semua pegawai yang punya slip** (status apa pun) pada unit yang tanggal gajiannya besok. Periode slip yang dikirim adalah **periode bulan sebelumnya** (gaji Juni dibayar 25 Juli). Transport tetap antrean keluar persisten + dispatcher; email disusun multipart/related `multipart/alternative` (text/plain + text/html) + gambar sebagai CID inline (`Content-ID: <slip-qr>`); pekerjaan jalan lewat job `payroll.notify` (`5 19 * * *` = 02:05 WIB) dan tetap idempoten berkat `slip-available:{slipId}`. Slip tanpa `kodeVerifikasi` (data lama) dilewati — dokumentasi catatan. (5) **Batas unduh slip PDF 3× per pegawai per periode**, **di sisi klien** (localStorage), bukan di server (agar tidak menambah beban/verifikasi server): tombol "Unduh PDF" menghitung pemakaian per `(userId, periode)`, menonaktif setelah 3 unduhan berhasil, dan menampilkan sisa; penghitung di-resolve via `useSyncExternalStore` (tidak ada `setState` di dalam effect). Setiap pengunduhan PDF juga dicatat di jejak audit (`payroll.slip.pdf.downloaded`: aktor = pengunduh, target = slip, `unitId` = unit pemilik slip; best-effort, tidak membatasi jumlah unduhan). (6) **Verifikasi dinamis:** generate slip → `kodeVerifikasi` terisi (via psql, 22 karakter); `GET /verify/slip/{token}` tanpa sesi → 200, isi hanya nama/periode/status (nominal tidak ada); token pendek → 400; token 22 karakter tidak dikenal → 404; PDF slip → `application/pdf` (36.400 byte; MediaBox `0 0 420.00 595.00` = A5; 1 image XObject = QR; font Tinos/Tinos-Bold); audit `payroll.slip.generated` terisi `unitId`; **2 unduhan PDF → 2 entri jejak audit `payroll.slip.pdf.downloaded`** (aktor = pengunduh, target = slip, `unitId` = unit pemilik slip). Database disposable **dihapus** setelah selesai. (7) OpenAPI **104 path / 187 operasi** (`/verify/slip/{token}` ditambahkan, 0 ref hilang, 0 operationId duplikat). (8) **Frontend:** tombol unduh PDF dengan batas 3× + sisa; halaman verifikasi publik `/verify/slip/{token}`; e2e 2 uji baru (`slip-verify.spec.ts`: verifikasi publik tampil + token tidak sah; unduh berhenti setelah 3×); seluruh **43 e2e hijau**, Vitest 59/59. (9) **Efek samping yang disengaja dan tercatat:** `PaydayDate` untuk periode P berubah menjadi tanggal gajian bulan **P+1**; `IsReminderDue`/`NotifyDate` sekarang H−1 (supersede `DEC-027`); `findDueReminders` menghapus filter status (seluruh slip mendapat pemberitahuan, bukan hanya TERBIT/TERBAYAR).
+- **Bukti:** `backend/internal/pdf/slip_pdf.go` (A5 + image XObject + font Tinos), `backend/internal/payroll/domain/verify_token.go`, `backend/internal/payroll/repository/{gorm_generate.go,verify.go,schedule.go}`, `backend/internal/payroll/app/schedule.go`, `backend/internal/notify/{slip.go,deliverer.go,message.go,smtp.go}`, `backend/internal/httpserver/{verify_handlers.go,payroll_handlers.go,server.go}`, `backend/cmd/server/main.go`, `backend/internal/models/models_payroll.go`, `backend/internal/audit/audit.go` (`ActionSlipPDFDownloaded`), `backend/tests/{payroll/domain/schedule_test.go,notify/slip_test.go,httpserver/payroll_handlers_test.go}`, `frontend/src/components/{SlipVerifyPage.tsx,PayrollSlipDetailPage.tsx}`, `frontend/src/{lib,validations/schemas}.ts`, `frontend/src/routes/verify.slip.$token.tsx`, `frontend/src/i18n/messages/ui.{id,en}.ts`, `frontend/e2e/slip-verify.spec.ts`, `docs/openapi.yaml` (**104 path**, 187 operasi), `docs/DYNAMIC-ROUTE-VERIFICATION.md` (§13), `docs/IMPLEMENTATION-PLAN.md` (§3B), `docs/PRD.md` (§5.6/§5.9, Lampiran A/B), `AGENTS.md`.
+
+### DEC-079 — Hak cuti Universitas diimplementasikan penuh di kode (terimplementasi)
+
+- **Tanggal:** 2026-11-14
+- **Pemilik:** Pemilik produk (teks Pedoman Hak Cuti, Kesejahteraan, dan Perlindungan Kerja Universitas; titik-titik diputuskan via tanya jawab 2026-11-14)
+- **Status:** Disetujui (implementasi) — diimplementasikan dan terverifikasi dinamis. Menggantikan aturan "cuti besar 3 tahun / 90 hari" yang tertanam sebagai komentar di `domain/leave.go` (tidak pernah ditegakkan di kode mana pun).
+- **Rincian:** (1) **Cuti tahunan**: kuota 12 hari kerja per tahun; syarat masa kerja ≥ 1 tahun terus-menerus pada tanggal mulai cuti (diperiksa di lapisan aplikasi; tanggal masuk pegawai dari `user."tanggalMasuk"`); sisa maks **6 hari** dibawa ke tahun berikutnya (carry, **hangus 30 Juni** tahun berjalan); penghitungan carry bersifat **lazy** pada akses baris saldo (hingga 1 Juli); hari dihitung hari kerja minus akhir pekan (Senin–Sabtu); saldo dipotong saat **persetujuan** dalam transaksi yang sama; pengajuan yang tumpang tindih dengan pengajuan MENUNGGU/DISETUJUI milik pegawai yang sama ditolak **409** (diperiksa pra-pemeriksaan saat pengajuan dan atomik saat approve). (2) **Cuti panjang**: durasi maks 2 bulan; syarat masa kerja ≥ 6 tahun berturut-turut **atau** haji (`untukHaji`); **tidak** memblokir cuti tahunan tahun berjalan (diabaikan sesuai keputusan pemilik); syarat lama (3 tahun/90 hari) dicabut seluruhnya. (3) **Cuti sakit berkepanjangan → mesin gaji**: persen gaji pokok berjalan 100% (bulan 1–4) / 75% (5–8) / 50% (9–12) / 25% (13–16) / 0% (>16); baris `PeriodeSakit` dibuat otomatis saat pengajuan SAKIT_BERKEPANJANGAN disetujui (bulan ke-n terhitung dari bulan mulai cuti pertama, idempoten per bulan); **slip gaji pokok periode yang cocok dibayar sesuai persen berjalan** (potongan persentase gaji pokok, BPJS, PPh 21 TER, dan BPJS Kesehatan/Ketenagakerjaan mengikuti nominal yang berjalan); jejak audit `payroll.slip.generated` menambahkan catatan `sakit berkepanjangan bulan ke-N; gaji pokok dibayar X%`. Potongan hanya terhadap **gaji pokok** (sesuai keputusan pemilik), bukan total bruto/tunjangan/honor. (4) **Cuti bersalin**: sub-jenis wajib (`subJenisBersalin`, migrasi `000027_cuti_bersalin.sql` — enum `MELAHIRKAN` 3 bulan / `KEGUGURAN` 1,5 bulan = 45 hari); surat dokter wajib (eviden, aturan lama dipertahankan). (5) **Izin penting** (hari kalender berturut-turut): menikah 7, menikahkan anak 4, istri melahirkan/keguguran 4, duka keluarga inti 2, duka keluarga lain 1. (6) **Kesejahteraan** (seragam, rekreasi, transport, uang makan, K3L) **tidak diimplementasikan** — dicatat sebagai kebutuhan terpisah; tidak ada nominal/vendor/rincian yang ditetapkan. (7) BPJS Kesehatan/Ketenagakerjaan sudah ada (ikut regulasi); DPLK tetap asumsi kerja (`DEC-071`). (8) **Verifikasi dinamis** (DB disposable `simpeg_tahap2`, migrasi `000001`–`000027`, dihapus): BERSALIN tanpa sub-jenis → 422; MELAHIRKAN + eviden surat dokter → 201; IZIN_PENTING MENIKAH 8 hari → 422; TAHUNAN 5 hari kerja → 201 → approve 200 → `SaldoCuti 5/12/0`; dua persetujuan SAKIT_BERKEPANJANGAN → `PeriodeSakit` berjalan `1/100` lalu `2/100`; pengajuan bertumpuk dengan DISETUJUI → 409 (dua tipe cuti); PANJANG masa kerja ≥6 tahun → 201, 2 tahun non-haji → 422, haji → 201; slip Juni 2026 dengan `PeriodeSakit` 75% → gaji pokok **Rp 7.125.000** (75% × Rp 9.500.000); audit `payroll.slip.generated` memuat catatan sakit berkepanjangan; frontend typecheck/lint (0 error)/Prettier/Vitest 59/59/e2e **43/43** hijau. (9) OpenAPI **104 path / 187 operasi** (tidak ada rute baru; skema `Cuti`/`CutiCreate`/`CutiPatch` memuat `subJenisBersalin`).
+- **Catatan pembaruan (2026-11-14, `DEC-080`):** satu operasi baru (`POST /api/v1/cuti/{cutiId}/cancel`) membuat kontrak menjadi **105 path / 188 operasi**.
+- **Asumsi kerja (menunggu konfirmasi pemilik):** (a) tahun cuti = tahun kalender; (b) carry hangus 30 Juni tahun berjalan; (c) keguguran = 45 hari; (d) tanggal masuk kosong → syarat masa kerja dilewati; (e) bulan ke >16 gaji pokok = 0; (f) baris PeriodeSakit satu per bulan (pengajuan berganda dalam bulan yang sama tidak menggandakan); (g) cuti panjang tahun berjalan tetap berhak cuti tahunan.
+- **Bukti:** `backend/migrations/000027_cuti_bersalin.sql`, `backend/internal/models/{enums.go,models_leave.go}`, `backend/internal/directory/domain/{leave.go,leave_rules.go,leave_patch.go,leave_eviden.go}`, `backend/internal/directory/app/{leave.go,leave_policy_check.go}`, `backend/internal/directory/repository/{gorm_leave.go,gorm_leave_saldo.go,repository.go}`, `backend/internal/httpserver/hr_leave_handlers.go`, `backend/internal/payroll/{app/generate.go,repository/generate.go,repository/gorm_generate.go}`, `backend/tests/{directory/domain/leave_rules_test.go,httpserver/hr_leave_handlers_test.go,payroll/app/generate_test.go}`, `frontend/{src/components/CutiDialogs.tsx,src/validations/schemas.ts,src/i18n/messages/ui.id.ts,src/i18n/messages/ui.en.ts}`, `docs/{openapi.yaml,PRD.md,IMPLEMENTATION-PLAN.md,DYNAMIC-ROUTE-VERIFICATION.md}`, `frontend e2e (tanpa perubahan — tidak ada spec cuti; gate tetap 43/43)`.
+
+### DEC-080 — Pembatalan pengajuan cuti (`BATAL`) + pengembalian saldo cuti tahunan (terimplementasi)
+
+- **Tanggal:** 2026-11-14
+- **Pemilik:** Pemilik produk (lanjutan dari `DEC-079`; terjawab via tanya jawab 2026-11-14)
+- **Status:** Disetujui (implementasi) — diimplementasikan dan terverifikasi dinamis. Menutup batasan yang tercatat di `DEC-079`: "tidak ada endpoint pembatalan cuti; saldo tidak dapat dikembalikan".
+- **Rincian:** (1) **Endpoint `POST /api/v1/cuti/{cutiId}/cancel`** (rute baru, permission `cuti:approve:homebase`/`:any` — identik dengan approve/reject; pegawai `403`). (2) **Status baru `BATAL`** pada `StatusPersetujuan` (Go + Zod + OpenAPI enum). (3) **Hanya pengajuan `MENUNGGU` atau `DISETUJUI` yang dapat dibatalkan**; pengajuan `DITOLAK`/`BATAL` → **409 Conflict**. (4) **Pengembalian saldo**: untuk pengajuan `DISETUJUI` berjenis **TAHUNAN**, saldo yang terpotong saat persetujuan dikembalikan dalam **transaksi yang sama** (`releaseSaldoCutiTx`: `terpakai = max(0, terpakai − hariKerja)`); untuk `MENUNGGU` tidak ada saldo yang dipotong. (5) **PeriodeSakit tidak dihapus** untuk `SAKIT_BERKEPANJANGAN` — gaji bulan berjalan perlu ditinjau manual oleh admin gaji (keputusan konservatif; menghindari menghapus data yang mungkin sudah dipakai pada slip yang terbit). (6) **Jejak audit `cuti.canceled`** (aktor = pemegang permission, target = pengajuan, `unitId` = unit pemilik pengajuan, catatan opsional). (7) **Frontend:** tombol "Batalkan" di kolom aksi (gated `cuti:approve:*`, hanya baris MENUNGGU/DISETUJUI) + dialog konfirmasi; pesan i18n id/en; badge status `BATAL`. (8) **Verifikasi dinamis** (DB disposable `simpeg_tahap2`, migrasi `000001`–`000028`, dihapus): **200** pada cancel MENUNGGU; **200** pada cancel DISETUJUI TAHUNAN dengan saldo kembali **5→0** (psql); **409** pada cancel DITOLAK (dan pada cancel kedua setelah BATAL); **403** untuk pegawai; audit `cuti.canceled` terkonfirmasi 2 entri (admin/target pengajuan). Percobaan pertama menemukan cacat enum (`StatusPersetujuan` bawaan tidak mengenal `BATAL` → `SQLSTATE 22P02` → 503); diperbaiki dengan migrasi `000028_cuti_batal_status.sql` (`ALTER TYPE "StatusPersetujuan" ADD VALUE IF NOT EXISTS 'BATAL'`). (9) OpenAPI **105 path / 188 operasi** (rute baru, 0 ref hilang, 0 `operationId` duplikat).
+- **Asumsi:** pembatalan tidak memiliki batas waktu (atasan/HRD dapat membatalkan kapan pun); pembatalan mandiri oleh pegawai dibuka lewat `DEC-081` (`cuti:cancel:self`, MENUNGGU maupun DISETUJUI, milik sendiri); pembatalan untuk cuti `BERSALIN`/`SAKIT`/`IZIN_PENTING`/`PANJANG`/`POLITIK` hanya mengubah status (tidak ada saldo yang dikembalikan — yang disetujui tidak memakai saldo).
+- **Bukti:** `backend/migrations/000027_cuti_bersalin.sql` + `backend/migrations/000028_cuti_batal_status.sql`, `backend/internal/models/{enums.go,models_leave.go}` (`StatusBatal`), `backend/internal/audit/audit.go` (`ActionCutiCanceled`), `backend/internal/directory/repository/{gorm_leave.go,gorm_leave_saldo.go,repository.go}` (`CancelCuti`, `releaseSaldoCutiTx`, `OverlappingCuti`), `backend/internal/directory/app/{leave.go,leave_policy_check.go}` (`Cancel`, `checkLeavePolicy` dengan overlap), `backend/internal/httpserver/{directory_api.go,hr_leave_handlers.go}`, `backend/tests/httpserver/hr_leave_handlers_test.go`, `frontend/{src/components/CutiTable.tsx,src/components/CutiDialogs.tsx,src/routes/_app/cuti.tsx,src/validations/schemas.ts,src/lib/cuti.ts,src/i18n/messages/ui.id.ts,src/i18n/messages/ui.en.ts}`, `docs/{openapi.yaml,PRD.md,IMPLEMENTATION-PLAN.md,DYNAMIC-ROUTE-VERIFICATION.md}`.
+
+### DEC-081 — Pegawai dapat membatalkan cuti sendiri (terimplementasi)
+
+- **Tanggal:** 2026-11-14
+- **Pemilik:** Pemilik produk (terjawab via tanya jawab 2026-11-14: pegawai boleh membatalkan pengajuan miliknya sendiri, termasuk yang sudah disetujui)
+- **Status:** Disetujui (implementasi) — diimplementasikan dan terverifikasi dinamis. Memperluas `DEC-080`: pembatalan mandiri oleh pegawai disamping jalur approver-class (`cuti:approve:*`).
+- **Rincian:** (1) **Permission baru `cuti:cancel:self`** (self-only; hanya pegawai; deny-by-default). (2) **Jalur pembatalan** pada endpoint yang sama `POST /api/v1/cuti/{cutiId}/cancel` — permission kini `cuti:approve:any | cuti:approve:homebase | cuti:cancel:self`. (3) **Pegawai dengan `cuti:cancel:self` hanya dapat membatalkan pengajuan miliknya sendiri** (`item.UserId == principal.UserID`), termasuk yang statusnya `DISETUJUI`; saldo yang terpotong dikembalikan dalam transaksi yang sama; audit `cuti.canceled` dengan aktor = pegawai. (4) **Approver-class tidak berubah** (atasan/HRD/operator dengan cakupan unit, `cuti:approve:*`). (5) **PeriodeSakit tidak dihapus** (aturan `DEC-080` dipertahankan). (6) **Frontend:** tombol "Batalkan" di kolom aksi tampil bila aktor punya `cuti:cancel:self` (selain approver) — berlaku untuk baris miliknya (daftar pegawai sudah difilter server). (7) **Verifikasi dinamis** (DB disposable `simpeg_tahap2`, migrasi `000001`–`000028`, dihapus): pegawai cancel cuti miliknya (MENUNGGU) → **200** `BATAL`; approve lalu pegawai cancel → **200**, saldo kembali `0/12`; pegawai cancel pengajuan orang lain → **403**; cancel ulang (sudah BATAL) → **409**; approver-class tidak berubah (admin cancel 200/409); audit mencatat kedua jalur. (8) OpenAPI tetap **105 path / 188 operasi** (`x-required-permission` dicatat `cuti:approve | cuti:cancel:self`).
+- **Asumsi:** tidak ada batas waktu pembatalan mandiri; pembatalan mandiri berlaku untuk semua jenis cuti; pembatalan jenis non-saldo tidak mengembalikan apa pun selain status.
+- **Bukti:** `backend/cmd/server/policy.go` (`"cuti:cancel:self": true`), `backend/internal/directory/app/leave.go` (`Cancel` bercabang), `backend/internal/httpserver/{directory_api.go,hr_leave_handlers.go}`, `backend/tests/httpserver/hr_leave_handlers_test.go` (`TestCutiCancelOlehPemilik`, `TestCutiCancelPegawaiPadaPengajuanOrangLainDitolak`), `frontend/{src/components/CutiTable.tsx,src/routes/_app/cuti.tsx}`, `docs/{openapi.yaml,PRD.md,IMPLEMENTATION-PLAN.md,DYNAMIC-ROUTE-VERIFICATION.md}`.
+
+### DEC-082 — Rute `POST /api/v1/cuti` menerima `cuti:create:any` (perbaikan korespondensi grant ↔ rute, terimplementasi)
+
+- **Tanggal:** 2026-11-15
+- **Pemilik:** Pemilik produk (temuan 2026-11-14; terjawab via tanya jawab 2026-11-15)
+- **Status:** Disetujui (perbaikan) — diimplementasikan dan terverifikasi dinamis.
+- **Rincian:** policy memberikan `cuti:create:any` ke `admin` (policy.go), tetapi middleware rute `POST /api/v1/cuti` hanya menerima `cuti:create` (pegawai self) dan `cuti:create:homebase` (operator); akibatnya grant admin `cuti:create:any` tidak terjangkau — **admin tidak dapat membuat pengajuan cuti sama sekali**. Perbaikan: `directory_api.go` menambahkan `cuti:create:any` pada daftar permission rute. Lapisan use case (`canCreate`) sudah menerima `cuti:create:any` tanpa perubahan. Parameter `cuti:create` (self-only) dan `cuti:create:homebase` tidak berubah. Uji handler `TestCutiCreateAdminDapatMembuatUntukPegawaiLain` menambahkan cakupan: admin membuat pengajuan atas nama pegawai lain → 201. OpenAPI `x-required-permission` & matriks PRD Lampiran A diperbarui untuk mencatat `cuti:create:any`. OpenAPI tetap **105 path / 188 operasi**.
+- **Bukti:** `backend/internal/httpserver/directory_api.go`, `backend/tests/httpserver/hr_leave_handlers_test.go` (`TestCutiCreateAdminDapatMembuatUntukPegawaiLain`), `docs/openapi.yaml`, `docs/PRD.md` (Lampiran A).

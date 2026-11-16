@@ -16,20 +16,34 @@ import { Route as AboutRouteImport } from './routes/about'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as TermsOfReferenceRouteImport } from './routes/terms-of-reference'
+import { Route as AppArsipRouteImport } from './routes/_app/arsip'
 import { Route as AppAuditLogsRouteImport } from './routes/_app/audit-logs'
 import { Route as AppCategoriesRouteImport } from './routes/_app/categories'
 import { Route as AppCutiRouteImport } from './routes/_app/cuti'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
 import { Route as AppEmployeesRouteImport } from './routes/_app/employees'
 import { Route as AppJabatanRouteImport } from './routes/_app/jabatan'
+import { Route as AppKeluargaRouteImport } from './routes/_app/keluarga'
 import { Route as AppOrganizationsRouteImport } from './routes/_app/organizations'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppWorkspaceRouteImport } from './routes/_app/workspace'
 import { Route as AuthLoginRouteImport } from './routes/_auth/login'
 import { Route as AuthMfaRouteImport } from './routes/_auth/mfa'
 import { Route as AppAccountMfaRouteImport } from './routes/_app/account/mfa'
+import { Route as AppAdminBpjsRouteImport } from './routes/_app/admin/bpjs'
+import { Route as AppAdminHonorSksRouteImport } from './routes/_app/admin/honor-sks'
+import { Route as AppAdminKontrakRouteImport } from './routes/_app/admin/kontrak'
+import { Route as AppAdminMesinPinRouteImport } from './routes/_app/admin/mesin-pin'
+import { Route as AppAdminPayrollScaleRouteImport } from './routes/_app/admin/payroll-scale'
+import { Route as AppAdminPemberhentianRouteImport } from './routes/_app/admin/pemberhentian'
+import { Route as AppAdminPensiunRouteImport } from './routes/_app/admin/pensiun'
+import { Route as AppAdminPesangonAturanRouteImport } from './routes/_app/admin/pesangon-aturan'
+import { Route as AppAdminPph21TerRouteImport } from './routes/_app/admin/pph21-ter'
+import { Route as AppAdminRbacRouteImport } from './routes/_app/admin/rbac'
 import { Route as AppAdminRolesRouteImport } from './routes/_app/admin/roles'
+import { Route as AppAdminSkRouteImport } from './routes/_app/admin/sk'
 import { Route as AppAdminSloRouteImport } from './routes/_app/admin/slo'
+import { Route as AppAdminThrRouteImport } from './routes/_app/admin/thr'
 import { Route as AppAttendanceMyRecordsRouteImport } from './routes/_app/attendance/my-records'
 import { Route as AppAttendanceUnitRecordsRouteImport } from './routes/_app/attendance/unit-records'
 import { Route as AppAttendanceUnitSummaryRouteImport } from './routes/_app/attendance/unit-summary'
@@ -37,6 +51,8 @@ import { Route as AppEmployeesEmployeeIdRouteImport } from './routes/_app/employ
 import { Route as AppPayrollSchedulesRouteImport } from './routes/_app/payroll/schedules'
 import { Route as AppPayrollSlipsRouteImport } from './routes/_app/payroll/slips'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as VerifySlipTokenRouteImport } from './routes/verify.slip.$token'
+import { Route as AppPayrollSlipsIndexRouteImport } from './routes/_app/payroll/slips.index'
 import { Route as AppPayrollSlipsPayrollIdRouteImport } from './routes/_app/payroll/slips.$payrollId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -72,6 +88,11 @@ const TermsOfReferenceRoute = TermsOfReferenceRouteImport.update({
   path: '/terms-of-reference',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppArsipRoute = AppArsipRouteImport.update({
+  id: '/arsip',
+  path: '/arsip',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppAuditLogsRoute = AppAuditLogsRouteImport.update({
   id: '/audit-logs',
   path: '/audit-logs',
@@ -100,6 +121,11 @@ const AppEmployeesRoute = AppEmployeesRouteImport.update({
 const AppJabatanRoute = AppJabatanRouteImport.update({
   id: '/jabatan',
   path: '/jabatan',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppKeluargaRoute = AppKeluargaRouteImport.update({
+  id: '/keluarga',
+  path: '/keluarga',
   getParentRoute: () => AppRoute,
 } as any)
 const AppOrganizationsRoute = AppOrganizationsRouteImport.update({
@@ -132,14 +158,74 @@ const AppAccountMfaRoute = AppAccountMfaRouteImport.update({
   path: '/account/mfa',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAdminBpjsRoute = AppAdminBpjsRouteImport.update({
+  id: '/admin/bpjs',
+  path: '/admin/bpjs',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAdminHonorSksRoute = AppAdminHonorSksRouteImport.update({
+  id: '/admin/honor-sks',
+  path: '/admin/honor-sks',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAdminKontrakRoute = AppAdminKontrakRouteImport.update({
+  id: '/admin/kontrak',
+  path: '/admin/kontrak',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAdminMesinPinRoute = AppAdminMesinPinRouteImport.update({
+  id: '/admin/mesin-pin',
+  path: '/admin/mesin-pin',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAdminPayrollScaleRoute = AppAdminPayrollScaleRouteImport.update({
+  id: '/admin/payroll-scale',
+  path: '/admin/payroll-scale',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAdminPemberhentianRoute = AppAdminPemberhentianRouteImport.update({
+  id: '/admin/pemberhentian',
+  path: '/admin/pemberhentian',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAdminPensiunRoute = AppAdminPensiunRouteImport.update({
+  id: '/admin/pensiun',
+  path: '/admin/pensiun',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAdminPesangonAturanRoute = AppAdminPesangonAturanRouteImport.update({
+  id: '/admin/pesangon-aturan',
+  path: '/admin/pesangon-aturan',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAdminPph21TerRoute = AppAdminPph21TerRouteImport.update({
+  id: '/admin/pph21-ter',
+  path: '/admin/pph21-ter',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAdminRbacRoute = AppAdminRbacRouteImport.update({
+  id: '/admin/rbac',
+  path: '/admin/rbac',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppAdminRolesRoute = AppAdminRolesRouteImport.update({
   id: '/admin/roles',
   path: '/admin/roles',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAdminSkRoute = AppAdminSkRouteImport.update({
+  id: '/admin/sk',
+  path: '/admin/sk',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppAdminSloRoute = AppAdminSloRouteImport.update({
   id: '/admin/slo',
   path: '/admin/slo',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAdminThrRoute = AppAdminThrRouteImport.update({
+  id: '/admin/thr',
+  path: '/admin/thr',
   getParentRoute: () => AppRoute,
 } as any)
 const AppAttendanceMyRecordsRoute = AppAttendanceMyRecordsRouteImport.update({
@@ -179,6 +265,16 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const VerifySlipTokenRoute = VerifySlipTokenRouteImport.update({
+  id: '/verify/slip/$token',
+  path: '/verify/slip/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppPayrollSlipsIndexRoute = AppPayrollSlipsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppPayrollSlipsRoute,
+} as any)
 const AppPayrollSlipsPayrollIdRoute =
   AppPayrollSlipsPayrollIdRouteImport.update({
     id: '/$payrollId',
@@ -192,20 +288,34 @@ export interface FileRoutesByFullPath {
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/terms-of-reference': typeof TermsOfReferenceRoute
+  '/arsip': typeof AppArsipRoute
   '/audit-logs': typeof AppAuditLogsRoute
   '/categories': typeof AppCategoriesRoute
   '/cuti': typeof AppCutiRoute
   '/dashboard': typeof AppDashboardRoute
   '/employees': typeof AppEmployeesRouteWithChildren
   '/jabatan': typeof AppJabatanRoute
+  '/keluarga': typeof AppKeluargaRoute
   '/organizations': typeof AppOrganizationsRoute
   '/settings': typeof AppSettingsRoute
   '/workspace': typeof AppWorkspaceRoute
   '/login': typeof AuthLoginRoute
   '/mfa': typeof AuthMfaRoute
   '/account/mfa': typeof AppAccountMfaRoute
+  '/admin/bpjs': typeof AppAdminBpjsRoute
+  '/admin/honor-sks': typeof AppAdminHonorSksRoute
+  '/admin/kontrak': typeof AppAdminKontrakRoute
+  '/admin/mesin-pin': typeof AppAdminMesinPinRoute
+  '/admin/payroll-scale': typeof AppAdminPayrollScaleRoute
+  '/admin/pemberhentian': typeof AppAdminPemberhentianRoute
+  '/admin/pensiun': typeof AppAdminPensiunRoute
+  '/admin/pesangon-aturan': typeof AppAdminPesangonAturanRoute
+  '/admin/pph21-ter': typeof AppAdminPph21TerRoute
+  '/admin/rbac': typeof AppAdminRbacRoute
   '/admin/roles': typeof AppAdminRolesRoute
+  '/admin/sk': typeof AppAdminSkRoute
   '/admin/slo': typeof AppAdminSloRoute
+  '/admin/thr': typeof AppAdminThrRoute
   '/attendance/my-records': typeof AppAttendanceMyRecordsRoute
   '/attendance/unit-records': typeof AppAttendanceUnitRecordsRoute
   '/attendance/unit-summary': typeof AppAttendanceUnitSummaryRoute
@@ -213,7 +323,9 @@ export interface FileRoutesByFullPath {
   '/payroll/schedules': typeof AppPayrollSchedulesRoute
   '/payroll/slips': typeof AppPayrollSlipsRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/verify/slip/$token': typeof VerifySlipTokenRoute
   '/payroll/slips/$payrollId': typeof AppPayrollSlipsPayrollIdRoute
+  '/payroll/slips/': typeof AppPayrollSlipsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -221,28 +333,43 @@ export interface FileRoutesByTo {
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/terms-of-reference': typeof TermsOfReferenceRoute
+  '/arsip': typeof AppArsipRoute
   '/audit-logs': typeof AppAuditLogsRoute
   '/categories': typeof AppCategoriesRoute
   '/cuti': typeof AppCutiRoute
   '/dashboard': typeof AppDashboardRoute
   '/employees': typeof AppEmployeesRouteWithChildren
   '/jabatan': typeof AppJabatanRoute
+  '/keluarga': typeof AppKeluargaRoute
   '/organizations': typeof AppOrganizationsRoute
   '/settings': typeof AppSettingsRoute
   '/workspace': typeof AppWorkspaceRoute
   '/login': typeof AuthLoginRoute
   '/mfa': typeof AuthMfaRoute
   '/account/mfa': typeof AppAccountMfaRoute
+  '/admin/bpjs': typeof AppAdminBpjsRoute
+  '/admin/honor-sks': typeof AppAdminHonorSksRoute
+  '/admin/kontrak': typeof AppAdminKontrakRoute
+  '/admin/mesin-pin': typeof AppAdminMesinPinRoute
+  '/admin/payroll-scale': typeof AppAdminPayrollScaleRoute
+  '/admin/pemberhentian': typeof AppAdminPemberhentianRoute
+  '/admin/pensiun': typeof AppAdminPensiunRoute
+  '/admin/pesangon-aturan': typeof AppAdminPesangonAturanRoute
+  '/admin/pph21-ter': typeof AppAdminPph21TerRoute
+  '/admin/rbac': typeof AppAdminRbacRoute
   '/admin/roles': typeof AppAdminRolesRoute
+  '/admin/sk': typeof AppAdminSkRoute
   '/admin/slo': typeof AppAdminSloRoute
+  '/admin/thr': typeof AppAdminThrRoute
   '/attendance/my-records': typeof AppAttendanceMyRecordsRoute
   '/attendance/unit-records': typeof AppAttendanceUnitRecordsRoute
   '/attendance/unit-summary': typeof AppAttendanceUnitSummaryRoute
   '/employees/$employeeId': typeof AppEmployeesEmployeeIdRoute
   '/payroll/schedules': typeof AppPayrollSchedulesRoute
-  '/payroll/slips': typeof AppPayrollSlipsRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/verify/slip/$token': typeof VerifySlipTokenRoute
   '/payroll/slips/$payrollId': typeof AppPayrollSlipsPayrollIdRoute
+  '/payroll/slips': typeof AppPayrollSlipsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -253,20 +380,34 @@ export interface FileRoutesById {
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/terms-of-reference': typeof TermsOfReferenceRoute
+  '/_app/arsip': typeof AppArsipRoute
   '/_app/audit-logs': typeof AppAuditLogsRoute
   '/_app/categories': typeof AppCategoriesRoute
   '/_app/cuti': typeof AppCutiRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/employees': typeof AppEmployeesRouteWithChildren
   '/_app/jabatan': typeof AppJabatanRoute
+  '/_app/keluarga': typeof AppKeluargaRoute
   '/_app/organizations': typeof AppOrganizationsRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/workspace': typeof AppWorkspaceRoute
   '/_auth/login': typeof AuthLoginRoute
   '/_auth/mfa': typeof AuthMfaRoute
   '/_app/account/mfa': typeof AppAccountMfaRoute
+  '/_app/admin/bpjs': typeof AppAdminBpjsRoute
+  '/_app/admin/honor-sks': typeof AppAdminHonorSksRoute
+  '/_app/admin/kontrak': typeof AppAdminKontrakRoute
+  '/_app/admin/mesin-pin': typeof AppAdminMesinPinRoute
+  '/_app/admin/payroll-scale': typeof AppAdminPayrollScaleRoute
+  '/_app/admin/pemberhentian': typeof AppAdminPemberhentianRoute
+  '/_app/admin/pensiun': typeof AppAdminPensiunRoute
+  '/_app/admin/pesangon-aturan': typeof AppAdminPesangonAturanRoute
+  '/_app/admin/pph21-ter': typeof AppAdminPph21TerRoute
+  '/_app/admin/rbac': typeof AppAdminRbacRoute
   '/_app/admin/roles': typeof AppAdminRolesRoute
+  '/_app/admin/sk': typeof AppAdminSkRoute
   '/_app/admin/slo': typeof AppAdminSloRoute
+  '/_app/admin/thr': typeof AppAdminThrRoute
   '/_app/attendance/my-records': typeof AppAttendanceMyRecordsRoute
   '/_app/attendance/unit-records': typeof AppAttendanceUnitRecordsRoute
   '/_app/attendance/unit-summary': typeof AppAttendanceUnitSummaryRoute
@@ -274,7 +415,9 @@ export interface FileRoutesById {
   '/_app/payroll/schedules': typeof AppPayrollSchedulesRoute
   '/_app/payroll/slips': typeof AppPayrollSlipsRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/verify/slip/$token': typeof VerifySlipTokenRoute
   '/_app/payroll/slips/$payrollId': typeof AppPayrollSlipsPayrollIdRoute
+  '/_app/payroll/slips/': typeof AppPayrollSlipsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -284,20 +427,34 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/terms'
     | '/terms-of-reference'
+    | '/arsip'
     | '/audit-logs'
     | '/categories'
     | '/cuti'
     | '/dashboard'
     | '/employees'
     | '/jabatan'
+    | '/keluarga'
     | '/organizations'
     | '/settings'
     | '/workspace'
     | '/login'
     | '/mfa'
     | '/account/mfa'
+    | '/admin/bpjs'
+    | '/admin/honor-sks'
+    | '/admin/kontrak'
+    | '/admin/mesin-pin'
+    | '/admin/payroll-scale'
+    | '/admin/pemberhentian'
+    | '/admin/pensiun'
+    | '/admin/pesangon-aturan'
+    | '/admin/pph21-ter'
+    | '/admin/rbac'
     | '/admin/roles'
+    | '/admin/sk'
     | '/admin/slo'
+    | '/admin/thr'
     | '/attendance/my-records'
     | '/attendance/unit-records'
     | '/attendance/unit-summary'
@@ -305,7 +462,9 @@ export interface FileRouteTypes {
     | '/payroll/schedules'
     | '/payroll/slips'
     | '/api/auth/$'
+    | '/verify/slip/$token'
     | '/payroll/slips/$payrollId'
+    | '/payroll/slips/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -313,28 +472,43 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/terms'
     | '/terms-of-reference'
+    | '/arsip'
     | '/audit-logs'
     | '/categories'
     | '/cuti'
     | '/dashboard'
     | '/employees'
     | '/jabatan'
+    | '/keluarga'
     | '/organizations'
     | '/settings'
     | '/workspace'
     | '/login'
     | '/mfa'
     | '/account/mfa'
+    | '/admin/bpjs'
+    | '/admin/honor-sks'
+    | '/admin/kontrak'
+    | '/admin/mesin-pin'
+    | '/admin/payroll-scale'
+    | '/admin/pemberhentian'
+    | '/admin/pensiun'
+    | '/admin/pesangon-aturan'
+    | '/admin/pph21-ter'
+    | '/admin/rbac'
     | '/admin/roles'
+    | '/admin/sk'
     | '/admin/slo'
+    | '/admin/thr'
     | '/attendance/my-records'
     | '/attendance/unit-records'
     | '/attendance/unit-summary'
     | '/employees/$employeeId'
     | '/payroll/schedules'
-    | '/payroll/slips'
     | '/api/auth/$'
+    | '/verify/slip/$token'
     | '/payroll/slips/$payrollId'
+    | '/payroll/slips'
   id:
     | '__root__'
     | '/'
@@ -344,20 +518,34 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/terms'
     | '/terms-of-reference'
+    | '/_app/arsip'
     | '/_app/audit-logs'
     | '/_app/categories'
     | '/_app/cuti'
     | '/_app/dashboard'
     | '/_app/employees'
     | '/_app/jabatan'
+    | '/_app/keluarga'
     | '/_app/organizations'
     | '/_app/settings'
     | '/_app/workspace'
     | '/_auth/login'
     | '/_auth/mfa'
     | '/_app/account/mfa'
+    | '/_app/admin/bpjs'
+    | '/_app/admin/honor-sks'
+    | '/_app/admin/kontrak'
+    | '/_app/admin/mesin-pin'
+    | '/_app/admin/payroll-scale'
+    | '/_app/admin/pemberhentian'
+    | '/_app/admin/pensiun'
+    | '/_app/admin/pesangon-aturan'
+    | '/_app/admin/pph21-ter'
+    | '/_app/admin/rbac'
     | '/_app/admin/roles'
+    | '/_app/admin/sk'
     | '/_app/admin/slo'
+    | '/_app/admin/thr'
     | '/_app/attendance/my-records'
     | '/_app/attendance/unit-records'
     | '/_app/attendance/unit-summary'
@@ -365,7 +553,9 @@ export interface FileRouteTypes {
     | '/_app/payroll/schedules'
     | '/_app/payroll/slips'
     | '/api/auth/$'
+    | '/verify/slip/$token'
     | '/_app/payroll/slips/$payrollId'
+    | '/_app/payroll/slips/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -377,6 +567,7 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   TermsOfReferenceRoute: typeof TermsOfReferenceRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  VerifySlipTokenRoute: typeof VerifySlipTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -430,6 +621,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TermsOfReferenceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/arsip': {
+      id: '/_app/arsip'
+      path: '/arsip'
+      fullPath: '/arsip'
+      preLoaderRoute: typeof AppArsipRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/audit-logs': {
       id: '/_app/audit-logs'
       path: '/audit-logs'
@@ -470,6 +668,13 @@ declare module '@tanstack/react-router' {
       path: '/jabatan'
       fullPath: '/jabatan'
       preLoaderRoute: typeof AppJabatanRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/keluarga': {
+      id: '/_app/keluarga'
+      path: '/keluarga'
+      fullPath: '/keluarga'
+      preLoaderRoute: typeof AppKeluargaRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/organizations': {
@@ -514,6 +719,76 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAccountMfaRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/admin/bpjs': {
+      id: '/_app/admin/bpjs'
+      path: '/admin/bpjs'
+      fullPath: '/admin/bpjs'
+      preLoaderRoute: typeof AppAdminBpjsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/admin/honor-sks': {
+      id: '/_app/admin/honor-sks'
+      path: '/admin/honor-sks'
+      fullPath: '/admin/honor-sks'
+      preLoaderRoute: typeof AppAdminHonorSksRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/admin/kontrak': {
+      id: '/_app/admin/kontrak'
+      path: '/admin/kontrak'
+      fullPath: '/admin/kontrak'
+      preLoaderRoute: typeof AppAdminKontrakRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/admin/mesin-pin': {
+      id: '/_app/admin/mesin-pin'
+      path: '/admin/mesin-pin'
+      fullPath: '/admin/mesin-pin'
+      preLoaderRoute: typeof AppAdminMesinPinRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/admin/payroll-scale': {
+      id: '/_app/admin/payroll-scale'
+      path: '/admin/payroll-scale'
+      fullPath: '/admin/payroll-scale'
+      preLoaderRoute: typeof AppAdminPayrollScaleRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/admin/pemberhentian': {
+      id: '/_app/admin/pemberhentian'
+      path: '/admin/pemberhentian'
+      fullPath: '/admin/pemberhentian'
+      preLoaderRoute: typeof AppAdminPemberhentianRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/admin/pensiun': {
+      id: '/_app/admin/pensiun'
+      path: '/admin/pensiun'
+      fullPath: '/admin/pensiun'
+      preLoaderRoute: typeof AppAdminPensiunRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/admin/pesangon-aturan': {
+      id: '/_app/admin/pesangon-aturan'
+      path: '/admin/pesangon-aturan'
+      fullPath: '/admin/pesangon-aturan'
+      preLoaderRoute: typeof AppAdminPesangonAturanRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/admin/pph21-ter': {
+      id: '/_app/admin/pph21-ter'
+      path: '/admin/pph21-ter'
+      fullPath: '/admin/pph21-ter'
+      preLoaderRoute: typeof AppAdminPph21TerRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/admin/rbac': {
+      id: '/_app/admin/rbac'
+      path: '/admin/rbac'
+      fullPath: '/admin/rbac'
+      preLoaderRoute: typeof AppAdminRbacRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/admin/roles': {
       id: '/_app/admin/roles'
       path: '/admin/roles'
@@ -521,11 +796,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminRolesRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/admin/sk': {
+      id: '/_app/admin/sk'
+      path: '/admin/sk'
+      fullPath: '/admin/sk'
+      preLoaderRoute: typeof AppAdminSkRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/admin/slo': {
       id: '/_app/admin/slo'
       path: '/admin/slo'
       fullPath: '/admin/slo'
       preLoaderRoute: typeof AppAdminSloRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/admin/thr': {
+      id: '/_app/admin/thr'
+      path: '/admin/thr'
+      fullPath: '/admin/thr'
+      preLoaderRoute: typeof AppAdminThrRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/attendance/my-records': {
@@ -577,6 +866,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/verify/slip/$token': {
+      id: '/verify/slip/$token'
+      path: '/verify/slip/$token'
+      fullPath: '/verify/slip/$token'
+      preLoaderRoute: typeof VerifySlipTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_app/payroll/slips/': {
+      id: '/_app/payroll/slips/'
+      path: '/'
+      fullPath: '/payroll/slips/'
+      preLoaderRoute: typeof AppPayrollSlipsIndexRouteImport
+      parentRoute: typeof AppPayrollSlipsRoute
+    }
     '/_app/payroll/slips/$payrollId': {
       id: '/_app/payroll/slips/$payrollId'
       path: '/$payrollId'
@@ -601,10 +904,12 @@ const AppEmployeesRouteWithChildren = AppEmployeesRoute._addFileChildren(
 
 interface AppPayrollSlipsRouteChildren {
   AppPayrollSlipsPayrollIdRoute: typeof AppPayrollSlipsPayrollIdRoute
+  AppPayrollSlipsIndexRoute: typeof AppPayrollSlipsIndexRoute
 }
 
 const AppPayrollSlipsRouteChildren: AppPayrollSlipsRouteChildren = {
   AppPayrollSlipsPayrollIdRoute: AppPayrollSlipsPayrollIdRoute,
+  AppPayrollSlipsIndexRoute: AppPayrollSlipsIndexRoute,
 }
 
 const AppPayrollSlipsRouteWithChildren = AppPayrollSlipsRoute._addFileChildren(
@@ -612,18 +917,32 @@ const AppPayrollSlipsRouteWithChildren = AppPayrollSlipsRoute._addFileChildren(
 )
 
 interface AppRouteChildren {
+  AppArsipRoute: typeof AppArsipRoute
   AppAuditLogsRoute: typeof AppAuditLogsRoute
   AppCategoriesRoute: typeof AppCategoriesRoute
   AppCutiRoute: typeof AppCutiRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppEmployeesRoute: typeof AppEmployeesRouteWithChildren
   AppJabatanRoute: typeof AppJabatanRoute
+  AppKeluargaRoute: typeof AppKeluargaRoute
   AppOrganizationsRoute: typeof AppOrganizationsRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppWorkspaceRoute: typeof AppWorkspaceRoute
   AppAccountMfaRoute: typeof AppAccountMfaRoute
+  AppAdminBpjsRoute: typeof AppAdminBpjsRoute
+  AppAdminHonorSksRoute: typeof AppAdminHonorSksRoute
+  AppAdminKontrakRoute: typeof AppAdminKontrakRoute
+  AppAdminMesinPinRoute: typeof AppAdminMesinPinRoute
+  AppAdminPayrollScaleRoute: typeof AppAdminPayrollScaleRoute
+  AppAdminPemberhentianRoute: typeof AppAdminPemberhentianRoute
+  AppAdminPensiunRoute: typeof AppAdminPensiunRoute
+  AppAdminPesangonAturanRoute: typeof AppAdminPesangonAturanRoute
+  AppAdminPph21TerRoute: typeof AppAdminPph21TerRoute
+  AppAdminRbacRoute: typeof AppAdminRbacRoute
   AppAdminRolesRoute: typeof AppAdminRolesRoute
+  AppAdminSkRoute: typeof AppAdminSkRoute
   AppAdminSloRoute: typeof AppAdminSloRoute
+  AppAdminThrRoute: typeof AppAdminThrRoute
   AppAttendanceMyRecordsRoute: typeof AppAttendanceMyRecordsRoute
   AppAttendanceUnitRecordsRoute: typeof AppAttendanceUnitRecordsRoute
   AppAttendanceUnitSummaryRoute: typeof AppAttendanceUnitSummaryRoute
@@ -632,18 +951,32 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppArsipRoute: AppArsipRoute,
   AppAuditLogsRoute: AppAuditLogsRoute,
   AppCategoriesRoute: AppCategoriesRoute,
   AppCutiRoute: AppCutiRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppEmployeesRoute: AppEmployeesRouteWithChildren,
   AppJabatanRoute: AppJabatanRoute,
+  AppKeluargaRoute: AppKeluargaRoute,
   AppOrganizationsRoute: AppOrganizationsRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppWorkspaceRoute: AppWorkspaceRoute,
   AppAccountMfaRoute: AppAccountMfaRoute,
+  AppAdminBpjsRoute: AppAdminBpjsRoute,
+  AppAdminHonorSksRoute: AppAdminHonorSksRoute,
+  AppAdminKontrakRoute: AppAdminKontrakRoute,
+  AppAdminMesinPinRoute: AppAdminMesinPinRoute,
+  AppAdminPayrollScaleRoute: AppAdminPayrollScaleRoute,
+  AppAdminPemberhentianRoute: AppAdminPemberhentianRoute,
+  AppAdminPensiunRoute: AppAdminPensiunRoute,
+  AppAdminPesangonAturanRoute: AppAdminPesangonAturanRoute,
+  AppAdminPph21TerRoute: AppAdminPph21TerRoute,
+  AppAdminRbacRoute: AppAdminRbacRoute,
   AppAdminRolesRoute: AppAdminRolesRoute,
+  AppAdminSkRoute: AppAdminSkRoute,
   AppAdminSloRoute: AppAdminSloRoute,
+  AppAdminThrRoute: AppAdminThrRoute,
   AppAttendanceMyRecordsRoute: AppAttendanceMyRecordsRoute,
   AppAttendanceUnitRecordsRoute: AppAttendanceUnitRecordsRoute,
   AppAttendanceUnitSummaryRoute: AppAttendanceUnitSummaryRoute,
@@ -674,6 +1007,7 @@ const rootRouteChildren: RootRouteChildren = {
   TermsRoute: TermsRoute,
   TermsOfReferenceRoute: TermsOfReferenceRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  VerifySlipTokenRoute: VerifySlipTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

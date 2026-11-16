@@ -1,6 +1,5 @@
-import { createFileRoute } from '@tanstack/react-router'
-import PayrollSlipsPage from '@/components/PayrollSlipsPage'
+import { Outlet, createFileRoute } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_app/payroll/slips')({
-  component: PayrollSlipsPage,
+  component: Outlet,
 })

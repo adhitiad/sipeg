@@ -1,6 +1,8 @@
-import type { AttendanceRecord } from '@/validations/schemas'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
-import SortIcon from '@/components/SortIcon'
+import { useMemo } from 'react'
+import type { ColumnDef } from '@tanstack/react-table'
+import { Search } from 'lucide-react'
+import { DataTable } from '@/components/DataTable'
+import type { DataTableLabels } from '@/components/DataTable'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -9,17 +11,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { useMessages } from '@/i18n/locale-context'
+import {
+  ATTENDANCE_SORT_FIELDS,
+  type AttendanceSortField,
+  type AttendanceSortOrder,
+} from '@/lib/attendance'
 import type { MessageKey } from '@/i18n/dictionary'
+import type { AttendanceRecord } from '@/validations/schemas'
 
 const PAGE_SIZES = [10, 25, 50, 100] as const
 export type AttendancePageSize = (typeof PAGE_SIZES)[number]
@@ -31,33 +30,27 @@ type AttendanceTableProps = {
   totalPages: number
   totalItems: number
   isFetching: boolean
-  search: string
-  sort: 'date'
-  order: 'asc' | 'desc'
+  // Pencarian hanya dipasang pada tampilan unit. Pada riwayat pribadi kontrol
+  // ini dihilangkan karena cakupan endpoint sudah milik principal sendiri.
+  search?: string
+  sort: AttendanceSortField
+  order: AttendanceSortOrder
   status: string | null
   onPageChange: (page: number) => void
   onPageSizeChange: (size: AttendancePageSize) => void
-  onSearchChange: (value: string) => void
-  onSortChange: (sort: 'date', order: 'asc' | 'desc') => void
+  onSearchChange?: (value: string) => void
+  onSortChange: (field: AttendanceSortField, order: AttendanceSortOrder) => void
   onStatusChange: (value: string | null) => void
-  labels: {
-    caption: string
+  labels: DataTableLabels & {
     id: string
     date: string
     status: string
     note: string
     source: string
-    resultLabel: string
-    refreshingLabel: string
-    prevPage: string
-    nextPage: string
-    pageInfo: string
-    searchLabel: string
-    searchPlaceholder: string
+    searchLabel?: string
+    searchPlaceholder?: string
     statusLabel: string
     statusAll: string
-    pageSizeLabel: string
-    itemsPerPage: string
     statusHadir: string
     statusIzin: string
     statusSakit: string
@@ -102,15 +95,11 @@ function statusBadgeColor(status: string): string {
   }
 }
 
-function pageRange(totalItems: number, page: number, pageSize: number): [number, number] {
-  if (totalItems === 0) {
-    return [0, 0]
-  }
-  const from = (page - 1) * pageSize + 1
-  const to = Math.min(page * pageSize, totalItems)
-  return [from, to]
-}
-
+/**
+ * Tabel riwayat presensi pribadi. Backend memegang pencarian, penyaringan
+ * status, pengurutan, dan pemotongan baris; tabel ini meneruskan pilihan
+ * pengguna ke mesin tabel bersama.
+ */
 export default function AttendanceTable({
   items,
   page,
@@ -130,30 +119,97 @@ export default function AttendanceTable({
   labels,
 }: AttendanceTableProps) {
   const t = useMessages()
-  const [from, to] = pageRange(totalItems, page, pageSize)
+  const showSearch = typeof onSearchChange === 'function'
+
+  const columns = useMemo<ColumnDef<AttendanceRecord, unknown>[]>(
+    () => [
+      {
+        id: 'id',
+        accessorFn: (row) => row.id,
+        header: labels.id,
+        cell: ({ row }) => (
+          <span className="font-mono text-xs break-all">{row.original.id}</span>
+        ),
+      },
+      {
+        id: 'tanggal',
+        accessorFn: (row) => row.date,
+        header: labels.date,
+        cell: ({ row }) => (
+          <span className="text-sm break-all text-[var(--sea-ink)]">
+            {row.original.date}
+          </span>
+        ),
+      },
+      {
+        id: 'status',
+        accessorFn: (row) => row.status,
+        header: labels.status,
+        cell: ({ row }) => (
+          <span
+            className={`text-xs font-medium capitalize ${statusBadgeColor(
+              row.original.status,
+            )}`}
+          >
+            {statusLabel(row.original.status, (key) => t(key as MessageKey))}
+          </span>
+        ),
+      },
+      {
+        id: 'catatan',
+        accessorFn: (row) => row.note ?? '',
+        header: labels.note,
+        cell: ({ row }) => (
+          <span className="text-sm break-words text-[var(--sea-ink-soft)]">
+            {row.original.note ?? '-'}
+          </span>
+        ),
+      },
+      {
+        id: 'sumber',
+        accessorFn: (row) => row.source ?? '',
+        header: labels.source,
+        cell: ({ row }) => (
+          <span className="font-mono text-xs break-all text-[var(--sea-ink-soft)]">
+            {row.original.source ?? '-'}
+          </span>
+        ),
+      },
+    ],
+    [labels, t],
+  )
 
   return (
-    <div className="island-shell overflow-hidden rounded-2xl">
-      <div className="border-b border-[var(--line)] px-4 py-3 sm:flex sm:items-center sm:justify-between gap-3">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-center">
-          <label
-            htmlFor="attendance-search"
-            className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--kicker)]"
-          >
-            {labels.searchLabel}
+    <div className="space-y-4">
+      <div
+        className={
+          showSearch
+            ? 'grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end'
+            : 'grid gap-3 sm:max-w-xs'
+        }
+      >
+        {showSearch ? (
+          <label className="grid gap-1">
+            <span className="text-xs font-semibold tracking-[0.16em] text-[var(--kicker)] uppercase">
+              {labels.searchLabel}
+            </span>
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-[var(--sea-ink-soft)]"
+                aria-hidden="true"
+              />
+              <Input
+                type="search"
+                value={search ?? ''}
+                onChange={(event) => onSearchChange?.(event.target.value)}
+                placeholder={labels.searchPlaceholder}
+                className="h-11 pl-9"
+              />
+            </div>
           </label>
-          <Input
-            id="attendance-search"
-            type="search"
-            value={search}
-            onChange={(event) => onSearchChange(event.target.value)}
-            placeholder={labels.searchPlaceholder}
-            className="h-11 w-full sm:w-64"
-          />
-        </div>
-
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-center">
-          <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--kicker)]">
+        ) : null}
+        <label className="grid gap-1">
+          <span className="text-xs font-semibold tracking-[0.16em] text-[var(--kicker)] uppercase">
             {labels.statusLabel}
           </span>
           <Select
@@ -173,147 +229,27 @@ export default function AttendanceTable({
               <SelectItem value="LD">{labels.statusLibur}</SelectItem>
             </SelectContent>
           </Select>
-        </div>
-
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-center">
-          <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--kicker)]">
-            {labels.pageSizeLabel}
-          </span>
-          <Select
-            value={String(pageSize)}
-            onValueChange={(value) =>
-              onPageSizeChange(value as unknown as AttendancePageSize)
-            }
-          >
-            <SelectTrigger className="h-11 w-20" aria-label={labels.pageSizeLabel}>
-              <SelectValue placeholder={String(pageSize)} />
-            </SelectTrigger>
-            <SelectContent>
-              {PAGE_SIZES.map((size) => (
-                <SelectItem key={size} value={String(size)}>
-                  {size}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        </label>
       </div>
 
-      <Table className="min-w-[40rem]">
-        <TableCaption className="sr-only">{labels.caption}</TableCaption>
-        <TableHeader>
-          <TableRow className="border-[var(--line)] hover:bg-transparent">
-            <TableHead scope="col" className="px-4 py-3">
-              {labels.id}
-            </TableHead>
-            <TableHead scope="col" className="px-4 py-3">
-              <button
-                type="button"
-                onClick={() =>
-                  onSortChange(
-                    'date',
-                    sort === 'date' ? (order === 'asc' ? 'desc' : 'asc') : 'asc',
-                  )
-                }
-                aria-label={labels.date}
-                className="island-kicker inline-flex items-center gap-1"
-              >
-                {labels.date}
-                <SortIcon active={sort === 'date'} order={order} />
-              </button>
-            </TableHead>
-            <TableHead scope="col" className="px-4 py-3">
-              {labels.status}
-            </TableHead>
-            <TableHead scope="col" className="px-4 py-3">
-              {labels.note}
-            </TableHead>
-            <TableHead scope="col" className="px-4 py-3">
-              {labels.source}
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody aria-busy={isFetching}>
-          {items.map((record) => (
-            <TableRow key={record.id} className="border-[var(--line)] last:border-0">
-              <TableCell className="px-4 py-3 font-mono text-xs break-all">
-                {record.id}
-              </TableCell>
-              <TableCell className="px-4 py-3 text-sm text-[var(--sea-ink)] break-all">
-                {record.date}
-              </TableCell>
-              <TableCell className="px-4 py-3">
-                <span
-                  className={`font-medium text-xs capitalize ${statusBadgeColor(record.status)}`}
-                >
-                  {statusLabel(record.status, (key: string) => t(key as MessageKey))}
-                </span>
-              </TableCell>
-              <TableCell className="px-4 py-3 text-sm text-[var(--sea-ink-soft)] break-words">
-                {record.note ?? '-'}
-              </TableCell>
-              <TableCell className="px-4 py-3 text-sm font-mono text-[var(--sea-ink-soft)] break-all">
-                {record.source ?? '-'}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-
-      <div className="flex flex-col gap-3 border-t border-[var(--line)] px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-        <p className="m-0 text-[var(--sea-ink-soft)]">
-          {labels.itemsPerPage
-            .replace('{from}', String(from))
-            .replace('{to}', String(to))
-            .replace('{total}', String(totalItems))}
-          {isFetching ? ` · ${labels.refreshingLabel}` : ''}
-        </p>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => onPageChange(page - 1)}
-            disabled={page <= 1}
-            aria-label={labels.prevPage}
-            className="h-11 rounded-full border border-[var(--chip-line)] bg-[var(--chip-bg)] px-4 text-xs font-semibold text-[var(--sea-ink)] disabled:cursor-not-allowed disabled:opacity-50 sm:h-9"
-          >
-            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-          </button>
-          {[...Array(Math.max(totalPages, 1))].map((p) => {
-            const n = p + 1
-            const active = n === page
-            return (
-              <button
-                key={n}
-                type="button"
-                onClick={() => onPageChange(n)}
-                aria-label={n === page ? 'Halaman ' + String(n) : undefined}
-                aria-current={active ? 'page' : undefined}
-                className={
-                  active
-                    ? 'h-10 w-10 rounded-full bg-[var(--lagoon)] text-white shadow-[0_0_0_1px_var(--lagoon)_inset] text-xs font-semibold'
-                    : 'h-10 w-10 rounded-full border border-[var(--line)] bg-[var(--chip-bg)] text-[var(--sea-ink)] text-xs font-semibold hover:bg-[var(--surface-strong)] disabled:opacity-50'
-                }
-              >
-                {String(n)}
-              </button>
-            )
-          })}
-          <button
-            type="button"
-            onClick={() => onPageChange(page + 1)}
-            disabled={page >= totalPages}
-            aria-label={labels.nextPage}
-            className="h-11 rounded-full border border-[var(--chip-line)] bg-[var(--chip-bg)] px-4 text-xs font-semibold text-[var(--sea-ink)] disabled:cursor-not-allowed disabled:opacity-50 sm:h-9"
-          >
-            <ChevronRight className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </div>
-        <span className="text-xs text-[var(--sea-ink-soft)]">
-          {labels.pageInfo
-            .replace('{page}', String(page))
-            .replace('{total}', String(Math.max(totalPages, 1)))}
-        </span>
-      </div>
+      <DataTable
+        columns={columns}
+        data={items}
+        getRowId={(row) => row.id}
+        sortFields={ATTENDANCE_SORT_FIELDS}
+        sort={sort}
+        order={order}
+        onSortChange={onSortChange}
+        page={page}
+        pageSize={pageSize}
+        totalItems={totalItems}
+        totalPages={totalPages}
+        onPageChange={onPageChange}
+        onPageSizeChange={(size) => onPageSizeChange(size as AttendancePageSize)}
+        pageSizeOptions={PAGE_SIZES}
+        isFetching={isFetching}
+        labels={labels}
+      />
     </div>
   )
 }

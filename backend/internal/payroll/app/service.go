@@ -38,9 +38,9 @@ func NewService(repo repository.Repository, policy auth.Policy, scopeRepo ScopeR
 // List mengembalikan daftar slip gaji sesuai cakupan principal.
 func (s *Service) List(ctx context.Context, principal auth.Principal, options listing.Options) (listing.Page[models.Gaji], error) {
 	switch {
-	case allows(s.policy, principal, "payroll:read:any"):
+	case allows(ctx, s.policy, principal, "payroll:read:any"):
 		// Role global: seluruh slip visible, penyaring unit tetap opsional.
-	case allows(s.policy, principal, "payroll:read:homebase"):
+	case allows(ctx, s.policy, principal, "payroll:read:homebase"):
 		scope, err := s.scope.resolve(ctx, principal)
 		if err != nil {
 			return listing.Page[models.Gaji]{}, err
@@ -49,7 +49,7 @@ func (s *Service) List(ctx context.Context, principal auth.Principal, options li
 			return listing.EmptyPage[models.Gaji](options.Page, options.PageSize), nil
 		}
 		options.ScopeHomebaseIDs = scope.List()
-	case allows(s.policy, principal, "payroll:read:self"):
+	case allows(ctx, s.policy, principal, "payroll:read:self"):
 		options.UserID = principal.UserID
 	default:
 		return listing.Page[models.Gaji]{}, domain.ErrForbidden
@@ -84,6 +84,23 @@ func (s *Service) Get(ctx context.Context, principal auth.Principal, id string) 
 	return slip, nil
 }
 
+// Publish menandai slip DRAF menjadi TERBIT (prasyarat konfirmasi
+// pembayaran). Hanya admin.
+func (s *Service) Publish(ctx context.Context, principal auth.Principal, slipID string) (models.Gaji, error) {
+	if !allows(ctx, s.policy, principal, "payroll:manage") {
+		return models.Gaji{}, domain.ErrForbidden
+	}
+	slip, err := s.repo.GetSlip(ctx, slipID)
+	if err != nil {
+		return models.Gaji{}, err
+	}
+	var unitID *string
+	if slip.Pegawai != nil && slip.Pegawai.HomebaseId != nil && *slip.Pegawai.HomebaseId != "" {
+		unitID = slip.Pegawai.HomebaseId
+	}
+	return s.repo.PublishSlip(ctx, principal.UserID, slipID, unitID)
+}
+
 // RecordPayment mencatat konfirmasi pembayaran untuk sebuah slip.
 //
 // -slip hanya dapat dibayar satu kali dan hanya bila statusnya sudah TERBIT.
@@ -93,7 +110,7 @@ func (s *Service) RecordPayment(ctx context.Context, principal auth.Principal, s
 	if err := input.Validate(); err != nil {
 		return models.Gaji{}, err
 	}
-	if !allows(s.policy, principal, "payroll:manage") {
+	if !allows(ctx, s.policy, principal, "payroll:manage") {
 		return models.Gaji{}, domain.ErrForbidden
 	}
 
@@ -145,13 +162,13 @@ func (s *Service) ConfirmedPayment(ctx context.Context, userID, period string) (
 
 // canRead memeriksa apakah principal boleh membaca sebuah slip gaji.
 func (s *Service) canRead(ctx context.Context, principal auth.Principal, slip models.Gaji) (bool, error) {
-	if allows(s.policy, principal, "payroll:read:any") {
+	if allows(ctx, s.policy, principal, "payroll:read:any") {
 		return true, nil
 	}
-	if allows(s.policy, principal, "payroll:read:self") {
+	if allows(ctx, s.policy, principal, "payroll:read:self") {
 		return principal.UserID == slip.UserId, nil
 	}
-	if !allows(s.policy, principal, "payroll:read:homebase") {
+	if !allows(ctx, s.policy, principal, "payroll:read:homebase") {
 		return false, nil
 	}
 	scope, err := s.scope.resolve(ctx, principal)
@@ -191,6 +208,12 @@ func (s scopeResolver) resolve(ctx context.Context, principal auth.Principal) (a
 }
 
 // allows melaporkan apakah role principal memiliki permission tertentu.
-func allows(policy auth.Policy, principal auth.Principal, permission auth.Permission) bool {
-	return policy != nil && policy.Allows(principal.RoleName, permission)
+func allows(ctx context.Context, policy auth.Policy, principal auth.Principal, permission auth.Permission) bool {
+	if policy == nil {
+		return false
+	}
+	if sp, ok := policy.(auth.ScopedPolicy); ok {
+		return sp.AllowsScoped(ctx, principal, permission)
+	}
+	return policy.Allows(principal.RoleName, permission)
 }

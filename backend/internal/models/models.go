@@ -50,21 +50,24 @@ type User struct {
 	JabatanStruktural *string `gorm:"column:jabatan_struktural"`
 	JabatanFungsional *string `gorm:"column:jabatan_fungsional"`
 	KategoriPegawaiId *string `gorm:"type:uuid"`
-	BankNama          *string
-	BankRekening      *string
-	BankAtasNama      *string
-	TanggalMasuk      *time.Time `gorm:"type:timestamp(3)"`
-	GajiPokok         *float64
-	Npwp              *crypto.Encrypted
-	NpwpHash          *string `gorm:"column:npwpHash"`
-	StatusPtkp        *string
-	NoKk              *string `gorm:"column:no_kk"`
-	NoKkEnc           bool    `gorm:"column:no_kk_encrypted"`
-	RoleId            *string `gorm:"type:uuid"`
-	RoleName          *string `gorm:"->;column:role_name"`
-	HomebaseId        *string `gorm:"type:uuid"`
-	TwoFactorEnabled  *bool
-	Aktif             bool `gorm:"default:true"`
+	// KategoriStatusId menunjuk kategoriStatusPegawai (penggajian inti,
+	// migrasi 000025). Nullable; pengisian dilakukan bertahap.
+	KategoriStatusId *string `gorm:"type:uuid;index:user_kategori_status_idx"`
+	BankNama         *string
+	BankRekening     *string
+	BankAtasNama     *string
+	TanggalMasuk     *time.Time `gorm:"type:timestamp(3)"`
+	GajiPokok        *float64
+	Npwp             *crypto.Encrypted
+	NpwpHash         *string `gorm:"column:npwpHash"`
+	StatusPtkp       *string
+	NoKk             *string `gorm:"column:no_kk"`
+	NoKkEnc          bool    `gorm:"column:no_kk_encrypted"`
+	RoleId           *string `gorm:"type:uuid"`
+	RoleName         *string `gorm:"->;column:role_name"`
+	HomebaseId       *string `gorm:"type:uuid"`
+	TwoFactorEnabled *bool
+	Aktif            bool `gorm:"default:true"`
 }
 
 type Homebase struct {

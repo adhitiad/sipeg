@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { ChevronLeft, Edit2, Save, ShieldAlert, User } from 'lucide-react'
 import RetryButton from '@/components/RetryButton'
+import EmployeeRiwayatCards from '@/components/EmployeeRiwayatCards'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -302,6 +303,8 @@ function EmployeeProfilePage() {
           </div>
         </CardContent>
       </Card>
+
+      <EmployeeRiwayatCards userId={employeeId} />
 
       {canUpdate && isEditing ? (
         <Card className="mt-6 max-w-md">

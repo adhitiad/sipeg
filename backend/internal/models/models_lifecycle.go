@@ -62,6 +62,14 @@ type Pemberhentian struct {
 	UjiKapabilitasId *string `gorm:"type:uuid;index:pemberhentian_uji_idx"`
 	Keterangan       *string
 	CreatedBy        *string `gorm:"type:uuid"`
+	// Status alur pengajuan + persetujuan (DEC-083): MENUNGGU | DISETUJUI | DITOLAK.
+	Status StatusPersetujuan `gorm:"type:StatusPersetujuan;index:pemberhentian_status_idx"`
+	// Alasan pengajuan (MENINGGAL_DUNIA | SAKIT_BERKEPANJANGAN | BUP |
+	// MENGUNDUR_DIRI | PENYEDERHANAAN_ORGANISASI | KESALAHAN_BERAT).
+	Alasan *string
+	// KompensasiBulan adalah total bulan gaji pokok yang menjadi kompensasi
+	// (pesangon + 1 bulan/5 tahun masa kerja di atas lantai PP 35/2021).
+	KompensasiBulan float64
 }
 
 type Paklaring struct {

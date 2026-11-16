@@ -48,12 +48,12 @@ tersambung ke broker container.
 
 Semua dideklarasikan idempoten saat koneksi dibuka (paket `internal/mq`):
 
-| Nama | Jenis | Peran |
-|------|-------|-------|
-| `simpeg.jobs` | direct exchange | menerima pesan pekerjaan; routing key = kind pekerjaan |
-| `simpeg.jobs` | durable queue | antrean eksekusi; dead-letter ke `simpeg.jobs.dlx` |
-| `simpeg.jobs.dlx` | direct exchange | perantara pesan gagal |
-| `simpeg.jobs.dead` | durable queue | tempat pesan gagal untuk diperiksa operator |
+| Nama               | Jenis           | Peran                                                  |
+| ------------------ | --------------- | ------------------------------------------------------ |
+| `simpeg.jobs`      | direct exchange | menerima pesan pekerjaan; routing key = kind pekerjaan |
+| `simpeg.jobs`      | durable queue   | antrean eksekusi; dead-letter ke `simpeg.jobs.dlx`     |
+| `simpeg.jobs.dlx`  | direct exchange | perantara pesan gagal                                  |
+| `simpeg.jobs.dead` | durable queue   | tempat pesan gagal untuk diperiksa operator            |
 
 Kind pekerjaan yang dikenal: `audit.cleanup` (harian 02:00 WIB),
 `payroll.notify` (harian 02:05 WIB), dan `slo.evaluate` (tiap 5 menit,

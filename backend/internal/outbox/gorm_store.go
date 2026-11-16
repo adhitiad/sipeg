@@ -226,6 +226,75 @@ func (s GormStore) ReleaseLocked(ctx context.Context, now time.Time) error {
 	return nil
 }
 
+// Stats mengembalikan ringkasan keadaan antrean keluar.
+func (s GormStore) Stats(ctx context.Context) (Stats, error) {
+	if s.DB == nil {
+		return Stats{}, errors.New("outbox database is required")
+	}
+	type statusCount struct {
+		Status string
+		Count  int64
+	}
+	var counts []statusCount
+	if err := s.DB.WithContext(ctx).
+		Model(&models.OutboxMessage{}).
+		Select("status, COUNT(*) as count").
+		Group("status").
+		Scan(&counts).Error; err != nil {
+		return Stats{}, fmt.Errorf("read outbox stats: %w", err)
+	}
+
+	stats := Stats{FailedByKind: map[string]int64{}}
+	for _, row := range counts {
+		switch row.Status {
+		case StatusPending:
+			stats.Pending = row.Count
+		case StatusProcessing:
+			stats.Processing = row.Count
+		case StatusDone:
+			stats.Done = row.Count
+		case StatusFailed:
+			stats.Failed = row.Count
+		}
+	}
+
+	if stats.Pending > 0 || stats.Processing > 0 {
+		var oldest time.Time
+		err := s.DB.WithContext(ctx).
+			Model(&models.OutboxMessage{}).
+			Where("status IN ?", []string{StatusPending, StatusProcessing}).
+			Select("MIN(\"availableAt\")").
+			Scan(&oldest).Error
+		if err != nil {
+			return Stats{}, fmt.Errorf("read oldest outbox message: %w", err)
+		}
+		if !oldest.IsZero() {
+			stats.OldestPendingAt = &oldest
+		}
+	}
+
+	if stats.Failed > 0 {
+		type kindCount struct {
+			Kind  string
+			Count int64
+		}
+		var failedKinds []kindCount
+		if err := s.DB.WithContext(ctx).
+			Model(&models.OutboxMessage{}).
+			Where("status = ?", StatusFailed).
+			Select("kind, COUNT(*) as count").
+			Group("kind").
+			Scan(&failedKinds).Error; err != nil {
+			return Stats{}, fmt.Errorf("read failed outbox by kind: %w", err)
+		}
+		for _, row := range failedKinds {
+			stats.FailedByKind[row.Kind] = row.Count
+		}
+	}
+
+	return stats, nil
+}
+
 func toMessage(record models.OutboxMessage) Message {
 	return Message{
 		ID:          record.ID,

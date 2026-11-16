@@ -26,6 +26,7 @@ type CutiDTO struct {
 	DisetujuiBy        *string                 `json:"disetujuiBy"`
 	Catatan            *string                 `json:"catatan"`
 	SubJenis           *SubJenisIzinPentingDTO `json:"subJenis"`
+	SubJenisBersalin   *SubJenisBersalinDTO    `json:"subJenisBersalin"`
 	NomorSurat         *string                 `json:"nomorSurat"`
 	TanggalSuratDokter *time.Time              `json:"tanggalSuratDokter"`
 	JenisEviden        *JenisEvidenDTO         `json:"jenisEviden"`
@@ -49,6 +50,14 @@ const (
 	JenisCutiSakitBerkepanjanganDTO JenisCutiDTO = "SAKIT_BERKEPANJANGAN"
 	JenisCutiIzinPentingDTO         JenisCutiDTO = "IZIN_PENTING"
 	JenisCutiPolitikDTO             JenisCutiDTO = "POLITIK"
+)
+
+// SubJenisBersalinDTO adalah representasi string sub jenis bersalin.
+type SubJenisBersalinDTO string
+
+const (
+	SubJenisMelahirkanDTO SubJenisBersalinDTO = "MELAHIRKAN"
+	SubJenisKeguguranDTO  SubJenisBersalinDTO = "KEGUGURAN"
 )
 
 // SubJenisIzinPentingDTO adalah representasi string sub jenis izin penting.
@@ -84,6 +93,7 @@ func cutiDTO(item models.Cuti) CutiDTO {
 		DisetujuiBy:        item.DisetujuiBy,
 		Catatan:            item.Catatan,
 		SubJenis:           (*SubJenisIzinPentingDTO)(item.SubJenis),
+		SubJenisBersalin:   (*SubJenisBersalinDTO)(item.SubJenisBersalin),
 		NomorSurat:         item.NomorSurat,
 		TanggalSuratDokter: item.TanggalSuratDokter,
 		JenisEviden:        (*JenisEvidenDTO)(item.JenisEviden),
@@ -105,6 +115,7 @@ type cutiCreateRequest struct {
 	AlamatCuti         *string  `json:"alamatCuti"`
 	Alasan             *string  `json:"alasan"`
 	SubJenis           *string  `json:"subJenis"`
+	SubJenisBersalin   *string  `json:"subJenisBersalin"`
 	NomorSurat         *string  `json:"nomorSurat"`
 	TanggalSuratDokter *string  `json:"tanggalSuratDokter"`
 	JenisEviden        *string  `json:"jenisEviden"`
@@ -185,6 +196,11 @@ func (api directoryAPI) createCuti(w http.ResponseWriter, r *http.Request) {
 		v := models.SubJenisIzinPenting(*request.SubJenis)
 		subJenis = &v
 	}
+	var subJenisBersalin *models.SubJenisBersalin
+	if request.SubJenisBersalin != nil {
+		v := models.SubJenisBersalin(*request.SubJenisBersalin)
+		subJenisBersalin = &v
+	}
 	var tanggalSuratDokter *time.Time
 	if request.TanggalSuratDokter != nil {
 		t, err := time.Parse("2006-01-02", *request.TanggalSuratDokter)
@@ -224,6 +240,7 @@ func (api directoryAPI) createCuti(w http.ResponseWriter, r *http.Request) {
 		AlamatCuti:         request.AlamatCuti,
 		Alasan:             request.Alasan,
 		SubJenis:           subJenis,
+		SubJenisBersalin:   subJenisBersalin,
 		NomorSurat:         request.NomorSurat,
 		TanggalSuratDokter: tanggalSuratDokter,
 		JenisEviden:        jenisEviden,
@@ -275,6 +292,26 @@ func (api directoryAPI) approveCuti(w http.ResponseWriter, r *http.Request) {
 	}
 	principal, _ := auth.PrincipalFromContext(r.Context())
 	updated, err := api.leave.Approve(r.Context(), principal, id, request.Catatan)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, cutiDTO(updated))
+}
+
+func (api directoryAPI) cancelCuti(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("cutiId")
+	if !validUUID(id) {
+		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidID)
+		return
+	}
+	var request cutiActionRequest
+	if err := decodeJSON(w, r, &request); err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidJSON)
+		return
+	}
+	principal, _ := auth.PrincipalFromContext(r.Context())
+	updated, err := api.leave.Cancel(r.Context(), principal, id, request.Catatan)
 	if err != nil {
 		writeAppError(w, err)
 		return

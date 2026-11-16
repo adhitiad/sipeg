@@ -46,6 +46,7 @@ Perintah di atas dijalankan lewat Bun, misalnya `bun --bun run build` dan
 | -------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `VITE_API_BASE_URL`  | ya    | Basis URL backend Go, contoh `http://localhost:8080/api/v1`                                                                                                                       |
 | `VITE_AUTH_BASE_URL` | tidak | Basis URL runtime autentikasi Better Auth. Kosong berarti runtime tertanam di origin yang sama (`/api/auth`), inilah bawaan; isi hanya bila runtime dipasang pada origin terpisah |
+| `VITE_APP_URL`       | tidak | Basis URL situs web untuk tag meta berbagi (Open Graph, Twitter), mis. `https://simpeg.unisubang.ac.id`. Kosong berarti bawaan produksi                                           |
 
 ### Variabel server-only (runtime `/api/auth`, dibaca dari `frontend/.env`)
 
@@ -102,6 +103,11 @@ permission `slo:read`, `DEC-050`), serta gerbang mutu (format, lint, tipe,
 unit test, E2E). Panel masuk menampilkan pesan bila runtime autentikasi
 memang tidak dikonfigurasi, bukan mengirim permintaan yang pasti gagal.
 
-Belum tersedia: modul pegawai, organisasi, cuti, penggajian, dan jejak audit
-pada antarmuka. Endpoint backend untuk modul tersebut sudah ada pada
-`docs/openapi.yaml` dan dikerjakan pada tahap berikutnya.
+Sudah tersedia di antarmuka: ruang kerja (`/workspace`), modul pegawai
+(daftar/detail/manajemen), organisasi, jabatan, kategori, audit, presensi
+(mesin absensi + presensi), penggajian (slip: daftar, detail, unduh PDF
+dibatasi 3× per pegawai/periode, generate otomatis, konfirmasi pembayaran,
+verifikasi publik `/verify/slip/{token}`), cuti (pengajuan/persetujuan
+berjenjang dengan eviden dan sub-jenis bersalin), SLO admin, pengaturan akun,
+dan halaman admin `/admin/mesin-pin`. Backend berjalan pada prefix `/api/v1`;
+kontrak rute ada di `docs/openapi.yaml`.

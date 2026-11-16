@@ -5,17 +5,23 @@ import LoadingBars from '@/components/LoadingBars'
 import RetryButton from '@/components/RetryButton'
 import { useLocale, useMessages } from '@/i18n/locale-context'
 import {
+  AUDIT_LOG_SORT_FIELDS,
   exportAuditLogsCsv,
   useAuditLogs,
   type AuditLogListParams,
   type AuditLogSortField,
-  type AuditLogSortOrder,
 } from '@/lib/audit'
 import { useSession } from '@/lib/session'
+import { useTableControls, visibleRange } from '@/lib/table-state'
 import { toast } from 'sonner'
 
 const SEARCH_DEBOUNCE_MS = 300
 
+/**
+ * Halaman jejak audit. Penyaringan, pengurutan, dan pemotongan baris
+ * dikerjakan backend, jadi halaman ini hanya menyimpan state tabel dan
+ * meneruskannya ke kueri.
+ */
 export default function AuditLogPage() {
   const t = useMessages()
   const { locale } = useLocale()
@@ -29,27 +35,30 @@ export default function AuditLogPage() {
   const [search, setSearch] = useState('')
   const [aksiInput, setAksiInput] = useState('')
   const [aksi, setAksi] = useState<string | null>(null)
-  const [sort, setSort] = useState<AuditLogSortField>('createdAt')
-  const [order, setOrder] = useState<AuditLogSortOrder>('desc')
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState<AuditLogPageSize>(25)
   const [isExporting, setIsExporting] = useState(false)
+  const controls = useTableControls<AuditLogSortField>({
+    sortFields: AUDIT_LOG_SORT_FIELDS,
+    initialSort: 'createdAt',
+    initialOrder: 'desc',
+    initialPageSize: 25,
+  })
+  const { sort, order, page, pageSize, resetPage } = controls
 
   useEffect(() => {
     const timer = setTimeout(() => {
       setSearch(searchInput.trim())
-      setPage(1)
+      resetPage()
     }, SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(timer)
-  }, [searchInput])
+  }, [searchInput, resetPage])
 
   useEffect(() => {
     const timer = setTimeout(() => {
       setAksi(aksiInput.trim() || null)
-      setPage(1)
+      resetPage()
     }, SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(timer)
-  }, [aksiInput])
+  }, [aksiInput, resetPage])
 
   const params: AuditLogListParams = useMemo(
     () => ({ page, pageSize, search, aksi, sort, order }),
@@ -80,8 +89,8 @@ export default function AuditLogPage() {
   const data = query.data
   const localeTag = locale === 'id' ? 'id-ID' : 'en-US'
   const totalItems = data?.totalItems ?? 0
-  const from = totalItems === 0 ? 0 : (page - 1) * pageSize + 1
-  const to = Math.min(page * pageSize, totalItems)
+  const [from, to] = visibleRange(page, pageSize, totalItems)
+  const formatNumber = (value: number) => new Intl.NumberFormat(localeTag).format(value)
 
   const labels = {
     caption: t('audit.tableCaption'),
@@ -92,39 +101,25 @@ export default function AuditLogPage() {
     note: t('audit.colNote'),
     ip: t('audit.colIp'),
     noValue: t('audit.noValue'),
+    emptyTitle: t('audit.emptyTitle'),
+    emptyDescription: t('audit.emptyDescription'),
     resultLabel: t('audit.resultCount', {
-      from: new Intl.NumberFormat(localeTag).format(from),
-      to: new Intl.NumberFormat(localeTag).format(to),
-      total: new Intl.NumberFormat(localeTag).format(totalItems),
+      from: formatNumber(from),
+      to: formatNumber(to),
+      total: formatNumber(totalItems),
     }),
     refreshingLabel: t('audit.refreshing'),
-    prevPage: t('audit.prevPage'),
-    nextPage: t('audit.nextPage'),
-    pageInfo: t('audit.pageInfo', {
-      page: String(page),
-      total: String(Math.max(data?.totalPages ?? 1, 1)),
-    }),
+    prevPage: t('common.prevPage'),
+    nextPage: t('common.nextPage'),
+    pageInfo: t('common.pageInfo'),
     searchLabel: t('audit.searchLabel'),
     searchPlaceholder: t('audit.searchPlaceholder'),
     actionLabel: t('audit.actionLabel'),
     actionPlaceholder: t('audit.actionPlaceholder'),
-    pageSizeLabel: t('audit.pageSize'),
-    itemsPerPage: t('audit.itemsPerPage', {
-      from: new Intl.NumberFormat(localeTag).format(from),
-      to: new Intl.NumberFormat(localeTag).format(to),
-      total: new Intl.NumberFormat(localeTag).format(totalItems),
-    }),
+    pageSizeLabel: t('common.pageSize'),
+    itemsPerPage: t('common.itemsPerPage'),
+    sortBy: t('common.sortBy'),
     exportCsv: t('audit.exportCsv'),
-  }
-
-  function handleSortChange(field: AuditLogSortField) {
-    if (field === sort) {
-      setOrder((current) => (current === 'asc' ? 'desc' : 'asc'))
-      return
-    }
-    setSort(field)
-    setOrder(field === 'createdAt' ? 'desc' : 'asc')
-    setPage(1)
   }
 
   function handleExport() {
@@ -166,20 +161,11 @@ export default function AuditLogPage() {
           </p>
           <RetryButton label={t('common.retry')} onClick={() => void query.refetch()} />
         </div>
-      ) : data.items.length === 0 ? (
-        <div className="island-shell max-w-2xl rounded-2xl p-6">
-          <h2 className="mb-2 text-lg font-semibold text-[var(--sea-ink)]">
-            {t('audit.emptyTitle')}
-          </h2>
-          <p className="m-0 text-sm leading-relaxed text-[var(--sea-ink-soft)]">
-            {t('audit.emptyDescription')}
-          </p>
-        </div>
       ) : (
         <AuditLogTable
           logs={data.items}
           page={page}
-          pageSize={pageSize}
+          pageSize={pageSize as AuditLogPageSize}
           totalPages={data.totalPages}
           totalItems={data.totalItems}
           isFetching={query.isFetching}
@@ -188,11 +174,11 @@ export default function AuditLogPage() {
           aksi={aksiInput}
           sort={sort}
           order={order}
-          onPageChange={setPage}
-          onPageSizeChange={setPageSize}
+          onPageChange={controls.setPage}
+          onPageSizeChange={(size) => controls.setPageSize(size)}
           onSearchChange={setSearchInput}
           onAksiChange={(value) => setAksiInput(value ?? '')}
-          onSortChange={handleSortChange}
+          onSortChange={(field, next) => controls.applySort(field, next)}
           onExport={handleExport}
           localeTag={localeTag}
           labels={labels}

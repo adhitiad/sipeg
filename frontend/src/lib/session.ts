@@ -42,13 +42,42 @@ export class AuthRuntimeError extends Error {
 }
 
 /**
+ * Mengadopsi sesi Better Auth yang tersimpan di cookie (alur Google): mencari
+ * `session.token` pada `/api/auth/get-session` dan menaruhnya di memori.
+ * Mengembalikan true bila token diperoleh; false bila tidak ada sesi.
+ */
+async function adoptCookieSession(): Promise<boolean> {
+  try {
+    const response = await fetch(`${AUTH_BASE_URL}/get-session`, {
+      headers: { Accept: 'application/json' },
+    })
+    if (!response.ok) {
+      return false
+    }
+    const payload: unknown = await response.json().catch(() => null)
+    const parsed = z
+      .object({ session: z.object({ token: z.string().min(1) }).loose() })
+      .loose()
+      .safeParse(payload)
+    if (!parsed.success) {
+      return false
+    }
+    setAuthToken(parsed.data.session.token)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
  * Membaca identitas principal dari backend. Mengembalikan `null` bila sesi
  * tidak valid (401); error lain dilempar agar UI bisa menampilkan kegagalan.
- * Bila tidak ada token di memori (mis. setelah muat ulang), permintaan tidak
- * dikirim sama sekali: hasilnya pasti 401 dan hanya membisingkan konsol.
+ * Bila tidak ada token di memori (mis. setelah muat ulang) atau alur OAuth
+ * membuat sesi via cookie, token diadopsi dari runtime Better Auth lebih
+ * dulu, baru panggilan /api/v1/me.
  */
 export async function fetchCurrentAccount(): Promise<CurrentAccount | null> {
-  if (!getAuthToken()) {
+  if (!getAuthToken() && !(await adoptCookieSession())) {
     return null
   }
 

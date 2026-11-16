@@ -28,6 +28,15 @@ type Policy interface {
 	Allows(roleName string, permission Permission) bool
 }
 
+// ScopedPolicy adalah capability tambahan pada policy yang dapat mengevaluasi
+// izin berbasis scoped assignment (`DEC-087`) dengan konteks permintaan dan
+// principal. Implementasi dapat menggabungkan grant statis (fallback) dan
+// evaluator RBAC. Dipakai secara bertahap; grant statis tetap menjadi sumber
+// kebenaran hingga migrasi selesai.
+type ScopedPolicy interface {
+	AllowsScoped(ctx context.Context, principal Principal, permission Permission) bool
+}
+
 // PermissionLister adalah capability tambahan pada policy yang dapat
 // menampilkan seluruh permission milik sebuah role. Dipakai untuk
 // menyiarkan matriks akses ke klien tanpa menduplikasi aturan di frontend.
@@ -122,7 +131,15 @@ func RequirePermission(policy Policy, permission Permission, next http.Handler) 
 			writeError(w, http.StatusUnauthorized, apierror.CodeUnauthorized)
 			return
 		}
-		if policy == nil || !policy.Allows(principal.RoleName, permission) {
+		allowed := false
+		if policy != nil {
+			if sp, ok := policy.(ScopedPolicy); ok {
+				allowed = sp.AllowsScoped(r.Context(), principal, permission)
+			} else {
+				allowed = policy.Allows(principal.RoleName, permission)
+			}
+		}
+		if !allowed {
 			recordDenial(r, principal, permission)
 			writeError(w, http.StatusForbidden, apierror.CodeForbidden)
 			return

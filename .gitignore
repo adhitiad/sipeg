@@ -20,6 +20,12 @@ build/
 .tanstack/
 coverage/
 
+# Artefak pengujian Playwright (laporan, tangkapan, artefak video)
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
 # Logs and local OS files
 *.log
 /logs/
@@ -33,3 +39,6 @@ Thumbs.db
 agents/*
 !agents/rules/
 anti-slop/
+
+# Laporan pemindaian ZAP yang sengaja tidak dikomit (DEC-059)
+zap-report-frontend.md

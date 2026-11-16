@@ -40,6 +40,16 @@ type Message struct {
 	ProcessedAt *time.Time
 }
 
+// Stats adalah ringkasan keadaan antrean keluar.
+type Stats struct {
+	Pending         int64
+	Processing      int64
+	Done            int64
+	Failed          int64
+	OldestPendingAt *time.Time
+	FailedByKind    map[string]int64
+}
+
 // NewMessage membuat pesan antrean dengan status awal PENDING.
 //
 // Pesan yang dibuat lewat fungsi ini siap diantrekan satu per satu maupun

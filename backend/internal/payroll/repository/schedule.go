@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// Reminder adalah slip gaji yang siap diberi pemberitahuan ketersediaan H+1.
+// Reminder adalah slip gaji yang siap diberi pemberitahuan ketersediaan H-1.
 //
 // Reminder membawa tanggal gajian unit pemilik slip sehingga lapisan aplikasi
 // dapat menentukan jatuh tempo pemberitahuan tanpa menulis ulang aturan
@@ -33,6 +33,8 @@ type Reminder struct {
 	Periode time.Time `gorm:"column:periode"`
 	// TanggalGajian adalah tanggal gajian unit pemilik slip.
 	TanggalGajian int `gorm:"column:tanggalGajian"`
+	// KodeVerifikasi adalah token verifikasi slip (nil untuk slip lama).
+	KodeVerifikasi *string `gorm:"column:kodeVerifikasi"`
 }
 
 // UpsertSchedule menyimpan jadwal tanggal gajian untuk satu unit.
@@ -105,9 +107,9 @@ func (s GormStore) ListSchedules(ctx context.Context, unitIDs []string) ([]model
 	return schedules, nil
 }
 
-// FindDueReminders membaca slip gaji yang belum diberi pemberitahuan H+1.
+// FindDueReminders membaca slip gaji yang belum diberi pemberitahuan H-1.
 //
-// Slip yang memenuhi syarat adalah slip berstatus TERBIT atau TERBAYAR milik
+// Slip yang memenuhi syarat adalah seluruh slip (tanpa batas status) milik
 // pegawai yang unitnya memiliki jadwal gajian. Periode slip dibatasi sampai
 // periode berjalan karena slip periode berikutnya belum waktunya diberi
 // pemberitahuan.
@@ -123,18 +125,18 @@ func (s GormStore) FindDueReminders(ctx context.Context, until time.Time) ([]Rem
 		       u."email" AS "email",
 		       u."nama" AS "nama",
 		       g."periode" AS "periode",
-		       j."tanggalGajian" AS "tanggalGajian"
+		       j."tanggalGajian" AS "tanggalGajian",
+		       g."kodeVerifikasi" AS "kodeVerifikasi"
 		FROM "gaji" g
 		JOIN "user" u ON u."id" = g."userId"
 		JOIN "jadwalGaji" j ON j."unitId" = u."homebaseId"
-		WHERE g."status" IN (?, ?)
-		  AND g."periode" <= ?
+		WHERE g."periode" <= ?
 		  AND NOT EXISTS (
 		      SELECT 1 FROM "outboxMessage" o
 		      WHERE o."dedupeKey" = 'slip-available:' || g."id"::text
 		  )
 		ORDER BY g."periode" ASC, u."nama" ASC`,
-		models.StatusSlipTerbit, models.StatusSlipTerbayar, until).
+		until).
 		Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("find payroll reminders: %w", err)

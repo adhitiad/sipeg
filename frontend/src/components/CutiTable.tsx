@@ -1,5 +1,6 @@
-import { ChevronLeft, ChevronRight } from 'lucide-react'
-import SortIcon from '@/components/SortIcon'
+import { useMemo } from 'react'
+import type { ColumnDef } from '@tanstack/react-table'
+import { DataTable } from '@/components/DataTable'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -8,16 +9,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import { CUTI_PAGE_SIZES } from '@/lib/cuti'
+import { CUTI_PAGE_SIZES, CUTI_SORT_FIELDS } from '@/lib/cuti'
+import type { CutiSortField, CutiSortOrder } from '@/lib/cuti'
 import type { Cuti } from '@/validations/schemas'
 
 export type CutiPageSize = (typeof CUTI_PAGE_SIZES)[number]
@@ -28,20 +21,24 @@ type CutiTableProps = {
   pageSize: CutiPageSize
   totalPages: number
   totalItems: number
+  isFetching: boolean
   search: string
   jenis: string | null
   status: string | null
   sort: CutiSortField
-  order: 'asc' | 'desc'
+  order: CutiSortOrder
   onPageChange: (page: number) => void
+  onPageSizeChange: (size: CutiPageSize) => void
   onSearchChange: (value: string) => void
-  onSortChange: (field: CutiSortField) => void
+  onSortChange: (field: CutiSortField, order: CutiSortOrder) => void
   onJenisChange: (value: string | null) => void
   onStatusChange: (value: string | null) => void
   onApprove: (cuti: Cuti) => void
   onReject: (cuti: Cuti) => void
+  onCancel: (cuti: Cuti) => void
   canApprove: boolean
   canReject: boolean
+  canCancelSelf: boolean
   labels: {
     caption: string
     user: string
@@ -50,6 +47,9 @@ type CutiTableProps = {
     tanggalSelesai: string
     status: string
     createdAt: string
+    action: string
+    emptyTitle: string
+    emptyDescription: string
     resultLabel: string
     refreshingLabel: string
     prevPage: string
@@ -63,31 +63,29 @@ type CutiTableProps = {
     statusAll: string
     pageSizeLabel: string
     itemsPerPage: string
+    sortBy: string
     approve: string
     reject: string
+    cancel: string
     statusMenunggu: string
     statusDisetujui: string
     statusDitolak: string
+    statusBatal: string
+    jenisLabels: Record<string, string>
   }
 }
 
-export type CutiSortField =
-  | 'userId'
-  | 'jenis'
-  | 'tanggalMulai'
-  | 'tanggalSelesai'
-  | 'status'
-  | 'createdAt'
-  | 'updatedAt'
+const JENIS_VALUES = [
+  'TAHUNAN',
+  'PANJANG',
+  'BERSALIN',
+  'SAKIT',
+  'SAKIT_BERKEPANJANGAN',
+  'IZIN_PENTING',
+  'POLITIK',
+] as const
 
-function pageRange(totalItems: number, page: number, pageSize: number): [number, number] {
-  if (totalItems === 0) {
-    return [0, 0]
-  }
-  const from = (page - 1) * pageSize + 1
-  const to = Math.min(page * pageSize, totalItems)
-  return [from, to]
-}
+const STATUS_VALUES = ['MENUNGGU', 'DISETUJUI', 'DITOLAK', 'BATAL'] as const
 
 function formatDateISO(value: string): string {
   return new Date(value).toLocaleDateString(undefined, {
@@ -118,39 +116,32 @@ function statusLabel(status: string, labels: CutiTableProps['labels']): string {
       return labels.statusDisetujui
     case 'DITOLAK':
       return labels.statusDitolak
+    case 'BATAL':
+      return labels.statusBatal
     default:
       return status
   }
 }
 
-const JENIS_OPTIONS: { value: string; label: string }[] = [
-  { value: 'TAHUNAN', label: 'Tahunan' },
-  { value: 'PANJANG', label: 'Panjang' },
-  { value: 'BERSALIN', label: 'Bersalin' },
-  { value: 'SAKIT', label: 'Sakit' },
-  { value: 'SAKIT_BERKEPANJANGAN', label: 'Sakit Berkepanjangan' },
-  { value: 'IZIN_PENTING', label: 'Izin Penting' },
-  { value: 'POLITIK', label: 'Politik' },
-]
-
-const STATUS_OPTIONS: { value: string; label: string }[] = [
-  { value: 'MENUNGGU', label: 'Menunggu' },
-  { value: 'DISETUJUI', label: 'Disetujui' },
-  { value: 'DITOLAK', label: 'Ditolak' },
-]
-
+/**
+ * Tabel daftar pengajuan cuti. Backend memegang penyaringan, pengurutan, dan
+ * pemotongan baris, jadi tabel ini hanya meneruskan pilihan pengguna ke mesin
+ * tabel bersama.
+ */
 export default function CutiTable({
   cutis,
   page,
   pageSize,
   totalPages,
   totalItems,
+  isFetching,
   search,
   jenis,
   status,
   sort,
   order,
   onPageChange,
+  onPageSizeChange,
   onSearchChange,
   onSortChange,
   onJenisChange,
@@ -159,24 +150,127 @@ export default function CutiTable({
   onReject,
   canApprove,
   canReject,
+  canCancelSelf,
+  onCancel,
   labels,
 }: CutiTableProps) {
-  const [from, to] = pageRange(totalItems, page, pageSize)
-
-  const isActive = (field: CutiSortField) => sort === field
+  const columns = useMemo<ColumnDef<Cuti, unknown>[]>(
+    () => [
+      {
+        id: 'userId',
+        accessorFn: (row) => row.userId,
+        header: labels.user,
+        cell: ({ row }) => (
+          <span className="font-medium whitespace-normal break-all text-[var(--sea-ink)]">
+            {row.original.userId}
+          </span>
+        ),
+      },
+      {
+        id: 'jenis',
+        accessorFn: (row) => row.jenis,
+        header: labels.jenis,
+        cell: ({ row }) => (
+          <span className="whitespace-normal text-[var(--sea-ink)]">
+            {labels.jenisLabels[row.original.jenis] ?? row.original.jenis}
+          </span>
+        ),
+      },
+      {
+        id: 'tanggalMulai',
+        accessorFn: (row) => row.tanggalMulai,
+        header: labels.tanggalMulai,
+        cell: ({ row }) => (
+          <span className="whitespace-normal text-[var(--sea-ink)]">
+            {formatDateISO(row.original.tanggalMulai)}
+          </span>
+        ),
+      },
+      {
+        id: 'tanggalSelesai',
+        accessorFn: (row) => row.tanggalSelesai,
+        header: labels.tanggalSelesai,
+        cell: ({ row }) => (
+          <span className="whitespace-normal text-[var(--sea-ink)]">
+            {formatDateISO(row.original.tanggalSelesai)}
+          </span>
+        ),
+      },
+      {
+        id: 'status',
+        accessorFn: (row) => row.status,
+        header: labels.status,
+        cell: ({ row }) => (
+          <span
+            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${statusBadge(row.original.status)}`}
+          >
+            {statusLabel(row.original.status, labels)}
+          </span>
+        ),
+      },
+      {
+        id: 'createdAt',
+        accessorFn: (row) => row.createdAt,
+        header: labels.createdAt,
+        cell: ({ row }) => (
+          <span className="whitespace-normal text-[var(--sea-ink)]">
+            {formatDateISO(row.original.createdAt)}
+          </span>
+        ),
+      },
+      {
+        id: 'aksi',
+        header: labels.action,
+        cell: ({ row }) =>
+          (row.original.status === 'MENUNGGU' || row.original.status === 'DISETUJUI') &&
+          (canApprove || canCancelSelf) ? (
+            <div className="flex justify-end">
+              {row.original.status === 'MENUNGGU' ? (
+                <button
+                  type="button"
+                  onClick={() => onApprove(row.original)}
+                  className="inline-flex items-center gap-1 rounded-md border border-[var(--chip-line)] bg-[var(--chip-bg)] px-2 py-1 text-xs font-medium text-[var(--sea-ink)] hover:bg-[var(--link-bg-hover)]"
+                >
+                  {labels.approve}
+                </button>
+              ) : null}
+              {row.original.status === 'MENUNGGU' && canReject ? (
+                <button
+                  type="button"
+                  onClick={() => onReject(row.original)}
+                  className="ml-2 inline-flex items-center gap-1 rounded-md border border-[var(--chip-line)] bg-[var(--chip-bg)] px-2 py-1 text-xs font-medium text-[var(--sea-ink)] hover:bg-[var(--link-bg-hover)]"
+                >
+                  {labels.reject}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => onCancel(row.original)}
+                className="ml-2 inline-flex items-center gap-1 rounded-md border border-[var(--chip-line)] bg-[var(--chip-bg)] px-2 py-1 text-xs font-medium text-destructive hover:bg-[var(--link-bg-hover)]"
+              >
+                {labels.cancel}
+              </button>
+            </div>
+          ) : null,
+      },
+    ],
+    [labels, canApprove, canReject, canCancelSelf, onApprove, onReject, onCancel],
+  )
 
   return (
     <div className="space-y-4">
-      <TableCaption className="mb-2 text-sm font-semibold text-[var(--sea-ink)]">
-        {labels.caption}
-      </TableCaption>
       <div className="rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] p-3">
-        <div className="grid gap-2 md:grid-cols-3 items-end">
+        <div className="grid gap-2 md:grid-cols-3 md:items-end">
           <div>
-            <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--kicker)] mb-1 block">
+            <label
+              htmlFor="cuti-search"
+              className="mb-1 block text-xs font-semibold tracking-[0.16em] text-[var(--kicker)] uppercase"
+            >
               {labels.searchLabel}
             </label>
             <Input
+              id="cuti-search"
+              type="search"
               value={search}
               onChange={(event) => onSearchChange(event.target.value)}
               placeholder={labels.searchPlaceholder}
@@ -184,36 +278,48 @@ export default function CutiTable({
             />
           </div>
           <div>
-            <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--kicker)] mb-1 block">
+            <label
+              htmlFor="cuti-jenis"
+              className="mb-1 block text-xs font-semibold tracking-[0.16em] text-[var(--kicker)] uppercase"
+            >
               {labels.jenisLabel}
             </label>
-            <Select value={jenis ?? ''} onValueChange={onJenisChange}>
-              <SelectTrigger className="h-9">
+            <Select
+              value={jenis ?? ''}
+              onValueChange={(value) => onJenisChange(value || null)}
+            >
+              <SelectTrigger id="cuti-jenis" className="h-9">
                 <SelectValue placeholder={labels.jenisAll} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value=""> {labels.jenisAll} </SelectItem>
-                {JENIS_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
+                <SelectItem value="">{labels.jenisAll}</SelectItem>
+                {JENIS_VALUES.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {labels.jenisLabels[value] ?? value}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div>
-            <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--kicker)] mb-1 block">
+            <label
+              htmlFor="cuti-status"
+              className="mb-1 block text-xs font-semibold tracking-[0.16em] text-[var(--kicker)] uppercase"
+            >
               {labels.statusLabel}
             </label>
-            <Select value={status ?? ''} onValueChange={onStatusChange}>
-              <SelectTrigger className="h-9">
+            <Select
+              value={status ?? ''}
+              onValueChange={(value) => onStatusChange(value || null)}
+            >
+              <SelectTrigger id="cuti-status" className="h-9">
                 <SelectValue placeholder={labels.statusAll} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value=""> {labels.statusAll} </SelectItem>
-                {STATUS_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
+                <SelectItem value="">{labels.statusAll}</SelectItem>
+                {STATUS_VALUES.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {statusLabel(value, labels)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -222,126 +328,36 @@ export default function CutiTable({
         </div>
       </div>
 
-      <Table>
-        <TableHeader>
-          <TableRow className="text-xs text-[var(--sea-ink-soft)]">
-            <TableHead className="w-24">{labels.user}</TableHead>
-            <TableHead className="w-20">{labels.jenis}</TableHead>
-            <TableHead className="w-20">
-              <button
-                onClick={() => onSortChange('tanggalMulai')}
-                className="flex items-center gap-1 text-[var(--sea-ink)] hover:text-[var(--lagoon)]"
-              >
-                {labels.tanggalMulai}
-                <SortIcon active={isActive('tanggalMulai')} order={order} />
-              </button>
-            </TableHead>
-            <TableHead className="w-20">
-              <button
-                onClick={() => onSortChange('tanggalSelesai')}
-                className="flex items-center gap-1 text-[var(--sea-ink)] hover:text-[var(--lagoon)]"
-              >
-                {labels.tanggalSelesai}
-                <SortIcon active={isActive('tanggalSelesai')} order={order} />
-              </button>
-            </TableHead>
-            <TableHead className="w-16">
-              <button
-                onClick={() => onSortChange('status')}
-                className="flex items-center gap-1 text-[var(--sea-ink)] hover:text-[var(--lagoon)]"
-              >
-                {labels.status}
-                <SortIcon active={isActive('status')} order={order} />
-              </button>
-            </TableHead>
-            <TableHead className="w-20">{labels.createdAt}</TableHead>
-            <TableHead className="w-24 text-right" />
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {cutis.map((cuti) => (
-            <TableRow key={cuti.id}>
-              <TableCell className="w-24 font-medium text-[var(--sea-ink)]">
-                {cuti.userId}
-              </TableCell>
-              <TableCell className="w-20 text-[var(--sea-ink)]">
-                {JENIS_OPTIONS.find((o) => o.value === cuti.jenis)?.label ?? cuti.jenis}
-              </TableCell>
-              <TableCell className="w-20 text-[var(--sea-ink)]">
-                {formatDateISO(cuti.tanggalMulai)}
-              </TableCell>
-              <TableCell className="w-20 text-[var(--sea-ink)]">
-                {formatDateISO(cuti.tanggalSelesai)}
-              </TableCell>
-              <TableCell className="w-16">
-                <span
-                  className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${statusBadge(cuti.status)}`}
-                >
-                  {statusLabel(cuti.status, labels)}
-                </span>
-              </TableCell>
-              <TableCell className="w-20 text-[var(--sea-ink)]">
-                {formatDateISO(cuti.createdAt)}
-              </TableCell>
-              <TableCell className="w-24 text-right">
-                {cuti.status === 'MENUNGGU' && canApprove ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => onApprove(cuti)}
-                      className="inline-flex items-center gap-1 rounded-md border border-[var(--chip-line)] bg-[var(--chip-bg)] px-2 py-1 text-xs font-medium text-[var(--sea-ink)] hover:bg-[var(--link-bg-hover)]"
-                    >
-                      {labels.approve}
-                    </button>
-                    {canReject ? (
-                      <button
-                        type="button"
-                        onClick={() => onReject(cuti)}
-                        className="ml-2 inline-flex items-center gap-1 rounded-md border border-[var(--chip-line)] bg-[var(--chip-bg)] px-2 py-1 text-xs font-medium text-[var(--sea-ink)] hover:bg-[var(--link-bg-hover)]"
-                      >
-                        {labels.reject}
-                      </button>
-                    ) : null}
-                  </>
-                ) : null}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-
-      <div className="flex items-center justify-between gap-2 sm:justify-end">
-        <button
-          type="button"
-          onClick={() => onPageChange(page - 1)}
-          disabled={page === 1}
-          className="inline-flex items-center rounded-md border border-[var(--chip-line)] bg-[var(--chip-bg)] px-3 py-1.5 text-xs font-medium text-[var(--sea-ink)] disabled:opacity-50 disabled:pointer-events-none hover:bg-[var(--link-bg-hover)]"
-        >
-          <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-          {labels.prevPage}
-        </button>
-        <span className="text-xs font-medium text-[var(--sea-ink)]">
-          {labels.pageInfo
-            .replace('{page}', String(page))
-            .replace('{total}', String(totalPages))}
-        </span>
-        <button
-          type="button"
-          onClick={() => onPageChange(page + 1)}
-          disabled={page === totalPages}
-          className="inline-flex items-center rounded-md border border-[var(--chip-line)] bg-[var(--chip-bg)] px-3 py-1.5 text-xs font-medium text-[var(--sea-ink)] disabled:opacity-50 disabled:pointer-events-none hover:bg-[var(--link-bg-hover)]"
-        >
-          {labels.nextPage}
-          <ChevronRight className="h-4 w-4" aria-hidden="true" />
-        </button>
-      </div>
-
-      <p className="m-0 text-xs text-[var(--sea-ink-soft)]">
-        {labels.itemsPerPage
-          .replace('{from}', String(from))
-          .replace('{to}', String(to))
-          .replace('{total}', String(totalItems))}
-      </p>
+      <DataTable
+        columns={columns}
+        data={cutis}
+        getRowId={(row) => row.id}
+        sortFields={CUTI_SORT_FIELDS}
+        sort={sort}
+        order={order}
+        onSortChange={onSortChange}
+        page={page}
+        pageSize={pageSize}
+        totalItems={totalItems}
+        totalPages={totalPages}
+        onPageChange={onPageChange}
+        onPageSizeChange={(size) => onPageSizeChange(size as CutiPageSize)}
+        pageSizeOptions={CUTI_PAGE_SIZES}
+        isFetching={isFetching}
+        labels={{
+          caption: labels.caption,
+          loadingLabel: labels.refreshingLabel,
+          emptyTitle: labels.emptyTitle,
+          emptyDescription: labels.emptyDescription,
+          resultLabel: labels.resultLabel,
+          pageInfo: labels.pageInfo,
+          prevPage: labels.prevPage,
+          nextPage: labels.nextPage,
+          pageSizeLabel: labels.pageSizeLabel,
+          itemsPerPage: labels.itemsPerPage,
+          sortBy: labels.sortBy,
+        }}
+      />
     </div>
   )
 }

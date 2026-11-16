@@ -25,6 +25,23 @@ type Message struct {
 	Body    string
 	// IdempotencyKey mencegah pengiriman ganda untuk satu peristiwa logis.
 	IdempotencyKey string
+	// HTMLBody berisi versi HTML dari Body; bila diisi bersama InlineImages,
+	// pengirim menyusun multipart/related (alternative + gambar inline).
+	HTMLBody string
+	// InlineImages memuat gambar inline (CID) yang dirujuk dari HTMLBody.
+	InlineImages []InlineImage
+}
+
+// InlineImage adalah satu gambar yang disisipkan inline (CID) pada email HTML.
+type InlineImage struct {
+	// Filename tampil sebagai nama berkas pada bagian gambar.
+	Filename string
+	// ContentID adalah id CID tanpa kurung siku sudut (<...>).
+	ContentID string
+	// ContentType misalnya "image/png".
+	ContentType string
+	// Content adalah isi berkas gambar.
+	Content []byte
 }
 
 // Validate memeriksa pesan sebelum dikirim.

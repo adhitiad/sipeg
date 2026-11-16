@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ShieldAlert, Upload } from 'lucide-react'
 import EmployeeImportDialog from '@/components/EmployeeImportDialog'
-import EmployeeTable from '@/components/EmployeeTable'
+import EmployeeTable, { type EmployeePageSize } from '@/components/EmployeeTable'
 import LoadingRadar from '@/components/LoadingRadar'
 import RetryButton from '@/components/RetryButton'
 import { Button } from '@/components/ui/button'
 import { useLocale, useMessages } from '@/i18n/locale-context'
 import {
+  EMPLOYEE_SORT_FIELDS,
   useEmployees,
   type EmployeeListParams,
   type EmployeeSortField,
@@ -15,6 +16,7 @@ import {
 import { useOrganizations } from '@/lib/organizations'
 import { useQueryClient } from '@tanstack/react-query'
 import { useSession } from '@/lib/session'
+import { useTableControls, visibleRange } from '@/lib/table-state'
 
 const SEARCH_DEBOUNCE_MS = 300
 /**
@@ -42,20 +44,22 @@ export default function EmployeeManagementPage() {
 
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
-  const [sort, setSort] = useState<EmployeeSortField>('nama')
-  const [order, setOrder] = useState<EmployeeSortOrder>('asc')
   const [homebaseId, setHomebaseId] = useState<string | null>(null)
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState<10 | 20 | 25 | 50 | 100>(20)
   const [isImportOpen, setIsImportOpen] = useState(false)
+  const controls = useTableControls<EmployeeSortField>({
+    sortFields: EMPLOYEE_SORT_FIELDS,
+    initialSort: 'nama',
+    initialPageSize: 20,
+  })
+  const { sort, order, page, pageSize } = controls
 
   useEffect(() => {
     const timer = setTimeout(() => {
       setSearch(searchInput.trim())
-      setPage(1)
+      controls.resetPage()
     }, SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(timer)
-  }, [searchInput])
+  }, [searchInput, controls])
 
   const params: EmployeeListParams = useMemo(
     () => ({ page, pageSize, search, sort, order, homebaseId }),
@@ -103,10 +107,7 @@ export default function EmployeeManagementPage() {
   const data = query.data
   const localeTag = locale === 'id' ? 'id-ID' : 'en-US'
   const totalItems = data?.totalItems ?? 0
-  const [from, to] =
-    totalItems === 0
-      ? [0, 0]
-      : [(page - 1) * pageSize + 1, Math.min(page * pageSize, totalItems)]
+  const [from, to] = visibleRange(page, pageSize, totalItems)
 
   const labels = {
     caption: t('employees.tableCaption'),
@@ -125,28 +126,20 @@ export default function EmployeeManagementPage() {
       total: new Intl.NumberFormat(localeTag).format(totalItems),
     }),
     refreshingLabel: t('employees.refreshing'),
-    prevPage: t('employees.prevPage'),
-    nextPage: t('employees.nextPage'),
-    pageInfo: t('employees.pageInfo', {
-      page: String(page),
-      total: String(Math.max(data?.totalPages ?? 1, 1)),
-    }),
+    prevPage: t('common.prevPage'),
+    nextPage: t('common.nextPage'),
+    pageInfo: t('common.pageInfo'),
     searchLabel: t('employees.searchLabel'),
     searchPlaceholder: t('employees.searchPlaceholder'),
     unitLabel: t('employees.unitLabel'),
     unitAll: t('employees.unitAll'),
-    pageSizeLabel: t('employees.pageSize'),
-    itemsPerPage: t('employees.itemsPerPage'),
+    pageSizeLabel: t('common.pageSize'),
+    itemsPerPage: t('common.itemsPerPage'),
+    sortBy: t('common.sortBy'),
   }
 
-  function handleSortChange(field: EmployeeSortField) {
-    if (field === sort) {
-      setOrder((current) => (current === 'asc' ? 'desc' : 'asc'))
-      return
-    }
-    setSort(field)
-    setOrder('asc')
-    setPage(1)
+  function handleSortChange(field: EmployeeSortField, next: EmployeeSortOrder) {
+    controls.applySort(field, next)
   }
 
   return (
@@ -197,13 +190,27 @@ export default function EmployeeManagementPage() {
           <RetryButton label={t('common.retry')} onClick={() => void query.refetch()} />
         </div>
       ) : data.items.length === 0 ? (
-        <div className="island-shell max-w-2xl rounded-2xl p-6">
+        <div className="island-shell max-w-2xl rounded-2xl p-6" role="status">
           <h2 className="mb-2 text-lg font-semibold text-[var(--sea-ink)]">
             {t('employees.emptyTitle')}
           </h2>
           <p className="m-0 text-sm leading-relaxed text-[var(--sea-ink-soft)]">
             {t('employees.emptyDescription')}
           </p>
+          {search || homebaseId ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-4"
+              onClick={() => {
+                setSearchInput('')
+                setHomebaseId(null)
+                controls.resetPage()
+              }}
+            >
+              {t('employees.resetFilters')}
+            </Button>
+          ) : null}
         </div>
       ) : (
         <EmployeeTable
@@ -212,17 +219,20 @@ export default function EmployeeManagementPage() {
           sort={sort}
           order={order}
           page={page}
-          pageSize={pageSize}
+          pageSize={pageSize as EmployeePageSize}
           totalPages={data.totalPages}
           totalItems={data.totalItems}
           isFetching={query.isFetching}
           search={search}
           homebaseId={homebaseId}
           onSortChange={handleSortChange}
-          onPageChange={setPage}
-          onPageSizeChange={setPageSize}
+          onPageChange={controls.setPage}
+          onPageSizeChange={(size) => controls.setPageSize(size as EmployeePageSize)}
           onSearchChange={setSearchInput}
-          onHomebaseChange={setHomebaseId}
+          onHomebaseChange={(value) => {
+            setHomebaseId(value)
+            controls.resetPage()
+          }}
           labels={labels}
         />
       )}

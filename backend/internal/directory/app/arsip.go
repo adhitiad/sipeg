@@ -26,8 +26,8 @@ func NewArsipService(repo repository.ArsipRepository, policy auth.Policy, scopeR
 
 func (s *ArsipService) List(ctx context.Context, principal auth.Principal, options listing.Options) (listing.Page[models.ArsipDokumenPegawai], error) {
 	switch {
-	case allows(s.policy, principal, "arsip:read:any"):
-	case allows(s.policy, principal, "arsip:read:homebase"):
+	case allows(ctx, s.policy, principal, "arsip:read:any"):
+	case allows(ctx, s.policy, principal, "arsip:read:homebase"):
 		scope, err := s.scope.resolve(ctx, principal)
 		if err != nil {
 			return listing.Page[models.ArsipDokumenPegawai]{}, err
@@ -36,7 +36,7 @@ func (s *ArsipService) List(ctx context.Context, principal auth.Principal, optio
 			return listing.EmptyPage[models.ArsipDokumenPegawai](options.Page, options.PageSize), nil
 		}
 		options.ScopeHomebaseIDs = scope.List()
-	case allows(s.policy, principal, "arsip:read:self"):
+	case allows(ctx, s.policy, principal, "arsip:read:self"):
 		options.UserID = principal.UserID
 	default:
 		return listing.Page[models.ArsipDokumenPegawai]{}, domain.ErrForbidden
@@ -52,7 +52,7 @@ func (s *ArsipService) List(ctx context.Context, principal auth.Principal, optio
 }
 
 func (s *ArsipService) Get(ctx context.Context, principal auth.Principal, id string) (models.ArsipDokumenPegawai, error) {
-	needsScope := allows(s.policy, principal, "arsip:read:homebase") && !allows(s.policy, principal, "arsip:read:any")
+	needsScope := allows(ctx, s.policy, principal, "arsip:read:homebase") && !allows(ctx, s.policy, principal, "arsip:read:any")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.ArsipDokumenPegawai{}, err
@@ -61,7 +61,7 @@ func (s *ArsipService) Get(ctx context.Context, principal auth.Principal, id str
 	if err != nil {
 		return models.ArsipDokumenPegawai{}, err
 	}
-	if !s.canRead(scoped, item) {
+	if !s.canRead(ctx, scoped, item) {
 		return models.ArsipDokumenPegawai{}, domain.ErrForbidden
 	}
 	return item, nil
@@ -71,12 +71,12 @@ func (s *ArsipService) Create(ctx context.Context, principal auth.Principal, inp
 	if err := input.Validate(); err != nil {
 		return models.ArsipDokumenPegawai{}, err
 	}
-	needsScope := allows(s.policy, principal, "arsip:create:homebase") && !allows(s.policy, principal, "arsip:create")
+	needsScope := allows(ctx, s.policy, principal, "arsip:create:homebase") && !allows(ctx, s.policy, principal, "arsip:create")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.ArsipDokumenPegawai{}, err
 	}
-	if !s.canCreate(scoped, &input.UserID) {
+	if !s.canCreate(ctx, scoped, &input.UserID) {
 		return models.ArsipDokumenPegawai{}, domain.ErrForbidden
 	}
 	var berlakuSampai *time.Time
@@ -108,7 +108,7 @@ func (s *ArsipService) Update(ctx context.Context, principal auth.Principal, id 
 	if err := patch.Validate(); err != nil {
 		return models.ArsipDokumenPegawai{}, err
 	}
-	needsScope := allows(s.policy, principal, "arsip:update:homebase") && !allows(s.policy, principal, "arsip:update:any")
+	needsScope := allows(ctx, s.policy, principal, "arsip:update:homebase") && !allows(ctx, s.policy, principal, "arsip:update:any")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.ArsipDokumenPegawai{}, err
@@ -117,14 +117,14 @@ func (s *ArsipService) Update(ctx context.Context, principal auth.Principal, id 
 	if err != nil {
 		return models.ArsipDokumenPegawai{}, err
 	}
-	if !s.canWrite(scoped, item) {
+	if !s.canWrite(ctx, scoped, item) {
 		return models.ArsipDokumenPegawai{}, domain.ErrForbidden
 	}
 	return s.repo.UpdateArsip(ctx, principal.UserID, id, patch)
 }
 
 func (s *ArsipService) Archive(ctx context.Context, principal auth.Principal, id string) error {
-	needsScope := allows(s.policy, principal, "arsip:archive:homebase") && !allows(s.policy, principal, "arsip:archive")
+	needsScope := allows(ctx, s.policy, principal, "arsip:archive:homebase") && !allows(ctx, s.policy, principal, "arsip:archive")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return err
@@ -133,7 +133,7 @@ func (s *ArsipService) Archive(ctx context.Context, principal auth.Principal, id
 	if err != nil {
 		return err
 	}
-	if !s.canArchive(scoped, item) {
+	if !s.canArchive(ctx, scoped, item) {
 		return domain.ErrForbidden
 	}
 	return s.repo.ArchiveArsip(ctx, principal.UserID, id)
@@ -150,7 +150,7 @@ func (s *ArsipService) scopedPrincipal(ctx context.Context, principal auth.Princ
 	return scopedPrincipal{principal: principal, scope: scope}, nil
 }
 
-func (s *ArsipService) canRead(scoped scopedPrincipal, item models.ArsipDokumenPegawai) bool {
+func (s *ArsipService) canRead(ctx context.Context, scoped scopedPrincipal, item models.ArsipDokumenPegawai) bool {
 	for _, permission := range []auth.Permission{"arsip:read:any", "arsip:read:homebase", "arsip:read:self"} {
 		if auth.CanAccessUserInScope(scoped.principal, item.UserId, item.UserId, permission, s.policy, scoped.scope) {
 			return true
@@ -159,11 +159,11 @@ func (s *ArsipService) canRead(scoped scopedPrincipal, item models.ArsipDokumenP
 	return false
 }
 
-func (s *ArsipService) canCreate(scoped scopedPrincipal, userID *string) bool {
-	if allows(s.policy, scoped.principal, "arsip:create") {
+func (s *ArsipService) canCreate(ctx context.Context, scoped scopedPrincipal, userID *string) bool {
+	if allows(ctx, s.policy, scoped.principal, "arsip:create") {
 		return true
 	}
-	if !allows(s.policy, scoped.principal, "arsip:create:homebase") {
+	if !allows(ctx, s.policy, scoped.principal, "arsip:create:homebase") {
 		return false
 	}
 	if userID == nil || *userID == "" {
@@ -172,7 +172,7 @@ func (s *ArsipService) canCreate(scoped scopedPrincipal, userID *string) bool {
 	return scoped.scope.Contains(*userID)
 }
 
-func (s *ArsipService) canWrite(scoped scopedPrincipal, item models.ArsipDokumenPegawai) bool {
+func (s *ArsipService) canWrite(ctx context.Context, scoped scopedPrincipal, item models.ArsipDokumenPegawai) bool {
 	for _, permission := range []auth.Permission{"arsip:update:any", "arsip:update:homebase"} {
 		if auth.CanAccessUserInScope(scoped.principal, item.UserId, item.UserId, permission, s.policy, scoped.scope) {
 			return true
@@ -181,7 +181,7 @@ func (s *ArsipService) canWrite(scoped scopedPrincipal, item models.ArsipDokumen
 	return false
 }
 
-func (s *ArsipService) canArchive(scoped scopedPrincipal, item models.ArsipDokumenPegawai) bool {
+func (s *ArsipService) canArchive(ctx context.Context, scoped scopedPrincipal, item models.ArsipDokumenPegawai) bool {
 	for _, permission := range []auth.Permission{"arsip:archive", "arsip:archive:homebase"} {
 		if auth.CanAccessUserInScope(scoped.principal, item.UserId, item.UserId, permission, s.policy, scoped.scope) {
 			return true

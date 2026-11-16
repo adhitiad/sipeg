@@ -65,6 +65,8 @@ func StatusLabel(status models.StatusSlipGaji) string {
 		return "Terbit"
 	case models.StatusSlipTerbayar:
 		return "Terbayar"
+	case models.StatusSlipBatal:
+		return "Batal"
 	default:
 		return "Tidak Diketahui"
 	}

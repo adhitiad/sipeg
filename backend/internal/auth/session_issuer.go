@@ -52,7 +52,9 @@ func (i *GormSessionIssuer) IssueSession(ctx context.Context, userID string) (st
 	}
 
 	var user models.User
-	if err := i.DB.WithContext(ctx).First(&user, "id = ?", userID).Error; err != nil {
+	if err := i.DB.WithContext(ctx).
+		Select("id", "aktif", "roleId", "homebaseId").
+		First(&user, "id = ?", userID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", time.Time{}, ErrSessionNotFound
 		}

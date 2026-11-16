@@ -132,7 +132,33 @@ func (s GormStore) ApproveCuti(ctx context.Context, actorID, id string, catatan 
 		if err := tx.First(&item, "id = ?", id).Error; err != nil {
 			return fmt.Errorf("reload cuti: %w", err)
 		}
+		overlap, err := overlapCutiCount(ctx, tx, item.UserId, item.TanggalMulai, item.TanggalSelesai, item.ID)
+		if err != nil {
+			return err
+		}
+		if overlap > 0 {
+			return domain.ErrConflict
+		}
+		if item.Jenis == models.JenisCutiTahunan {
+			days := domain.HariKerjaAntara(item.TanggalMulai, item.TanggalSelesai)
+			if err := consumeSaldoCutiTx(ctx, tx, item.UserId, item.TanggalMulai.Year(), days); err != nil {
+				return err
+			}
+		}
+		sakitNote := ""
+		if item.Jenis == models.JenisCutiSakitBerkepanjangan {
+			var note string
+			var err error
+			note, err = advancePeriodeSakitTx(ctx, tx, item.UserId, item.TanggalMulai)
+			if err != nil {
+				return err
+			}
+			sakitNote = note
+		}
 		note := "cuti disetujui"
+		if sakitNote != "" {
+			note = fmt.Sprintf("cuti disetujui; %s", sakitNote)
+		}
 		if catatan != nil {
 			note = *catatan
 		}
@@ -140,6 +166,60 @@ func (s GormStore) ApproveCuti(ctx context.Context, actorID, id string, catatan 
 			ActorID:  actorID,
 			Action:   audit.ActionCutiApproved,
 			TargetID: &item.ID,
+			UnitID:   &item.UserId,
+			Note:     &note,
+		})
+	})
+	return item, err
+}
+
+// CancelCuti membatalkan pengajuan cuti dalam keadaan MENUNGGU atau
+// DISETUJUI menjadi BATAL. Pengajuan yang sudah DITOLAK/BATAL ditolak
+// dengan domain.ErrConflict. Untuk pengajuan yang sudah DISETUJUI berjenis
+// TAHUNAN, saldo yang terpotong saat persetujuan dikembalikan.
+//
+// PeriodeSakit yang sudah tercatat saat persetujuan SAKIT_BERKEPANJANGAN
+// tidak dihapus di sini: gaji bulan yang sudah berjalan perlu ditinjau
+// manual oleh admin gaji (dicatat di `DEC-080`).
+func (s GormStore) CancelCuti(ctx context.Context, actorID, id string, catatan *string) (models.Cuti, error) {
+	var item models.Cuti
+	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&item).Error; err != nil {
+			return classifyRecordError(err)
+		}
+		wasApproved := item.Status == models.StatusDisetujui
+		if item.Status != models.StatusMenunggu && item.Status != models.StatusDisetujui {
+			return domain.ErrConflict
+		}
+		updates := map[string]any{
+			"status":      models.StatusBatal,
+			"disetujuiBy": actorID,
+			"updatedBy":   actorID,
+		}
+		if catatan != nil {
+			updates["catatan"] = catatan
+		}
+		if err := tx.Model(&item).Updates(updates).Error; err != nil {
+			return classifyRecordError(err)
+		}
+		if item.Jenis == models.JenisCutiTahunan && wasApproved {
+			days := domain.HariKerjaAntara(item.TanggalMulai, item.TanggalSelesai)
+			if err := releaseSaldoCutiTx(ctx, tx, item.UserId, item.TanggalMulai.Year(), days); err != nil {
+				return err
+			}
+		}
+		if err := tx.First(&item, "id = ?", id).Error; err != nil {
+			return fmt.Errorf("reload cuti: %w", err)
+		}
+		note := "cuti dibatalkan"
+		if catatan != nil {
+			note = *catatan
+		}
+		targetID := item.ID
+		return audit.Write(ctx, tx, audit.Entry{
+			ActorID:  actorID,
+			Action:   audit.ActionCutiCanceled,
+			TargetID: &targetID,
 			UnitID:   &item.UserId,
 			Note:     &note,
 		})
@@ -199,6 +279,7 @@ func cutiColumns(item models.Cuti) map[string]any {
 		"alamatCuti":         item.AlamatCuti,
 		"alasan":             item.Alasan,
 		"subJenis":           item.SubJenis,
+		"subJenisBersalin":   item.SubJenisBersalin,
 		"nomorSurat":         item.NomorSurat,
 		"tanggalSuratDokter": item.TanggalSuratDokter,
 		"jenisEviden":        item.JenisEviden,

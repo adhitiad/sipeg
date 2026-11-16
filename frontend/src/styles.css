@@ -78,22 +78,24 @@
   --lagoon: #4fb8b2;
   --lagoon-deep: #246f76;
   --palm: #2f6a4a;
-  --sand: #e7f0e8;
-  --foam: #f3faf5;
+  --sand: #e8ece3;
+  --foam: #f7f9f5;
   --surface: rgba(255, 255, 255, 0.76);
   --surface-strong: rgba(255, 255, 255, 0.92);
   --line: rgba(23, 58, 64, 0.16);
   --inset-glint: rgba(255, 255, 255, 0.82);
   --kicker: #2f6a4a;
-  --bg-base: #e7f3ec;
+  /* Kanvas kertas yang tenang: hijau sangat tipis, bukan mint pekat, supaya
+     tabel padat tetap terbaca lama di depan layar. */
+  --bg-base: #edf1ea;
   --header-bg: rgba(251, 255, 248, 0.9);
   --chip-bg: rgba(255, 255, 255, 0.82);
   --chip-line: rgba(47, 106, 74, 0.22);
   --link-bg-hover: rgba(255, 255, 255, 0.92);
-  --hero-a: rgba(79, 184, 178, 0.22);
-  --hero-b: rgba(47, 106, 74, 0.14);
+  --hero-a: rgba(79, 184, 178, 0.18);
+  --hero-b: rgba(47, 106, 74, 0.1);
 
-  --background: #f3faf5;
+  --background: #f8faf7;
   --foreground: #173a40;
   --card: #ffffff;
   --card-foreground: #173a40;
@@ -101,15 +103,15 @@
   --popover-foreground: #173a40;
   --primary: #2f6a4a;
   --primary-foreground: #ffffff;
-  --secondary: #e7f0e8;
+  --secondary: #e9ece3;
   --secondary-foreground: #173a40;
-  --muted: #eaf2ec;
+  --muted: #eef0e9;
   --muted-foreground: #416166;
-  --accent: #d9ebe9;
+  --accent: #e2ebe6;
   --accent-foreground: #173a40;
   --destructive: #b53c3c;
   --destructive-foreground: #ffffff;
-  --border: rgba(23, 58, 64, 0.16);
+  --border: rgba(23, 58, 64, 0.3);
   /* Batas input esensial: kontras >= 3:1 terhadap kartu (WCAG 1.4.11). */
   --input: rgba(23, 58, 64, 0.55);
   --ring: #246f76;
@@ -160,7 +162,7 @@
   --accent-foreground: #d7ece8;
   --destructive: #e07a7a;
   --destructive-foreground: #2a0d0d;
-  --border: rgba(141, 229, 219, 0.22);
+  --border: rgba(141, 229, 219, 0.32);
   --input: rgba(141, 229, 219, 0.5);
   --ring: #60d7cf;
   --sidebar: var(--surface);
@@ -171,6 +173,25 @@
   --sidebar-accent-foreground: var(--sea-ink);
   --sidebar-border: var(--line);
   --sidebar-ring: var(--ring);
+}
+
+/* Tautan lompat ke konten utama: tersembunyi hingga menerima fokus keyboard. */
+.skip-link {
+  position: absolute;
+  top: -4rem;
+  left: 0.5rem;
+  z-index: 100;
+  padding: 0.625rem 1rem;
+  border-radius: 0.5rem;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: 700;
+  text-decoration: none;
+  transition: top 120ms ease-out;
+}
+
+.skip-link:focus-visible {
+  top: 0.5rem;
 }
 
 * {

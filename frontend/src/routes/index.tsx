@@ -3,10 +3,24 @@ import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import { Button } from '@/components/ui/button'
 import { useMessages } from '@/i18n/locale-context'
-import type { MessageKey } from '@/i18n/dictionary'
+import { DEFAULT_LOCALE, translate, type MessageKey } from '@/i18n/dictionary'
+import { socialMeta } from '@/lib/seo'
+
+const t = (key: MessageKey) => translate(DEFAULT_LOCALE, key)
 
 export const Route = createFileRoute('/')({
   component: LandingPage,
+  head: () => ({
+    meta: [
+      { title: t('seo.landingTitle') },
+      { name: 'description', content: t('seo.landingDescription') },
+      ...socialMeta({
+        title: t('seo.landingTitle'),
+        description: t('seo.landingDescription'),
+        path: '/',
+      }),
+    ],
+  }),
 })
 
 const SCOPE_CARDS: readonly { title: MessageKey; body: MessageKey }[] = [

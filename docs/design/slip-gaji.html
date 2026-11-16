@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <title>Slip Gaji — Universitas Subang (contoh)</title>
+    <style>
+      /* Ukuran kertas ½ A4 (A5) 148 × 210 mm. Desain slip: dokumen resmi yang
+   indah — bukan formulir kantor. Skala px ~ 96dpi (1mm ≈ 3.7795px). */
+      @page {
+        size: A5 portrait;
+        margin: 0;
+      }
+      @font-face {
+        font-family: "Manrope";
+        src: url("../../frontend/public/fonts/manrope-latin-var.woff2")
+          format("woff2");
+        font-weight: 400 800;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: "Fraunces";
+        src: url("../../frontend/public/fonts/fraunces-latin-var.woff2")
+          format("woff2");
+        font-weight: 500 700;
+        font-display: swap;
+      }
+      :root {
+        --sea: #173a40;
+        --sea-soft: #416166;
+        --lagoon: #2f6a4a;
+        --palm-deep: #246f76;
+        --sand: #e8ece3;
+        --foam: #f7f9f5;
+        --paper: #ffffff;
+        --gold: #c9a227;
+        --line: rgba(23, 58, 64, 0.16);
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        width: 148mm;
+        height: 210mm;
+        background: var(--foam);
+        font-family: "Manrope", ui-sans-serif, system-ui, sans-serif;
+        color: var(--sea);
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .sheet {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      /* ── Kepala slip ─────────────────────────────────────────── */
+      .masthead {
+        position: relative;
+        padding: 9mm 11mm 7mm;
+        background: linear-gradient(
+          160deg,
+          #173a40 0%,
+          #1d474e 55%,
+          #246f76 100%
+        );
+        color: #fff;
+      }
+      .masthead::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: -1px;
+        height: 2.6mm;
+        background: linear-gradient(
+          90deg,
+          var(--gold) 0 34%,
+          transparent 34% 100%
+        );
+      }
+      .org {
+        display: flex;
+        align-items: center;
+        gap: 4mm;
+      }
+      .emblem {
+        flex: 0 0 auto;
+        width: 17mm;
+        height: 17mm;
+        border-radius: 50%;
+        border: 1.1mm solid rgba(255, 255, 255, 0.9);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.6mm;
+        font-family: "Fraunces", Georgia, serif;
+        font-weight: 700;
+        background: radial-gradient(
+          circle at 32% 28%,
+          rgba(255, 255, 255, 0.22),
+          transparent 60%
+        );
+      }
+      .emblem .mono {
+        font-size: 12mm;
+        line-height: 1;
+        letter-spacing: -0.4mm;
+      }
+      .emblem .est {
+        font-size: 1.9mm;
+        letter-spacing: 0.08em;
+        opacity: 0.85;
+        line-height: 1;
+      }
+      .org-text {
+        min-width: 0;
+      }
+      .yayasan {
+        font-size: 2.6mm;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        opacity: 0.78;
+      }
+      .univ {
+        font-family: "Fraunces", Georgia, serif;
+        font-size: 6.2mm;
+        font-weight: 600;
+        line-height: 1.12;
+        margin-top: 0.6mm;
+      }
+      .unit {
+        font-size: 2.8mm;
+        opacity: 0.88;
+        margin-top: 1.2mm;
+        letter-spacing: 0.04em;
+      }
+      .doctitle {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6mm;
+        margin-top: 5.5mm;
+      }
+      .doctitle h1 {
+        font-family: "Fraunces", Georgia, serif;
+        font-size: 11.5mm;
+        font-weight: 600;
+        letter-spacing: 0.18em;
+      }
+      .periode {
+        text-align: right;
+        font-size: 3mm;
+        line-height: 1.35;
+        opacity: 0.92;
+        border-left: 0.35mm solid rgba(255, 255, 255, 0.35);
+        padding-left: 5mm;
+      }
+      .periode b {
+        font-size: 4.4mm;
+        letter-spacing: 0.06em;
+      }
+      /* ── Identitas pegawai ───────────────────────────────────── */
+      .idrow {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 2.2mm 6mm;
+        padding: 4.6mm 11mm;
+        background: var(--sand);
+        border-bottom: 0.35mm solid var(--line);
+        font-size: 2.35mm;
+      }
+      .idrow .k {
+        font-size: 1.75mm;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--sea-soft);
+      }
+      .idrow .v {
+        font-weight: 800;
+        font-size: 2.75mm;
+        margin-top: 0.5mm;
+      }
+      /* ── Isi tabel ───────────────────────────────────────────── */
+      .cols {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6mm;
+        padding: 5mm 11mm;
+        flex: 1 1 auto;
+      }
+      .panel h2 {
+        display: flex;
+        align-items: center;
+        gap: 2mm;
+        font-size: 2.15mm;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--lagoon);
+        margin-bottom: 2.2mm;
+        padding-bottom: 1.4mm;
+        border-bottom: 0.5mm solid var(--lagoon);
+      }
+      .panel h2 .n {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 4.4mm;
+        height: 4.4mm;
+        border-radius: 1.2mm;
+        background: var(--lagoon);
+        color: #fff;
+        font-size: 2.4mm;
+        letter-spacing: 0;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 2.45mm;
+      }
+      thead th {
+        text-align: left;
+        font-size: 1.7mm;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--sea-soft);
+        padding: 0 0 1.2mm;
+        border-bottom: 0.3mm solid var(--line);
+      }
+      thead th.r {
+        text-align: right;
+      }
+      tbody td {
+        padding: 1.35mm 0;
+        border-bottom: 0.22mm dotted var(--line);
+      }
+      tbody tr:last-child td {
+        border-bottom: none;
+      }
+      tbody td.r {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        font-weight: 700;
+      }
+      tbody tr.subtotal td {
+        font-weight: 800;
+        color: var(--lagoon);
+        font-size: 2.6mm;
+        border-top: 0.35mm solid var(--lagoon);
+        border-bottom: none;
+        padding-top: 2mm;
+      }
+      /* ── Take home pay ───────────────────────────────────────── */
+      .pay {
+        margin: 0 11mm 4mm;
+        padding: 4.2mm 6mm;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        align-items: center;
+        gap: 6mm;
+        background: var(--sea);
+        color: #fff;
+        border-radius: 2.2mm;
+        position: relative;
+        overflow: hidden;
+      }
+      .pay::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: repeating-linear-gradient(
+          -55deg,
+          rgba(255, 255, 255, 0.045) 0 1.6mm,
+          transparent 1.6mm 6mm
+        );
+        pointer-events: none;
+      }
+      .pay .label {
+        font-size: 2.1mm;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: #9fd8cf;
+      }
+      .pay .amount {
+        font-family: "Fraunces", Georgia, serif;
+        font-size: 10.6mm;
+        font-weight: 700;
+        letter-spacing: -0.2mm;
+        line-height: 1;
+        margin-top: 1mm;
+      }
+      .pay .words {
+        font-size: 2.05mm;
+        opacity: 0.85;
+        font-style: italic;
+        margin-top: 1.4mm;
+      }
+      .pay .meta {
+        display: flex;
+        flex-direction: column;
+        gap: 1.6mm;
+        font-size: 2mm;
+        opacity: 0.95;
+      }
+      .pay .meta b {
+        font-size: 2.3mm;
+      }
+      .pay .meta .ok {
+        color: #a8e6cf;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+      }
+      /* ── Verifikasi ──────────────────────────────────────────── */
+      .verify {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 5mm;
+        align-items: center;
+        padding: 3.6mm 11mm 4.2mm;
+        background: var(--foam);
+        border-top: 0.35mm solid var(--line);
+      }
+      .verify .t {
+        font-size: 1.9mm;
+        color: var(--sea-soft);
+        line-height: 1.5;
+      }
+      .verify .t b {
+        color: var(--sea);
+        font-size: 2.1mm;
+        letter-spacing: 0.06em;
+      }
+      .verify .t .url {
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 1.85mm;
+        color: var(--palm-deep);
+      }
+      .verify .qr {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1.2mm;
+      }
+      .verify .qr img {
+        width: 17mm;
+        height: 17mm;
+        border: 0.4mm solid var(--line);
+        border-radius: 1mm;
+        background: #fff;
+        padding: 0.8mm;
+      }
+      .verify .qr span {
+        font-size: 1.6mm;
+        letter-spacing: 0.14em;
+        color: var(--sea-soft);
+        font-family: ui-monospace, Consolas, monospace;
+      }
+      /* ── Catatan kaki ────────────────────────────────────────── */
+      .fineprint {
+        padding: 2.6mm 11mm 3.4mm;
+        font-size: 1.55mm;
+        color: var(--sea-soft);
+        display: flex;
+        justify-content: space-between;
+        gap: 6mm;
+        border-top: 0.22mm solid var(--line);
+        background: #eef2ea;
+      }
+      .fineprint b {
+        color: var(--sea);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="sheet">
+      <header class="masthead">
+        <div class="org">
+          <div class="emblem" aria-hidden="true">
+            <div class="mono">US</div>
+            <div class="est">EST. 1985</div>
+          </div>
+          <div class="org-text">
+            <div class="yayasan">Yayasan Pendidikan Tinggi Nusantara</div>
+            <div class="univ">Universitas Subang</div>
+            <div class="unit">Fakultas Teknik · Program Studi Informatika</div>
+          </div>
+        </div>
+        <div class="doctitle">
+          <h1>SLIP GAJI</h1>
+          <div class="periode">Periode<br /><b>OKTOBER 2026</b></div>
+        </div>
+      </header>
+
+      <section class="idrow" aria-label="Identitas pegawai">
+        <div>
+          <div class="k">Nama</div>
+          <div class="v">Andika Pratama</div>
+        </div>
+        <div>
+          <div class="k">NIP</div>
+          <div class="v">19850412 201503 1 001</div>
+        </div>
+        <div>
+          <div class="k">Kategori</div>
+          <div class="v">Dosen tetap yayasan</div>
+        </div>
+        <div>
+          <div class="k">Jabatan</div>
+          <div class="v">Lektor Kepala</div>
+        </div>
+        <div>
+          <div class="k">Unit</div>
+          <div class="v">Prodi Informatika</div>
+        </div>
+        <div>
+          <div class="k">Golongan</div>
+          <div class="v">IV/b · 1.900</div>
+        </div>
+        <div>
+          <div class="k">Masa kerja</div>
+          <div class="v">11 th 8 bln</div>
+        </div>
+        <div>
+          <div class="k">Rekening</div>
+          <div class="v">BCA ••••1234</div>
+        </div>
+      </section>
+
+      <div class="cols">
+        <section class="panel" aria-label="Rincian penerimaan">
+          <h2><span class="n">A</span> Rincian Penerimaan</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Komponen</th>
+                <th class="r">Nominal</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Gaji pokok (skala IV/b)</td>
+                <td class="r">9.750.000</td>
+              </tr>
+              <tr>
+                <td>Tunjangan fungsional dosen</td>
+                <td class="r">1.500.000</td>
+              </tr>
+              <tr>
+                <td>Tunjangan struktural (kaprodi)</td>
+                <td class="r">1.250.000</td>
+              </tr>
+              <tr>
+                <td>Tunjangan kinerja</td>
+                <td class="r">750.000</td>
+              </tr>
+              <tr class="subtotal">
+                <td>Total penerimaan</td>
+                <td class="r">13.250.000</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section class="panel" aria-label="Rincian potongan">
+          <h2><span class="n">B</span> Rincian Potongan</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Komponen</th>
+                <th class="r">Nominal</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>PPh 21 (TER — PMK 168/2023)</td>
+                <td class="r">187.500</td>
+              </tr>
+              <tr>
+                <td>BPJS Kesehatan (pegawai 1%)</td>
+                <td class="r">97.500</td>
+              </tr>
+              <tr>
+                <td>BPJS Ketenagakerjaan (JHT 2%)</td>
+                <td class="r">135.000</td>
+              </tr>
+              <tr>
+                <td>Potongan koperasi</td>
+                <td class="r">225.000</td>
+              </tr>
+              <tr class="subtotal">
+                <td>Total potongan</td>
+                <td class="r">645.000</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      </div>
+
+      <section class="pay" aria-label="Gaji bersih">
+        <div>
+          <div class="label">Penerimaan bersih</div>
+          <div class="amount">Rp 12.605.000</div>
+          <div class="words">Dua belas juta enam ratus lima ribu rupiah</div>
+        </div>
+        <div class="meta">
+          <div>Tanggal bayar<br /><b>31 Okt 2026</b></div>
+          <div>Status slip<br /><span class="ok">TERBAYAR ✓</span></div>
+        </div>
+      </section>
+
+      <section class="verify" aria-label="Verifikasi keaslian">
+        <div class="t">
+          <b>Verifikasi keaslian slip</b><br />
+          Pindai QR atau buka<br />
+          <span class="url">simpeg.unisubang.ac.id/verifikasi/</span><br />
+          Tampilan verifikasi hanya memuat nama, periode, dan status.<br />Nominal
+          tidak pernah ditampilkan.
+        </div>
+        <div class="qr">
+          <img src="slip-qr.png" alt="Kode QR verifikasi slip" />
+          <span>SLIP-2026-10-000123</span>
+        </div>
+      </section>
+
+      <footer class="fineprint">
+        <div>
+          <b>SIMPEG</b> · Universitas Subang<br />Dokumen sah tanpa tanda
+          tangan.
+        </div>
+        <div style="text-align: right">
+          Dicetak otomatis · 14 Nov 2026, 09.41 WIB<br />Ref. pembayaran
+          TRX-2026-1031-000123
+        </div>
+      </footer>
+    </div>
+  </body>
+</html>

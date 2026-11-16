@@ -25,7 +25,7 @@ func NewOrganizationService(repo repository.OrganizationRepository, policy auth.
 
 // List mengembalikan daftar unit sesuai filter yang sudah diminta.
 func (s *OrganizationService) List(ctx context.Context, principal auth.Principal, options listing.Options) (listing.Page[models.Homebase], error) {
-	if !allows(s.policy, principal, "organization:read") {
+	if !allows(ctx, s.policy, principal, "organization:read") {
 		scope, err := s.scope.resolve(ctx, principal)
 		if err != nil {
 			return listing.Page[models.Homebase]{}, err
@@ -130,10 +130,10 @@ func (s *OrganizationService) Archive(ctx context.Context, principal auth.Princi
 // canAccess memeriksa apakah principal boleh membaca sebuah unit. Role dengan
 // cakupan global tidak dibatasi.
 func (s *OrganizationService) canAccess(ctx context.Context, principal auth.Principal, organization models.Homebase) (bool, error) {
-	if allows(s.policy, principal, "organization:read") || allows(s.policy, principal, "organization:manage") {
+	if allows(ctx, s.policy, principal, "organization:read") || allows(ctx, s.policy, principal, "organization:manage") {
 		return true, nil
 	}
-	if !allows(s.policy, principal, "organization:read:homebase") && !allows(s.policy, principal, "organization:manage:homebase") {
+	if !allows(ctx, s.policy, principal, "organization:read:homebase") && !allows(ctx, s.policy, principal, "organization:manage:homebase") {
 		return false, nil
 	}
 	scope, err := s.scope.resolve(ctx, principal)
@@ -147,10 +147,10 @@ func (s *OrganizationService) canAccess(ctx context.Context, principal auth.Prin
 // tertentu. Role berscope hanya boleh membuat unit turunan dari unit yang
 // sudah berada dalam cakupan.
 func (s *OrganizationService) canCreate(ctx context.Context, principal auth.Principal, parentID *string) (bool, error) {
-	if allows(s.policy, principal, "organization:manage") {
+	if allows(ctx, s.policy, principal, "organization:manage") {
 		return true, nil
 	}
-	if !allows(s.policy, principal, "organization:manage:homebase") {
+	if !allows(ctx, s.policy, principal, "organization:manage:homebase") {
 		return false, nil
 	}
 	if parentID == nil {
@@ -167,10 +167,10 @@ func (s *OrganizationService) canCreate(ctx context.Context, principal auth.Prin
 // canManage memeriksa apakah principal boleh mengubah atau mengarsipkan sebuah
 // unit.
 func (s *OrganizationService) canManage(ctx context.Context, principal auth.Principal, organization models.Homebase) (bool, error) {
-	if allows(s.policy, principal, "organization:manage") {
+	if allows(ctx, s.policy, principal, "organization:manage") {
 		return true, nil
 	}
-	if !allows(s.policy, principal, "organization:manage:homebase") {
+	if !allows(ctx, s.policy, principal, "organization:manage:homebase") {
 		return false, nil
 	}
 	scope, err := s.scope.resolve(ctx, principal)

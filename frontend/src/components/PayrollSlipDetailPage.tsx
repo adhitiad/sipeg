@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useCallback, useState, useSyncExternalStore } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from '@tanstack/react-router'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import LoadingBars from '@/components/LoadingBars'
 import RetryButton from '@/components/RetryButton'
@@ -10,8 +10,48 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { useMessages } from '@/i18n/locale-context'
 import { ApiError } from '@/lib/api'
-import { confirmPayrollPayment, payrollSlipQueryKey, usePayrollSlip } from '@/lib/payroll'
+import {
+  confirmPayrollPayment,
+  downloadSlipPdf,
+  payrollSlipQueryKey,
+  publishSlip,
+  usePayrollSlip,
+} from '@/lib/payroll'
 import { useSession } from '@/lib/session'
+
+// Batas unduh slip PDF: 3 kali per pegawai per periode, disimpan di sisi klien.
+// Penghitung dibaca lewat useSyncExternalStore agar status tombol selalu
+// selaras dengan localStorage tanpa setState di dalam effect.
+const DOWNLOAD_LIMIT = 3
+
+function downloadStorageKey(userId?: string, periode?: string) {
+  return `slip_download:${userId ?? 'unknown'}:${periode ?? 'unknown'}`
+}
+
+function readDownloadCount(userId?: string, periode?: string): number {
+  if (typeof window === 'undefined') return 0
+  try {
+    const raw = window.localStorage.getItem(downloadStorageKey(userId, periode))
+    const count = raw ? Number(raw) : 0
+    return Number.isFinite(count) ? count : 0
+  } catch {
+    return 0
+  }
+}
+
+function useSlipDownloadUsed(userId?: string, periode?: string): number {
+  const subscribe = useCallback((callback: () => void) => {
+    if (typeof window === 'undefined') return () => {}
+    window.addEventListener('slip-download', callback)
+    return () => window.removeEventListener('slip-download', callback)
+  }, [])
+  const getSnapshot = useCallback(
+    () => readDownloadCount(userId, periode),
+    [userId, periode],
+  )
+  const getServerSnapshot = useCallback(() => 0, [])
+  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
+}
 
 export default function PayrollSlipDetailPage() {
   const t = useMessages()
@@ -26,6 +66,23 @@ export default function PayrollSlipDetailPage() {
   const [paymentDate, setPaymentDate] = useState('')
   const [reference, setReference] = useState('')
   const [note, setNote] = useState('')
+  const [isDownloading, setIsDownloading] = useState(false)
+
+  const publishMutation = useMutation({
+    mutationFn: () => publishSlip(payrollId),
+    onSuccess: () => {
+      toast.success(t('payroll.publishSuccess'))
+      void queryClient.invalidateQueries({ queryKey: payrollSlipQueryKey(payrollId) })
+      void queryClient.invalidateQueries({ queryKey: ['payroll', 'slips'] })
+    },
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 409) {
+        toast.error(t('payroll.publishConflict'))
+        return
+      }
+      toast.error(t('payroll.publishError'))
+    },
+  })
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -52,6 +109,33 @@ export default function PayrollSlipDetailPage() {
       toast.error(t('payroll.paymentError'))
     },
   })
+
+  const slipUserId = query.data?.userId
+  const slipPeriode = query.data?.periode
+  const usedDownloads = useSlipDownloadUsed(slipUserId, slipPeriode)
+  const remainingDownloads = Math.max(0, DOWNLOAD_LIMIT - usedDownloads)
+
+  const handleDownloadPdf = async () => {
+    if (!query.data) return
+    const userId = query.data.userId
+    const periode = query.data.periode
+    const key = downloadStorageKey(userId, periode)
+    const used = readDownloadCount(userId, periode)
+    if (used >= DOWNLOAD_LIMIT) {
+      toast.error(t('payroll.downloadLimitReached'))
+      return
+    }
+    setIsDownloading(true)
+    try {
+      await downloadSlipPdf(query.data.id, query.data.nomorSlip)
+      window.localStorage.setItem(key, String(used + 1))
+      window.dispatchEvent(new Event('slip-download'))
+    } catch {
+      toast.error(t('payroll.pdfError'))
+    } finally {
+      setIsDownloading(false)
+    }
+  }
 
   if (query.isPending) {
     return (
@@ -96,13 +180,45 @@ export default function PayrollSlipDetailPage() {
   return (
     <div className="page-wrap px-4 py-10 sm:py-14">
       <section className="island-shell rise-in rounded-2xl p-6 sm:p-8">
-        <Link
-          to="/payroll/slips"
-          className="mb-4 inline-flex items-center gap-2 text-sm font-medium text-[var(--sea-ink-soft)] hover:text-[var(--sea-ink)]"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-          {t('payroll.backToList')}
-        </Link>
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <Link
+            to="/payroll/slips"
+            className="inline-flex items-center gap-2 text-sm font-medium text-[var(--sea-ink-soft)] hover:text-[var(--sea-ink)]"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            {t('payroll.backToList')}
+          </Link>
+          <div className="flex flex-col items-end gap-1">
+            {canManage && slip.status === 'DRAF' ? (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => publishMutation.mutate()}
+                disabled={publishMutation.isPending}
+              >
+                {publishMutation.isPending ? t('common.saving') : t('payroll.publish')}
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleDownloadPdf}
+              disabled={isDownloading || remainingDownloads === 0}
+            >
+              <Download className="mr-1.5 h-4 w-4" aria-hidden="true" />
+              {isDownloading ? t('payroll.pdfDownloading') : t('payroll.downloadPdf')}
+            </Button>
+            <p
+              className="m-0 text-[11px] tabular-nums text-[var(--sea-ink-soft)]"
+              aria-live="polite"
+            >
+              {remainingDownloads === 0
+                ? t('payroll.downloadLimitReached')
+                : t('payroll.downloadRemaining', { count: String(remainingDownloads) })}
+            </p>
+          </div>
+        </div>
         <p className="island-kicker mb-2">{t('payroll.kicker')}</p>
         <h1 className="display-title mb-2 text-3xl font-bold text-[var(--sea-ink)] sm:text-4xl">
           {t('payroll.detailTitle')}

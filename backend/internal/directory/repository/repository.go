@@ -59,7 +59,24 @@ type LeaveRepository interface {
 	UpdateCuti(context.Context, string, string, models.Cuti) (models.Cuti, error)
 	ApproveCuti(context.Context, string, string, *string) (models.Cuti, error)
 	RejectCuti(context.Context, string, string, *string) (models.Cuti, error)
+	// CancelCuti membatalkan pengajuan MENUNGGU atau DISETUJUI menjadi
+	// BATAL; mengembalikan saldo yang terpotong untuk cuti tahunan.
+	CancelCuti(context.Context, string, string, *string) (models.Cuti, error)
 	UserHomebaseID(context.Context, string) (string, error)
+	// SaldoCuti memastikan baris saldo cuti tahunan pegawai (dengan carry
+	// dan hangus lazy) dan mengembalikan keadaan terakhirnya.
+	SaldoCuti(context.Context, string, int) (models.SaldoCuti, error)
+	// EmployeeStartDate mengembalikan tanggal mulai kerja pegawai; nil bila
+	// belum terisi (syarat masa kerja dilewati).
+	EmployeeStartDate(context.Context, string) (*time.Time, error)
+	// EmployeeKategoriStatusKode mengembalikan kode kategori status pegawai
+	// (tabel kategoriStatusPegawai, migrasi 000025) bila tersedia. Mengembalikan
+	// string kosong bila pegawai belum ditetapkan kategorinya atau migrasi
+	// belum diterapkan (best-effort, tidak memblokir pengajuan cuti).
+	EmployeeKategoriStatusKode(context.Context, string) (string, error)
+	// OverlappingCuti menghitung pengajuan MENUNGGU/DISETUJUI yang
+	// tumpang tindih dengan periode [mulai, selesai].
+	OverlappingCuti(context.Context, string, time.Time, time.Time, string) (int64, error)
 }
 
 // AuditRepository adalah port persistensi jejak audit.

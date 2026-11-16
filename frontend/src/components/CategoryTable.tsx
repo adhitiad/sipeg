@@ -1,26 +1,27 @@
-import { ChevronLeft, ChevronRight } from 'lucide-react'
-import SortIcon from '@/components/SortIcon'
+import { useMemo } from 'react'
+import type { ColumnDef } from '@tanstack/react-table'
+import { Search } from 'lucide-react'
+import { DataTable } from '@/components/DataTable'
+import type { DataTableLabels } from '@/components/DataTable'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { CATEGORY_SORT_FIELDS } from '@/lib/audit'
+import type { CategorySortField, CategorySortOrder } from '@/lib/audit'
 import type { Category } from '@/validations/schemas'
 
 const PAGE_SIZES = [10, 25, 50, 100] as const
 export type CategoryPageSize = (typeof PAGE_SIZES)[number]
+
+type CategoryTableLabels = DataTableLabels & {
+  code: string
+  name: string
+  retirementAge: string
+  status: string
+  active: string
+  inactive: string
+  searchLabel: string
+  searchPlaceholder: string
+  emptyHint: string
+}
 
 type CategoryTableProps = {
   categories: Category[]
@@ -28,50 +29,31 @@ type CategoryTableProps = {
   pageSize: CategoryPageSize
   totalPages: number
   totalItems: number
+  isLoading: boolean
   isFetching: boolean
   search: string
-  sort: 'kode' | 'nama' | 'createdAt' | 'updatedAt'
-  order: 'asc' | 'desc'
+  sort: CategorySortField
+  order: CategorySortOrder
   onPageChange: (page: number) => void
   onPageSizeChange: (size: CategoryPageSize) => void
   onSearchChange: (value: string) => void
-  onSortChange: (field: 'kode' | 'nama' | 'createdAt' | 'updatedAt') => void
-  labels: {
-    caption: string
-    code: string
-    name: string
-    retirementAge: string
-    status: string
-    active: string
-    inactive: string
-    noValue: string
-    resultLabel: string
-    refreshingLabel: string
-    prevPage: string
-    nextPage: string
-    pageInfo: string
-    searchLabel: string
-    searchPlaceholder: string
-    pageSizeLabel: string
-    itemsPerPage: string
-  }
+  onSortChange: (field: CategorySortField, order: CategorySortOrder) => void
+  labels: CategoryTableLabels
 }
 
-function pageRange(totalItems: number, page: number, pageSize: number): [number, number] {
-  if (totalItems === 0) {
-    return [0, 0]
-  }
-  const from = (page - 1) * pageSize + 1
-  const to = Math.min(page * pageSize, totalItems)
-  return [from, to]
-}
-
+/**
+ * Tabel daftar kategori pegawai.
+ *
+ * Backend memegang pencarian, pengurutan, dan pemotongan baris, jadi tabel ini
+ * hanya meneruskan pilihan pengguna tanpa memfilter baris sendiri.
+ */
 export default function CategoryTable({
   categories,
   page,
   pageSize,
   totalPages,
   totalItems,
+  isLoading,
   isFetching,
   search,
   sort,
@@ -82,163 +64,99 @@ export default function CategoryTable({
   onSortChange,
   labels,
 }: CategoryTableProps) {
-  const [from, to] = pageRange(totalItems, page, pageSize)
+  const columns = useMemo<ColumnDef<Category, unknown>[]>(
+    () => [
+      {
+        id: 'kode',
+        accessorFn: (row) => row.kode,
+        header: labels.code,
+        cell: ({ row }) => (
+          <span className="font-medium break-words text-[var(--sea-ink)]">
+            {row.original.kode}
+          </span>
+        ),
+      },
+      {
+        id: 'nama',
+        accessorFn: (row) => row.nama,
+        header: labels.name,
+        cell: ({ row }) => <span className="break-words">{row.original.nama}</span>,
+      },
+      {
+        id: 'usiaPensiun',
+        accessorFn: (row) => row.usiaPensiun,
+        header: labels.retirementAge,
+        cell: ({ row }) => (
+          <span className="tabular-nums text-[var(--sea-ink-soft)]">
+            {row.original.usiaPensiun}
+          </span>
+        ),
+      },
+      {
+        id: 'aktif',
+        accessorFn: (row) => (row.aktif ? '1' : '0'),
+        header: labels.status,
+        cell: ({ row }) => (
+          <span
+            className={`text-xs font-medium ${
+              row.original.aktif ? 'text-[var(--sea-ink)]' : 'text-destructive'
+            }`}
+          >
+            {row.original.aktif ? labels.active : labels.inactive}
+          </span>
+        ),
+      },
+    ],
+    [labels],
+  )
 
   return (
-    <div className="island-shell overflow-hidden rounded-2xl">
-      <div className="border-b border-[var(--line)] px-4 py-3 sm:flex sm:items-center sm:justify-between gap-3">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-          <label
-            htmlFor="category-search"
-            className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--kicker)]"
-          >
-            {labels.searchLabel}
-          </label>
+    <div className="space-y-4">
+      <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+        <label
+          htmlFor="category-search"
+          className="text-xs font-semibold tracking-[0.16em] text-[var(--kicker)] uppercase"
+        >
+          {labels.searchLabel}
+        </label>
+        <div className="relative">
+          <Search
+            className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-[var(--sea-ink-soft)]"
+            aria-hidden="true"
+          />
           <Input
             id="category-search"
             type="search"
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder={labels.searchPlaceholder}
-            className="h-11 w-full sm:w-64"
+            className="h-11 w-full pl-9 sm:w-64"
           />
         </div>
-
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-center">
-          <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--kicker)]">
-            {labels.pageSizeLabel}
-          </span>
-          <Select
-            value={String(pageSize)}
-            onValueChange={(value) => onPageSizeChange(Number(value) as CategoryPageSize)}
-          >
-            <SelectTrigger className="h-11 w-20" aria-label={labels.pageSizeLabel}>
-              <SelectValue placeholder={String(pageSize)} />
-            </SelectTrigger>
-            <SelectContent>
-              {PAGE_SIZES.map((size) => (
-                <SelectItem key={size} value={String(size)}>
-                  {size}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
       </div>
 
-      <Table className="min-w-[40rem]">
-        <TableCaption className="sr-only">{labels.caption}</TableCaption>
-        <TableHeader>
-          <TableRow className="border-[var(--line)] hover:bg-transparent">
-            <TableHead scope="col" className="px-4 py-3">
-              <button
-                type="button"
-                onClick={() => onSortChange('kode')}
-                aria-label={labels.code}
-                className="island-kicker inline-flex items-center gap-1"
-              >
-                {labels.code}
-                <SortIcon active={sort === 'kode'} order={order} />
-              </button>
-            </TableHead>
-            <TableHead scope="col" className="px-4 py-3">
-              <button
-                type="button"
-                onClick={() => onSortChange('nama')}
-                aria-label={labels.name}
-                className="island-kicker inline-flex items-center gap-1"
-              >
-                {labels.name}
-                <SortIcon active={sort === 'nama'} order={order} />
-              </button>
-            </TableHead>
-            <TableHead scope="col" className="px-4 py-3">
-              {labels.retirementAge}
-            </TableHead>
-            <TableHead scope="col" className="px-4 py-3">
-              {labels.status}
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody aria-busy={isFetching}>
-          {categories.map((category) => (
-            <TableRow key={category.id} className="border-[var(--line)] last:border-0">
-              <TableCell className="px-4 py-3 font-medium text-[var(--sea-ink)] break-words">
-                {category.kode}
-              </TableCell>
-              <TableCell className="px-4 py-3 text-[var(--sea-ink)] break-words">
-                {category.nama}
-              </TableCell>
-              <TableCell className="px-4 py-3 tabular-nums text-[var(--sea-ink-soft)]">
-                {category.usiaPensiun}
-              </TableCell>
-              <TableCell className="px-4 py-3">
-                <span
-                  className={`text-xs font-medium ${
-                    category.aktif ? 'text-[var(--sea-ink)]' : 'text-destructive'
-                  }`}
-                >
-                  {category.aktif ? labels.active : labels.inactive}
-                </span>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-
-      <div className="flex flex-col gap-3 border-t border-[var(--line)] px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-        <p className="m-0 text-[var(--sea-ink-soft)]">
-          {labels.itemsPerPage
-            .replace('{from}', String(from))
-            .replace('{to}', String(to))
-            .replace('{total}', String(totalItems))}
-          {isFetching ? ` · ${labels.refreshingLabel}` : ''}
-        </p>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => onPageChange(page - 1)}
-            disabled={page <= 1}
-            aria-label={labels.prevPage}
-            className="h-11 rounded-full border border-[var(--chip-line)] bg-[var(--chip-bg)] px-4 text-xs font-semibold text-[var(--sea-ink)] disabled:cursor-not-allowed disabled:opacity-50 sm:h-9"
-          >
-            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-          </button>
-          {[...Array(Math.max(totalPages, 1))].map((_, index) => {
-            const n = index + 1
-            const active = n === page
-            return (
-              <button
-                key={n}
-                type="button"
-                onClick={() => onPageChange(n)}
-                aria-current={active ? 'page' : undefined}
-                className={
-                  active
-                    ? 'h-10 w-10 rounded-full bg-[var(--lagoon)] text-white text-xs font-semibold'
-                    : 'h-10 w-10 rounded-full border border-[var(--line)] bg-[var(--chip-bg)] text-[var(--sea-ink)] text-xs font-semibold hover:bg-[var(--surface-strong)]'
-                }
-              >
-                {String(n)}
-              </button>
-            )
-          })}
-          <button
-            type="button"
-            onClick={() => onPageChange(page + 1)}
-            disabled={page >= totalPages}
-            aria-label={labels.nextPage}
-            className="h-11 rounded-full border border-[var(--chip-line)] bg-[var(--chip-bg)] px-4 text-xs font-semibold text-[var(--sea-ink)] disabled:cursor-not-allowed disabled:opacity-50 sm:h-9"
-          >
-            <ChevronRight className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </div>
-        <span className="text-xs text-[var(--sea-ink-soft)]">
-          {labels.pageInfo
-            .replace('{page}', String(page))
-            .replace('{total}', String(Math.max(totalPages, 1)))}
-        </span>
-      </div>
+      <DataTable
+        columns={columns}
+        data={categories}
+        getRowId={(row) => row.id}
+        sortFields={CATEGORY_SORT_FIELDS}
+        sort={sort}
+        order={order}
+        onSortChange={onSortChange}
+        page={page}
+        pageSize={pageSize}
+        totalItems={totalItems}
+        totalPages={totalPages}
+        onPageChange={onPageChange}
+        onPageSizeChange={(size) => onPageSizeChange(size as CategoryPageSize)}
+        pageSizeOptions={PAGE_SIZES}
+        isLoading={isLoading}
+        isFetching={isFetching}
+        emptyState={
+          <p className="m-0 text-sm text-[var(--sea-ink-soft)]">{labels.emptyHint}</p>
+        }
+        labels={labels}
+      />
     </div>
   )
 }

@@ -60,10 +60,36 @@ describe('fetchCurrentAccount', () => {
     await expect(fetchCurrentAccount()).rejects.toBeTruthy()
   })
 
-  it('tidak mengirim permintaan bila tidak ada token di memori', async () => {
-    const fetchMock = stubFetch(fakeResponse(200, ACCOUNT))
+  it('tidak memanggil /me bila token kosong dan cookie tidak memuat sesi', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(fakeResponse(200, null))
+    vi.stubGlobal('fetch', fetchMock)
 
     await expect(fetchCurrentAccount()).resolves.toBeNull()
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/auth/get-session',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Accept: 'application/json' }),
+      }),
+    )
+  })
+
+  it('mengadopsi token sesi cookie dari runtime Better Auth', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        fakeResponse(200, { session: { token: 'cookie-token' }, user: {} }),
+      )
+      .mockResolvedValueOnce(fakeResponse(200, ACCOUNT))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(fetchCurrentAccount()).resolves.toEqual(ACCOUNT)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringContaining('/me'),
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer cookie-token' }),
+      }),
+    )
   })
 })

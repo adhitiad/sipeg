@@ -24,7 +24,9 @@ type GormStore struct {
 // FindProfile membaca record user principal.
 func (s GormStore) FindProfile(ctx context.Context, userID string) (models.User, error) {
 	var user models.User
-	if err := s.DB.WithContext(ctx).First(&user, "id = ?", userID).Error; err != nil {
+	if err := s.DB.WithContext(ctx).
+		Select("id", "nama", "no_hp", "homebaseId", "updatedAt").
+		First(&user, "id = ?", userID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return models.User{}, domain.ErrNotFound
 		}
@@ -56,7 +58,7 @@ func (s GormStore) UpdateProfile(ctx context.Context, userID string, input domai
 		if result.RowsAffected == 0 {
 			return domain.ErrNotFound
 		}
-		if err := tx.First(&user, "id = ?", userID).Error; err != nil {
+		if err := tx.Select("id", "nama", "no_hp", "homebaseId", "updatedAt").First(&user, "id = ?", userID).Error; err != nil {
 			return fmt.Errorf("read updated user profile: %w", err)
 		}
 		targetID := user.ID

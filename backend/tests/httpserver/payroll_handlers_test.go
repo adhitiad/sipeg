@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"simpeg/backend/internal/audit"
 	"simpeg/backend/internal/auth"
+	directoryapp "simpeg/backend/internal/directory/app"
 	"simpeg/backend/internal/listing"
 	"simpeg/backend/internal/models"
 	payrollapp "simpeg/backend/internal/payroll/app"
@@ -64,6 +66,19 @@ func (r *fakePayrollRepository) ConfirmedPayment(context.Context, string, string
 	return false, nil
 }
 
+func (r *fakePayrollRepository) PublishSlip(_ context.Context, _ string, slipID string, _ *string) (models.Gaji, error) {
+	if len(r.slips) == 0 {
+		return models.Gaji{}, payrolldomain.ErrNotFound
+	}
+	first := &r.slips[0]
+	switch first.Status {
+	case models.StatusSlipTerbit, models.StatusSlipTerbayar, models.StatusSlipBatal:
+		return models.Gaji{}, payrolldomain.ErrConflict
+	}
+	first.Status = models.StatusSlipTerbit
+	return *first, nil
+}
+
 func (r *fakePayrollRepository) UpsertSchedule(_ context.Context, _ string, input payrolldomain.ScheduleInput) (models.JadwalGaji, error) {
 	for index := range r.schedules {
 		if r.schedules[index].UnitId == input.UnitID {
@@ -112,6 +127,24 @@ func payrollTestMux(repo *fakePayrollRepository, role string, grants map[string]
 	})
 }
 
+// fakeAuditRepository menangkap entri audit untuk pengujian jalur PDF slip.
+type fakeAuditRepository struct {
+	entries []audit.Entry
+}
+
+func (r *fakeAuditRepository) ListAuditLogs(_ context.Context, _ listing.Options) ([]models.AuditLog, int64, error) {
+	return nil, 0, nil
+}
+
+func (r *fakeAuditRepository) StreamAuditLogs(_ context.Context, _ listing.Options, _ func(models.AuditLog) error) error {
+	return nil
+}
+
+func (r *fakeAuditRepository) RecordAudit(_ context.Context, entry audit.Entry) error {
+	r.entries = append(r.entries, entry)
+	return nil
+}
+
 func payrollTestSlip() models.Gaji {
 	return models.Gaji{
 		BaseModel:   models.BaseModel{IDModel: models.IDModel{ID: "11111111-1111-4111-8111-111111111111"}},
@@ -123,6 +156,108 @@ func payrollTestSlip() models.Gaji {
 		TotalGaji:   4_250_000,
 		Status:      models.StatusSlipTerbit,
 		Pegawai:     &models.User{Nama: "Budi", Email: "budi@example.test"},
+	}
+}
+
+func TestPayrollPublishSetsSlipTerbit(t *testing.T) {
+	slip := payrollTestSlip()
+	slip.Status = models.StatusSlipDraf
+	repo := &fakePayrollRepository{slips: []models.Gaji{slip}}
+	mux := payrollTestMux(repo, "admin", map[string]map[auth.Permission]bool{
+		"admin": {"payroll:read:any": true, "payroll:manage": true},
+	})
+	request := httptest.NewRequest(http.MethodPost, APIPrefix+"/payroll/slips/11111111-1111-4111-8111-111111111111/terbit", nil)
+	request.Header.Set("Authorization", "Bearer valid-session")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", response.Code, response.Body)
+	}
+	var body PayrollDTO
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Status != string(models.StatusSlipTerbit) {
+		t.Fatalf("status = %q, want TERBIT", body.Status)
+	}
+}
+
+func TestPayrollPublishRequiresManagePermission(t *testing.T) {
+	slip := payrollTestSlip()
+	slip.Status = models.StatusSlipDraf
+	repo := &fakePayrollRepository{slips: []models.Gaji{slip}}
+	mux := payrollTestMux(repo, "pegawai", map[string]map[auth.Permission]bool{
+		"pegawai": {"payroll:read:self": true},
+	})
+	request := httptest.NewRequest(http.MethodPost, APIPrefix+"/payroll/slips/11111111-1111-4111-8111-111111111111/terbit", nil)
+	request.Header.Set("Authorization", "Bearer valid-session")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", response.Code)
+	}
+	if repo.slips[0].Status != models.StatusSlipDraf {
+		t.Fatal("slip tidak boleh terbit tanpa permission")
+	}
+}
+
+func TestPayrollPublishRejectsNonDrafSlip(t *testing.T) {
+	repo := &fakePayrollRepository{slips: []models.Gaji{payrollTestSlip()}}
+	mux := payrollTestMux(repo, "admin", map[string]map[auth.Permission]bool{
+		"admin": {"payroll:read:any": true, "payroll:manage": true},
+	})
+	request := httptest.NewRequest(http.MethodPost, APIPrefix+"/payroll/slips/11111111-1111-4111-8111-111111111111/terbit", nil)
+	request.Header.Set("Authorization", "Bearer valid-session")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+
+	if response.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", response.Code)
+	}
+}
+
+func TestPayrollPDFDownloadIsRecordedInAudit(t *testing.T) {
+	unitID := "22222222-2222-4222-8222-222222222222"
+	slip := payrollTestSlip()
+	slip.Pegawai.HomebaseId = &unitID
+	auditRepo := &fakeAuditRepository{}
+	policy := auth.StaticPolicy{"pegawai": {"payroll:read:self": true}}
+	mux := NewMuxWithOptions(MuxOptions{
+		Resolver: principalResolver{principal: auth.Principal{UserID: "user-1", RoleName: "pegawai"}},
+		Policy:   policy,
+		Payroll:  payrollapp.NewService(&fakePayrollRepository{slips: []models.Gaji{slip}}, policy, nil),
+		Directory: DirectoryServices{
+			Audits: directoryapp.NewAuditService(auditRepo, policy, nil),
+		},
+	})
+	request := httptest.NewRequest(http.MethodGet, APIPrefix+"/payroll/slips/11111111-1111-4111-8111-111111111111/pdf", nil)
+	request.Header.Set("Authorization", "Bearer valid-session")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body)
+	}
+	if contentType := response.Header().Get("Content-Type"); contentType != "application/pdf" {
+		t.Fatalf("content-type = %q", contentType)
+	}
+	if len(auditRepo.entries) != 1 {
+		t.Fatalf("audit entries = %d, want 1", len(auditRepo.entries))
+	}
+	entry := auditRepo.entries[0]
+	if entry.Action != audit.ActionSlipPDFDownloaded {
+		t.Fatalf("action = %q, want %q", entry.Action, audit.ActionSlipPDFDownloaded)
+	}
+	if entry.ActorID != "user-1" {
+		t.Fatalf("actorID = %q, want user-1", entry.ActorID)
+	}
+	if entry.TargetID == nil || *entry.TargetID != slip.ID {
+		t.Fatalf("targetID = %v, want %s", entry.TargetID, slip.ID)
+	}
+	if entry.UnitID == nil || *entry.UnitID != unitID {
+		t.Fatalf("unitID = %v, want %s", entry.UnitID, unitID)
 	}
 }
 

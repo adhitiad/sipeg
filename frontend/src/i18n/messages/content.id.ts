@@ -1,12 +1,17 @@
 export const contentMessagesId = {
-  'landing.heroTitle': 'Data kepegawaian dalam satu tempat',
+  'landing.kicker': 'Untuk kantor kepegawaian perguruan tinggi',
+  'landing.heroTitle': 'Satu sistem untuk data kepegawaian kampus',
   'landing.heroLead':
-    'SIMPEG menyimpan data pegawai, struktur unit, presensi, pengajuan cuti, dan slip gaji dalam satu basis data. Setiap pengguna hanya melihat bagian yang menjadi wewenangnya.',
+    'SIMPEG menyatukan data pegawai, struktur unit kerja, presensi, pengajuan cuti, dan slip gaji di dalam satu basis data. Setiap pengguna hanya membuka bagian yang menjadi wewenangnya, dan setiap perubahan penting tercatat pada jejak audit.',
   'landing.primaryCta': 'Masuk ke SIMPEG',
   'landing.secondaryCta': 'Baca tentang sistem ini',
-  'landing.scopeTitle': 'Yang disimpan SIMPEG',
+  'landing.heroFactRoles': 'Empat peran akses, cakupan data mengikuti unit penugasan',
+  'landing.heroFactAudit':
+    'Perubahan penting tercatat lengkap dengan pelaku dan waktunya',
+  'landing.heroFactStack': 'Basis data PostgreSQL, API berversi, antarmuka web',
+  'landing.scopeTitle': 'Yang dipegang SIMPEG',
   'landing.scopeLead':
-    'Enam kelompok data berikut sudah memiliki tempat pada skema basis data dan API.',
+    'Delapan kelompok data berikut sudah memiliki tempat pada skema basis data dan API.',
   'landing.scope.employee.title': 'Data pegawai',
   'landing.scope.employee.body':
     'Identitas, kontak, data jabatan, riwayat pendidikan, riwayat jabatan, dan riwayat gaji.',
@@ -25,21 +30,48 @@ export const contentMessagesId = {
   'landing.scope.performance.title': 'Kinerja dan tridharma',
   'landing.scope.performance.body':
     'Sasaran kinerja, penilaian, serta kegiatan pendidikan, penelitian, pengabdian, dan penunjang.',
+  'landing.scope.archive.title': 'Dokumen kepegawaian',
+  'landing.scope.archive.body':
+    'Arsip dokumen per pegawai beserta jenis berkas, ukuran, dan masa berlaku.',
+  'landing.scope.audit.title': 'Jejak audit',
+  'landing.scope.audit.body':
+    'Catatan append-only atas perubahan penting, lengkap dengan pelaku, waktu, dan unit.',
+  'landing.cycleTitle': 'Satu siklus kerja, dari data induk sampai slip gaji',
+  'landing.cycleLead':
+    'Urutannya mengikuti kerja nyata kantor kepegawaian, bukan urutan menu di layar.',
+  'landing.cycleIntro':
+    'Data pegawai dan unit kerja didaftarkan sekali. Setelah itu kegiatan harian, persetujuan, dan penggajian berjalan di atas data yang sama, sehingga angka pada slip gaji bisa ditelusuri kembali ke sumbernya.',
+  'landing.cycle.data.title': 'Data induk dan unit kerja',
+  'landing.cycle.data.body':
+    'Identitas, jabatan, riwayat pendidikan, dan struktur unit beserta induk dan turunannya.',
+  'landing.cycle.daily.title': 'Kehadiran dan cuti',
+  'landing.cycle.daily.body':
+    'Rekap harian, pengajuan cuti, saldo kuota, dan persetujuan atasan sesuai jenjang.',
+  'landing.cycle.payroll.title': 'Penggajian per periode',
+  'landing.cycle.payroll.body':
+    'Komponen gaji, slip per periode, jadwal tanggal gajian per unit, dan konfirmasi pembayaran.',
+  'landing.cycle.evaluation.title': 'Penilaian, dokumen, dan jejak audit',
+  'landing.cycle.evaluation.body':
+    'Sasaran kinerja, kegiatan tridharma, dokumen kepegawaian, dan catatan perubahan yang tidak dapat dihapus.',
   'landing.rolesTitle': 'Siapa yang memakai SIMPEG',
   'landing.rolesLead':
     'Hak akses mengikuti peran. Peran yang lebih luas memegang cakupan unit yang lebih besar.',
   'landing.role.admin.title': 'Administrator',
   'landing.role.admin.body':
     'Mengelola data kepegawaian, organisasi, penggajian, dan jejak audit lintas instansi.',
+  'landing.role.admin.scope': 'Seluruh organisasi',
   'landing.role.operator.title': 'Operator',
   'landing.role.operator.body':
     'Mengelola data pegawai dan unit kerja di dalam unit penugasannya beserta unit turunannya.',
+  'landing.role.operator.scope': 'Unit penugasan beserta turunannya',
   'landing.role.atasan.title': 'Atasan',
   'landing.role.atasan.body':
     'Meninjau pengajuan cuti dan oversee data pegawai unit penugasannya.',
+  'landing.role.atasan.scope': 'Unit penugasan beserta turunannya',
   'landing.role.pegawai.title': 'Pegawai',
   'landing.role.pegawai.body':
     'Melihat data diri, slip gaji, dan pengajuan cuti miliknya sendiri.',
+  'landing.role.pegawai.scope': 'Data sendiri',
   'landing.accessTitle': 'Cara akses',
   'landing.accessLead':
     'Tidak ada pendaftaran mandiri. Akun dibuat oleh administrator instansi.',
@@ -135,4 +167,13 @@ export const contentMessagesId = {
   'legal.draftNotice': 'Dokumen draf. Isinya belum disahkan oleh pemilik produk.',
   'legal.updated': 'Terakhir diperbarui: 12 November 2026',
   'legal.contact': 'Pertanyaan soal dokumen ini diajukan kepada administrator instansi.',
+  'seo.siteTitle': 'SIMPEG',
+  'seo.siteDescription':
+    'SIMPEG adalah sistem informasi kepegawaian untuk mengelola data pegawai, organisasi, cuti, dan penggajian.',
+  'seo.landingTitle': 'SIMPEG, Sistem Informasi Kepegawaian',
+  'seo.landingDescription':
+    'Satu basis data untuk data pegawai, struktur unit, presensi, pengajuan cuti, dan slip gaji di lingkungan kampus.',
+  'seo.loginTitle': 'Masuk ke SIMPEG',
+  'seo.loginDescription':
+    'Akses SIMPEG untuk mengelola data pegawai, organisasi, presensi, cuti, dan penggajian.',
 } as const

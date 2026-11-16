@@ -29,8 +29,8 @@ services:
       - ./rabbitmq.conf:/etc/rabbitmq/conf.d/10-simpeg.conf:ro
       - rabbitmq-data:/var/lib/rabbitmq
     ports:
-      - "5672:5672"     # AMQP; dibuka ke host untuk pengembangan native
-      - "15672:15672"   # UI manajemen; jangan terekspos di production
+      - "5672:5672" # AMQP; dibuka ke host untuk pengembangan native
+      - "15672:15672" # UI manajemen; jangan terekspos di production
     networks:
       - broker
     healthcheck:

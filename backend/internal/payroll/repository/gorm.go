@@ -43,7 +43,12 @@ func (s GormStore) ListSlips(ctx context.Context, options listing.Options) ([]mo
 		if err != nil {
 			return nil, 0, err
 		}
-		query = query.Where("periode = ?", timeutil.DateOnly(period.Start()))
+		// Cocokkan seluruh hari dalam bulan tersebut, bukan hanya tanggal 1 —
+		// slip THR (periode = tanggal pembayaran) harus ikut terdaftar pada
+		// filter periode bulanan.
+		start := timeutil.DateOnly(period.Start())
+		end := start.AddDate(0, 1, 0)
+		query = query.Where(`"periode" >= ? AND "periode" < ?`, start, end)
 	}
 	if options.Status != "" {
 		query = query.Where("status = ?", options.Status)
@@ -75,6 +80,41 @@ func (s GormStore) GetSlip(ctx context.Context, id string) (models.Gaji, error) 
 		}
 		return models.Gaji{}, fmt.Errorf("read payroll slip: %w", err)
 	}
+	return slip, nil
+}
+
+// PublishSlip menandai slip DRAF menjadi TERBIT dalam satu transaksi bersama
+// jejak audit. Slip TERBIT/TERBAYAR/BATAL ditolak dengan domain.ErrConflict;
+// slip tidak dikenal menghasilkan domain.ErrNotFound.
+func (s GormStore) PublishSlip(ctx context.Context, actorID, slipID string, unitID *string) (models.Gaji, error) {
+	var slip models.Gaji
+	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", slipID).First(&slip).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return domain.ErrNotFound
+			}
+			return fmt.Errorf("read payroll slip: %w", err)
+		}
+		if slip.Status != models.StatusSlipDraf {
+			return domain.ErrConflict
+		}
+		if err := tx.Model(&slip).Updates(map[string]any{"status": models.StatusSlipTerbit}).Error; err != nil {
+			return fmt.Errorf("publish payroll slip: %w", err)
+		}
+		targetID := slip.ID
+		note := fmt.Sprintf("slip %s diterbitkan", slip.NomorSlip)
+		return audit.Write(ctx, tx, audit.Entry{
+			ActorID:  actorID,
+			Action:   audit.ActionSlipPublished,
+			TargetID: &targetID,
+			UnitID:   unitID,
+			Note:     &note,
+		})
+	})
+	if err != nil {
+		return models.Gaji{}, err
+	}
+	slip.Status = models.StatusSlipTerbit
 	return slip, nil
 }
 

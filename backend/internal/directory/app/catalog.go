@@ -99,7 +99,7 @@ func NewAuditService(repo repository.AuditRepository, policy auth.Policy, scopeR
 // Jejak audit untuk role berscope unit dibatasi pada unit penugasan beserta
 // turunannya. Role global membaca seluruh jejak.
 func (s *AuditService) List(ctx context.Context, principal auth.Principal, options listing.Options) (listing.Page[models.AuditLog], error) {
-	if !allows(s.policy, principal, "audit:read") {
+	if !allows(ctx, s.policy, principal, "audit:read") {
 		scope, err := s.scope.resolve(ctx, principal)
 		if err != nil {
 			return listing.Page[models.AuditLog]{}, err
@@ -127,7 +127,7 @@ func (s *AuditService) List(ctx context.Context, principal auth.Principal, optio
 // fn, satu batch per batch, tanpa pagination. Urutan tetap kronologis naik.
 // Izin dan cakupan sama persis dengan List.
 func (s *AuditService) StreamAuditLogs(ctx context.Context, principal auth.Principal, options listing.Options, fn func(models.AuditLog) error) error {
-	if !allows(s.policy, principal, "audit:read") {
+	if !allows(ctx, s.policy, principal, "audit:read") {
 		scope, err := s.scope.resolve(ctx, principal)
 		if err != nil {
 			return err

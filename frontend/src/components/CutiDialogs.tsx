@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/select'
 import { useMessages } from '@/i18n/locale-context'
 import type { MessageKey } from '@/i18n/dictionary'
-import { createCuti, updateCuti, approveCuti, rejectCuti } from '@/lib/cuti'
+import { createCuti, updateCuti, approveCuti, rejectCuti, cancelCuti } from '@/lib/cuti'
 import {
   cutiCreateSchema,
   cutiUpdateSchema,
@@ -47,6 +47,11 @@ const SUBJENIS_OPTIONS = [
   { value: 'MENIKAHKAN_ANAK', labelKey: 'cuti.subMenikahkanAnak' },
   { value: 'KELUARGA_INTI', labelKey: 'cuti.subKeluargaInti' },
   { value: 'KELUARGA_LAIN', labelKey: 'cuti.subKeluargaLain' },
+]
+
+const BERSALIN_SUBJENIS_OPTIONS = [
+  { value: 'MELAHIRKAN', labelKey: 'cuti.bersalinMelahirkan' },
+  { value: 'KEGUGURAN', labelKey: 'cuti.bersalinKeguguran' },
 ]
 
 export function CreateCutiDialog({
@@ -78,6 +83,7 @@ export function CreateCutiDialog({
   }
 
   const isIzinPenting = jenis === 'IZIN_PENTING'
+  const isBersalin = jenis === 'BERSALIN'
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
@@ -193,6 +199,26 @@ export function CreateCutiDialog({
             </div>
           )}
 
+          {isBersalin && (
+            <div>
+              <Label htmlFor="create-cuti-subJenisBersalin">
+                {t('cuti.subJenisBersalinLabel')}
+              </Label>
+              <Select {...form.register('subJenisBersalin')}>
+                <SelectTrigger id="create-cuti-subJenisBersalin" className="h-11">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {BERSALIN_SUBJENIS_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {t(option.labelKey as unknown as MessageKey)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
               {t('common.cancel')}
@@ -223,6 +249,8 @@ export function EditCutiDialog({
       tanggalSelesai: cuti.tanggalSelesai,
       alamatCuti: cuti.alamatCuti ?? '',
       alasan: cuti.alasan ?? '',
+      subJenis: cuti.subJenis ?? undefined,
+      subJenisBersalin: cuti.subJenisBersalin ?? undefined,
     },
   })
   const jenis = useWatch({ control: form.control, name: 'jenis' })
@@ -237,6 +265,13 @@ export function EditCutiDialog({
     if (values.alamatCuti !== undefined && values.alamatCuti !== cuti.alamatCuti)
       patch.alamatCuti = values.alamatCuti
     if (values.alasan && values.alasan !== cuti.alasan) patch.alasan = values.alasan
+    if (values.subJenis !== undefined && values.subJenis !== cuti.subJenis)
+      patch.subJenis = values.subJenis
+    if (
+      values.subJenisBersalin !== undefined &&
+      values.subJenisBersalin !== cuti.subJenisBersalin
+    )
+      patch.subJenisBersalin = values.subJenisBersalin
     if (Object.keys(patch).length === 0) {
       onClose()
       return
@@ -247,6 +282,7 @@ export function EditCutiDialog({
   }
 
   const isIzinPenting = jenis === 'IZIN_PENTING'
+  const isBersalin = jenis === 'BERSALIN'
 
   return (
     <Dialog open onOpenChange={(next) => !next && onClose()}>
@@ -326,6 +362,26 @@ export function EditCutiDialog({
                 </SelectTrigger>
                 <SelectContent>
                   {SUBJENIS_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {t(option.labelKey as unknown as MessageKey)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {isBersalin && (
+            <div>
+              <Label htmlFor="edit-cuti-subJenisBersalin">
+                {t('cuti.subJenisBersalinLabel')}
+              </Label>
+              <Select {...form.register('subJenisBersalin')}>
+                <SelectTrigger id="edit-cuti-subJenisBersalin" className="h-11">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {BERSALIN_SUBJENIS_OPTIONS.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {t(option.labelKey as unknown as MessageKey)}
                     </SelectItem>
@@ -463,6 +519,68 @@ export function RejectCutiDialog({
             </Button>
             <Button type="submit" variant="destructive" disabled={isSubmitting}>
               {isSubmitting ? t('common.saving') : t('cuti.rejectButton')}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+export function CancelCutiDialog({
+  cuti,
+  onClose,
+  onSuccess,
+}: {
+  cuti: Cuti
+  onClose: () => void
+  onSuccess: (cuti: Cuti) => void
+}) {
+  const t = useMessages()
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const form = useForm<z.infer<typeof cutiActionSchema>>({
+    resolver: zodResolver(cutiActionSchema),
+    defaultValues: { catatan: '' },
+  })
+
+  function handleSubmit(values: z.infer<typeof cutiActionSchema>) {
+    setIsSubmitting(true)
+    cancelCuti(cuti.id, { catatan: values.catatan ?? undefined })
+      .then(onSuccess)
+      .catch(() => {
+        setIsSubmitting(false)
+        toast.error(t('cuti.cancelError'))
+      })
+  }
+
+  return (
+    <Dialog open onOpenChange={(next) => !next && onClose()}>
+      <DialogContent className="sm:max-w-[560px]">
+        <DialogHeader>
+          <DialogTitle>{t('cuti.cancelTitle')}</DialogTitle>
+          <DialogDescription>
+            {t('cuti.cancelDescription', { user: cuti.userId })}
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          onSubmit={form.handleSubmit(handleSubmit)}
+          className="grid gap-3"
+          noValidate
+        >
+          <div>
+            <Label htmlFor="cancel-cuti-catatan">Alasan pembatalan (opsional)</Label>
+            <Input
+              id="cancel-cuti-catatan"
+              {...form.register('catatan')}
+              className="h-11"
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="submit" variant="destructive" disabled={isSubmitting}>
+              {isSubmitting ? t('common.saving') : t('cuti.cancelButton')}
             </Button>
           </DialogFooter>
         </form>

@@ -131,10 +131,11 @@ func TestListSchedulesOperatorWithEmptyScopeSeesNothing(t *testing.T) {
 }
 
 func TestProcessRemindersEnqueuesOnlyDueSlips(t *testing.T) {
-	now := time.Date(2026, 11, 11, 3, 0, 0, 0, time.UTC) // 10:00 WIB
+	now := time.Date(2026, 11, 27, 3, 0, 0, 0, time.UTC) // 10:00 WIB
+	token1, token2 := "tokenverifikasi-satu-0000", "tokenverifikasi-dua-000000"
 	repo := &fakePayrollRepository{dueReminders: []repository.Reminder{
-		{SlipID: "slip-1", UserID: "user-1", Email: "budi@example.test", Nama: "Budi", Periode: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), TanggalGajian: 27},
-		{SlipID: "slip-2", UserID: "user-2", Email: "andi@example.test", Nama: "Andi", Periode: time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC), TanggalGajian: 28},
+		{SlipID: "slip-1", UserID: "user-1", Email: "budi@example.test", Nama: "Budi", Periode: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), TanggalGajian: 27, KodeVerifikasi: &token1},
+		{SlipID: "slip-2", UserID: "user-2", Email: "andi@example.test", Nama: "Andi", Periode: time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC), TanggalGajian: 28, KodeVerifikasi: &token2},
 	}}
 	service := NewService(repo, schedulePolicy(), &fakeScopeRepository{})
 

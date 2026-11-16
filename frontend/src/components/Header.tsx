@@ -91,8 +91,8 @@ export default function Header({
                 onClick={() => setLocale(next)}
                 className={
                   locale === next
-                    ? 'h-9 w-10 rounded-full text-xs font-bold uppercase text-[var(--sea-ink)] shadow-[0_0_0_1px_var(--chip-line)_inset] sm:h-8'
-                    : 'h-9 w-10 rounded-full text-xs font-semibold uppercase text-[var(--sea-ink-soft)] transition hover:text-[var(--sea-ink)] sm:h-8'
+                    ? 'h-11 w-11 rounded-full text-xs font-bold uppercase text-[var(--sea-ink)] shadow-[0_0_0_1px_var(--chip-line)_inset] sm:h-9 sm:w-9'
+                    : 'h-11 w-11 rounded-full text-xs font-semibold uppercase text-[var(--sea-ink-soft)] transition hover:text-[var(--sea-ink)] sm:h-9 sm:w-9'
                 }
               >
                 {next}

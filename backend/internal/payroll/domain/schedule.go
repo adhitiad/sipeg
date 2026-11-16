@@ -46,22 +46,26 @@ func (input ScheduleInput) Validate() error {
 
 // PaydayDate mengembalikan tanggal gajian sebuah periode.
 //
-// Nilai disimpan sebagai tanggal kalender (tengah malam UTC) agar perbandingan
+// Slip periode P dibayar pada tanggal gajian `day` pada bulan SETELAH periode
+// tersebut (keputusan pemilik 2026-11-14: gaji Juni dibayar 25 Juli). Nilai
+// disimpan sebagai tanggal kalender (tengah malam UTC) agar perbandingan
 // dengan tanggal lain tidak dipengaruhi zona waktu.
 func PaydayDate(period Period, day int) time.Time {
-	return timeutil.DateOnly(time.Date(period.Year, period.Month, day, 0, 0, 0, 0, timeutil.Location))
+	pay := time.Date(period.Year, period.Month+1, 1, 0, 0, 0, 0, timeutil.Location)
+	return timeutil.DateOnly(pay.AddDate(0, 0, day-1))
 }
 
-// NotifyDate mengembalikan tanggal pemberitahuan H+1 untuk sebuah periode.
+// NotifyDate mengembalikan tanggal pemberitahuan H-1 untuk sebuah periode.
 //
-// H+1 memakai tanggal kalender tetap: hari setelah tanggal gajian, tanpa
-// digeser ke hari kerja berikutnya walau jatuh pada Sabtu, Minggu, atau hari
-// libur nasional (keputusan 11 November 2026).
+// H-1 memakai tanggal kalender tetap: satu hari sebelum tanggal gajian, tanpa
+// digeser ke hari kerja sebelumnya walau jatuh pada Sabtu, Minggu, atau hari
+// libur nasional. Pemberitahuan H-1 memuat QR ke halaman verifikasi publik
+// slip (keputusan pemilik 2026-11-14).
 func NotifyDate(period Period, day int) time.Time {
-	return PaydayDate(period, day).AddDate(0, 0, 1)
+	return PaydayDate(period, day).AddDate(0, 0, -1)
 }
 
-// IsReminderDue memberitahu apakah pemberitahuan H+1 sebuah periode sudah
+// IsReminderDue memberitahu apakah pemberitahuan H-1 sebuah periode sudah
 // jatuh tempo pada hari `today`.
 //
 // Perbandingan memakai tanggal kalender, sehingga hasil tidak berubah karena

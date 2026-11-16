@@ -107,6 +107,19 @@ func (r *fakePayrollRepository) ConfirmedPayment(_ context.Context, _ string, _ 
 	return r.confirmed, nil
 }
 
+func (r *fakePayrollRepository) PublishSlip(_ context.Context, actorID, slipID string, unitID *string) (models.Gaji, error) {
+	if len(r.slips) == 0 {
+		return models.Gaji{}, domain.ErrNotFound
+	}
+	first := &r.slips[0]
+	switch first.Status {
+	case models.StatusSlipTerbit, models.StatusSlipTerbayar, models.StatusSlipBatal:
+		return models.Gaji{}, domain.ErrConflict
+	}
+	first.Status = models.StatusSlipTerbit
+	return *first, nil
+}
+
 // fakeScopeRepository mengembalikan unit turunan yang statis.
 type fakeScopeRepository struct {
 	unitIDs []string

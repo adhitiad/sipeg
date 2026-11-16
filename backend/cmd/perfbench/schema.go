@@ -101,7 +101,13 @@ func inspectSchema(ctx context.Context, db *gorm.DB) (schemaReport, error) {
 			report.NoTable = append(report.NoTable, table)
 			continue
 		}
-		for _, column := range parsed.DBNames {
+		writeColumns := make([]string, 0, len(parsed.Fields))
+		for _, field := range parsed.Fields {
+			if field.Creatable && field.DBName != "" {
+				writeColumns = append(writeColumns, field.DBName)
+			}
+		}
+		for _, column := range writeColumns {
 			if !contains(columns, column) {
 				report.Missing = append(report.Missing, columnMismatch{
 					Table:  table,

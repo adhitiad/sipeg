@@ -283,6 +283,57 @@ func TestCutiHarianDenganEvidenFoto(t *testing.T) {
 	}
 }
 
+func TestCutiBersalinTanpaSubJenisDitolak(t *testing.T) {
+	store := &fakeDirectoryStore{}
+	mux := scopeMux(store, auth.Principal{UserID: pegawaiID, RoleName: "pegawai", HomebaseID: unitA},
+		map[string]map[auth.Permission]bool{"pegawai": {"cuti:create": true}})
+
+	request := httptest.NewRequest(http.MethodPost, APIPrefix+"/cuti", strings.NewReader(
+		`{"userId":"`+pegawaiID+`","jenis":"BERSALIN","tanggalMulai":"2026-12-01","tanggalSelesai":"2026-12-31","alasan":"melahirkan","jenisEviden":"SURAT_DOKTER","nomorSurat":"SD-1","tanggalSuratDokter":"2026-11-01","fileEvidenUrl":"https://berkas/sd.pdf"}`))
+	request.Header.Set("Authorization", "Bearer valid-session")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422, body = %s", response.Code, response.Body)
+	}
+}
+
+func TestCutiBersalinDenganSubJenis201(t *testing.T) {
+	store := &fakeDirectoryStore{}
+	mux := scopeMux(store, auth.Principal{UserID: pegawaiID, RoleName: "pegawai", HomebaseID: unitA},
+		map[string]map[auth.Permission]bool{"pegawai": {"cuti:create": true}})
+
+	request := httptest.NewRequest(http.MethodPost, APIPrefix+"/cuti", strings.NewReader(
+		`{"userId":"`+pegawaiID+`","jenis":"BERSALIN","subJenisBersalin":"MELAHIRKAN","tanggalMulai":"2026-12-01","tanggalSelesai":"2026-12-31","alasan":"melahirkan","jenisEviden":"SURAT_DOKTER","nomorSurat":"SD-1","tanggalSuratDokter":"2026-11-01","fileEvidenUrl":"https://berkas/sd.pdf"}`))
+	request.Header.Set("Authorization", "Bearer valid-session")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %s", response.Code, response.Body)
+	}
+	if !strings.Contains(response.Body.String(), `"subJenisBersalin":"MELAHIRKAN"`) {
+		t.Fatalf("subJenisBersalin tidak tersimpan: %s", response.Body.String())
+	}
+}
+
+func TestCutiIzinPentingMenikahLebihDari7HariDitolak(t *testing.T) {
+	store := &fakeDirectoryStore{}
+	mux := scopeMux(store, auth.Principal{UserID: pegawaiID, RoleName: "pegawai", HomebaseID: unitA},
+		map[string]map[auth.Permission]bool{"pegawai": {"cuti:create": true}})
+
+	request := httptest.NewRequest(http.MethodPost, APIPrefix+"/cuti", strings.NewReader(
+		`{"userId":"`+pegawaiID+`","jenis":"IZIN_PENTING","subJenis":"MENIKAH","tanggalMulai":"2026-11-01","tanggalSelesai":"2026-11-08","alasan":"menikah","jenisEviden":"FOTO","fileEvidenUrl":"https://berkas/foto.jpg","waktuEviden":"2026-11-01T08:00:00Z"}`))
+	request.Header.Set("Authorization", "Bearer valid-session")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422, body = %s", response.Code, response.Body)
+	}
+}
+
 func TestCutiCreateSuratDokterTanpaNomorDitolak(t *testing.T) {
 	store := &fakeDirectoryStore{}
 	mux := scopeMux(store, auth.Principal{UserID: pegawaiID, RoleName: "pegawai", HomebaseID: unitA},
@@ -296,6 +347,131 @@ func TestCutiCreateSuratDokterTanpaNomorDitolak(t *testing.T) {
 
 	if response.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 400, body = %s", response.Code, response.Body)
+	}
+}
+
+func TestCutiCancelDibatalkanBatal(t *testing.T) {
+	store := &fakeDirectoryStore{
+		scopeIDs: []string{unitA},
+		cutiLogs: []models.Cuti{
+			{IDModel: models.IDModel{ID: "33333333-3333-4333-8333-333333333331"}, UserId: pegawaiID, Jenis: models.JenisCutiTahunan, Status: models.StatusDisetujui},
+		},
+	}
+	mux := scopeMux(store, auth.Principal{UserID: atasanID, RoleName: "operator", HomebaseID: unitA},
+		map[string]map[auth.Permission]bool{"operator": {"cuti:approve:homebase": true}})
+
+	request := httptest.NewRequest(http.MethodPost, APIPrefix+"/cuti/33333333-3333-4333-8333-333333333331/cancel", strings.NewReader(`{}`))
+	request.Header.Set("Authorization", "Bearer valid-session")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body)
+	}
+	if !strings.Contains(response.Body.String(), `"status":"BATAL"`) {
+		t.Fatalf("status bukan BATAL: %s", response.Body.String())
+	}
+}
+
+func TestCutiCancelSudahDitolakDitolak(t *testing.T) {
+	store := &fakeDirectoryStore{
+		scopeIDs: []string{unitA},
+		cutiLogs: []models.Cuti{
+			{IDModel: models.IDModel{ID: "33333333-3333-4333-8333-333333333332"}, UserId: pegawaiID, Jenis: models.JenisCutiTahunan, Status: models.StatusDitolak},
+		},
+	}
+	mux := scopeMux(store, auth.Principal{UserID: atasanID, RoleName: "operator", HomebaseID: unitA},
+		map[string]map[auth.Permission]bool{"operator": {"cuti:approve:homebase": true}})
+
+	request := httptest.NewRequest(http.MethodPost, APIPrefix+"/cuti/33333333-3333-4333-8333-333333333332/cancel", strings.NewReader(`{}`))
+	request.Header.Set("Authorization", "Bearer valid-session")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+
+	if response.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409, body = %s", response.Code, response.Body)
+	}
+}
+
+func TestCutiCancelOlehPemilik(t *testing.T) {
+	store := &fakeDirectoryStore{
+		cutiLogs: []models.Cuti{
+			{IDModel: models.IDModel{ID: "33333333-3333-4333-8333-333333333334"}, UserId: pegawaiID, Jenis: models.JenisCutiTahunan, Status: models.StatusDisetujui},
+		},
+	}
+	mux := scopeMux(store, auth.Principal{UserID: pegawaiID, RoleName: "pegawai", HomebaseID: unitA},
+		map[string]map[auth.Permission]bool{"pegawai": {"cuti:cancel:self": true, "cuti:read:self": true}})
+
+	request := httptest.NewRequest(http.MethodPost, APIPrefix+"/cuti/33333333-3333-4333-8333-333333333334/cancel", strings.NewReader(`{}`))
+	request.Header.Set("Authorization", "Bearer valid-session")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body)
+	}
+	if !strings.Contains(response.Body.String(), `"status":"BATAL"`) {
+		t.Fatalf("status bukan BATAL: %s", response.Body.String())
+	}
+}
+
+func TestCutiCancelPegawaiPadaPengajuanOrangLainDitolak(t *testing.T) {
+	store := &fakeDirectoryStore{
+		cutiLogs: []models.Cuti{
+			{IDModel: models.IDModel{ID: "33333333-3333-4333-8333-333333333335"}, UserId: "user-lain", Jenis: models.JenisCutiTahunan, Status: models.StatusDisetujui},
+		},
+	}
+	mux := scopeMux(store, auth.Principal{UserID: pegawaiID, RoleName: "pegawai", HomebaseID: unitA},
+		map[string]map[auth.Permission]bool{"pegawai": {"cuti:cancel:self": true, "cuti:read:self": true}})
+
+	request := httptest.NewRequest(http.MethodPost, APIPrefix+"/cuti/33333333-3333-4333-8333-333333333335/cancel", strings.NewReader(`{}`))
+	request.Header.Set("Authorization", "Bearer valid-session")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403, body = %s", response.Code, response.Body)
+	}
+}
+
+func TestCutiCreateAdminDapatMembuatUntukPegawaiLain(t *testing.T) {
+	// Admin dengan grant cuti:create:any terhubung ke rute dan diizinkan use case
+	// membuat pengajuan atas nama pegawai lain (korespondensi grant policy ↔ rute).
+	store := &fakeDirectoryStore{}
+	adminID := "55555555-5555-4555-8555-555555555555"
+	mux := scopeMux(store, auth.Principal{UserID: adminID, RoleName: "admin", HomebaseID: unitA},
+		map[string]map[auth.Permission]bool{"admin": {"cuti:create:any": true}})
+
+	request := httptest.NewRequest(http.MethodPost, APIPrefix+"/cuti", strings.NewReader(
+		`{"userId":"`+pegawaiID+`","jenis":"TAHUNAN","tanggalMulai":"2026-12-01","tanggalSelesai":"2026-12-05","alasan":"perbaikan data"}`))
+	request.Header.Set("Authorization", "Bearer valid-session")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %s", response.Code, response.Body)
+	}
+	if store.createdCuti.UserId != pegawaiID {
+		t.Fatalf("userId tersimpan = %q, want %q", store.createdCuti.UserId, pegawaiID)
+	}
+}
+
+func TestCutiCancelTanpaPermissionDitolak(t *testing.T) {
+	store := &fakeDirectoryStore{
+		cutiLogs: []models.Cuti{
+			{IDModel: models.IDModel{ID: "33333333-3333-4333-8333-333333333333"}, UserId: pegawaiID, Jenis: models.JenisCutiTahunan, Status: models.StatusDisetujui},
+		},
+	}
+	mux := scopeMux(store, auth.Principal{UserID: pegawaiID, RoleName: "pegawai", HomebaseID: unitA},
+		map[string]map[auth.Permission]bool{"pegawai": {"cuti:read:self": true, "cuti:create": true}})
+
+	request := httptest.NewRequest(http.MethodPost, APIPrefix+"/cuti/33333333-3333-4333-8333-333333333333/cancel", strings.NewReader(`{}`))
+	request.Header.Set("Authorization", "Bearer valid-session")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403, body = %s", response.Code, response.Body)
 	}
 }
 
@@ -372,10 +548,43 @@ func (s *fakeDirectoryStore) RejectCuti(_ context.Context, _ string, _ string, _
 	return models.Cuti{}, s.err
 }
 
+func (s *fakeDirectoryStore) CancelCuti(_ context.Context, _ string, id string, _ *string) (models.Cuti, error) {
+	for _, c := range s.cutiLogs {
+		if c.ID == id {
+			if c.Status == models.StatusDitolak || c.Status == models.StatusBatal {
+				return models.Cuti{}, domain.ErrConflict
+			}
+			c.Status = models.StatusBatal
+			return c, s.err
+		}
+	}
+	return models.Cuti{}, domain.ErrNotFound
+}
+
+func (s *fakeDirectoryStore) OverlappingCuti(_ context.Context, _ string, _, _ time.Time, _ string) (int64, error) {
+	return s.overlappingCuti, nil
+}
+
 func (s *fakeDirectoryStore) UserHomebaseID(_ context.Context, userID string) (string, error) {
 	if userID == pegawaiID || userID == atasanID || userID == "user-with-homebase" {
 		return unitA, nil
 	}
+	return "", nil
+}
+
+func (s *fakeDirectoryStore) SaldoCuti(_ context.Context, userID string, tahun int) (models.SaldoCuti, error) {
+	if s.saldoCuti != nil {
+		return *s.saldoCuti, nil
+	}
+	// Default cukup untuk pengujian (kuota penuh, tanpa carry, belum hangus).
+	return models.SaldoCuti{UserId: userID, Tahun: tahun, KuotaTahunan: 12}, nil
+}
+
+func (s *fakeDirectoryStore) EmployeeStartDate(_ context.Context, userID string) (*time.Time, error) {
+	return s.startDate, nil
+}
+
+func (s *fakeDirectoryStore) EmployeeKategoriStatusKode(_ context.Context, userID string) (string, error) {
 	return "", nil
 }
 

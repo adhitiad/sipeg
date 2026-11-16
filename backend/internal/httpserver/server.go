@@ -9,12 +9,21 @@ import (
 	"simpeg/backend/internal/attendance"
 	"simpeg/backend/internal/audit"
 	"simpeg/backend/internal/auth"
+	bpjsapp "simpeg/backend/internal/bpjs/app"
 	"simpeg/backend/internal/cloudinary"
 	"simpeg/backend/internal/holiday"
+	honorapp "simpeg/backend/internal/honorsks/app"
+	kontrakapp "simpeg/backend/internal/kontrak/app"
 	meapp "simpeg/backend/internal/me/app"
 	"simpeg/backend/internal/observability"
 	"simpeg/backend/internal/payroll/app"
+	payscaleapp "simpeg/backend/internal/payscale/app"
+	pemberhentianapp "simpeg/backend/internal/pemberhentian/app"
+	pensiunapp "simpeg/backend/internal/pensiun/app"
+	pph21clapp "simpeg/backend/internal/pph21ter/app"
 	"simpeg/backend/internal/qstash"
+	skapp "simpeg/backend/internal/sk/app"
+	thrapp "simpeg/backend/internal/thr/app"
 )
 
 // MuxOptions mengumpulkan dependensi yang dibutuhkan untuk menyusun API mux.
@@ -24,12 +33,52 @@ type MuxOptions struct {
 	Directory      DirectoryServices
 	Attendance     attendance.Store
 	AttendanceRead *attendance.ReadService
+	// AttendanceAdmin menjalankan use case presensi administratif (pemetaan
+	// PIN, derivasi, manual, laporan alpa). Bila nil, endpoint tidak
+	// didaftarkan.
+	AttendanceAdmin *attendance.AdminService
+	// Pemberhentian menjalankan use case pemberhentian pegawai.
+	Pemberhentian *pemberhentianapp.Service
+	// Externalize perpanjangan & kontrak — dijamin tidak nil bila nil
+	// (endpoint tidak didaftarkan).
+	Kontrakt *kontrakapp.Service
+	Pesangon *kontrakapp.PesangonService
+	// Pensiun menjalankan use case master pensiun (konfigurasi + kepesertaan).
+	Pensiun *pensiunapp.Service
+	// SK menjalankan use case baca Surat Keputusan (baca saja).
+	SK *skapp.Service
+	// THR menjalankan use case THR (konfigurasi + pembuatan slip THR).
+	Thr *thrapp.Service // SlipVerification membuka halaman verifikasi slip publik lewat token
+	// slip. Bila nil, endpoint verifikasi tidak didaftarkan.
+	SlipVerification slipVerificationLookup
 	// DeviceAuth mengaktifkan autentikasi perangkat pada endpoint ingestion
 	// presensi (X-Device-ID + Bearer token), terpisah dari sesi pengguna.
 	DeviceAuth attendance.DeviceAuthenticator
 	// Payroll menjalankan use case penggajian. Bila nil, endpoint penggajian
 	// tidak didaftarkan.
 	Payroll *app.Service
+	// PayrollGenerate menjalankan pembuatan slip otomatis. Bila nil, endpoint
+	// generate tidak didaftarkan.
+	PayrollGenerate *app.GenerateSlipService
+	// PayrollSlipOrgName adalah nama instansi pada kop slip PDF. Kosong
+	// berarti slip menampilkan label generik.
+	PayrollSlipOrgName string
+	// AppBaseURL adalah origin aplikasi untuk tautan verifikasi publik slip
+	// (dan tautan pada pemberitahuan email). Kosong berarti slip PDF tidak
+	// memuat QR verifikasi.
+	AppBaseURL string
+	// Payscale menjalankan use case master skala gaji pokok yayasan. Bila
+	// nil, endpoint skala gaji tidak didaftarkan.
+	Payscale *payscaleapp.Service
+	// HonorSks menjalankan use case honor mengajar per SKS (dosen LB). Bila
+	// nil, endpoint honor tidak didaftarkan.
+	HonorSks *honorapp.Service
+	// Bpjs menjalankan use case BPJS Kesehatan/Ketenagakerjaan. Bila nil,
+	// endpoint BPJS tidak didaftarkan.
+	Bpjs *bpjsapp.Service
+	// Pph21Ter menjalankan use case PPh 21 skema TER (PMK 168/2023). Bila
+	// nil, endpoint TER tidak didaftarkan.
+	Pph21Ter *pph21clapp.Service
 	// Holiday menjalankan use case kalender hari libur. Bila nil, endpoint
 	// kalender tidak didaftarkan.
 	Holiday *holiday.Service
@@ -42,6 +91,13 @@ type MuxOptions struct {
 	// SLODashboard mengaktifkan GET /api/v1/admin/slo/metrics bila tidak nil.
 	// Endpoint bersifat read-only dan dibatasi permission slo:read (admin).
 	SLODashboard SLODashboardReader
+	// OpsOutbox mengaktifkan GET /api/v1/admin/ops/status bila tidak nil.
+	// Endpoint bersifat read-only dan dibatasi permission ops:read (admin).
+	OpsOutbox OutboxStatsReader
+	// RBAC mengaktifkan endpoint admin pembacaan master RBAC berbasis scoped
+	// assignment bila tidak nil. Endpoint bersifat read-only dan dibatasi
+	// permission rbac:read (admin).
+	RBAC RBACReader
 	// SessionRevoker mengaktifkan POST /api/v1/auth/logout bila tidak nil.
 	SessionRevoker auth.SessionRevoker
 	// Cloudinary menyediakan tanda tangan unggah berkas dokumen. Bila nil,
@@ -72,7 +128,7 @@ type QStashOptions struct {
 	// PayrollVerifier memeriksa signature callback pemberitahuan slip gaji.
 	// Bila diisi bersama PayrollReminder, endpoint pemberitahuan didaftarkan.
 	PayrollVerifier *qstash.Verifier
-	// PayrollReminder menjalankan pekerjaan pemberitahuan slip gaji H+1.
+	// PayrollReminder menjalankan pekerjaan pemberitahuan slip gaji H-1.
 	PayrollReminder func(ctx context.Context) (int, error)
 	// Logger menerima catatan keamanan untuk callback yang ditolak. Nil
 	// berarti penolakan signature tidak dicatat ke log.
@@ -122,8 +178,46 @@ func NewMuxWithOptions(options MuxOptions) *http.ServeMux {
 	if options.AttendanceRead != nil {
 		RegisterAttendanceReadRoutes(mux, options.Resolver, options.Policy, options.AttendanceRead)
 	}
+	if options.AttendanceAdmin != nil {
+		RegisterAttendanceAdminRoutes(mux, options.Resolver, options.Policy, options.AttendanceAdmin)
+	}
+	if options.Pemberhentian != nil {
+		RegisterPemberhentianRoutes(mux, options.Resolver, options.Policy, options.Pemberhentian)
+	}
+	if options.Kontrakt != nil || options.Pesangon != nil {
+		RegisterKontrakRoutes(mux, options.Resolver, options.Policy, options.Kontrakt, options.Pesangon)
+	}
+	if options.Pensiun != nil {
+		RegisterPensiunRoutes(mux, options.Resolver, options.Policy, options.Pensiun)
+	}
+	if options.SK != nil {
+		RegisterSKRoutes(mux, options.Resolver, options.Policy, options.SK)
+	}
+	if options.Thr != nil {
+		RegisterThrRoutes(mux, options.Resolver, options.Policy, options.Thr)
+	}
+	RegisterVerificationRoutes(mux, options.SlipVerification)
 	if options.Payroll != nil {
-		RegisterPayrollRoutes(mux, options.Resolver, options.Policy, options.Payroll)
+		var auditRecorder AuditRecorder
+		if options.Directory.Audits != nil {
+			auditRecorder = options.Directory.Audits
+		}
+		RegisterPayrollRoutes(mux, options.Resolver, options.Policy, options.Payroll, options.PayrollGenerate, PayrollBranding{
+			Organization:  options.PayrollSlipOrgName,
+			VerifyBaseURL: options.AppBaseURL,
+		}, auditRecorder)
+	}
+	if options.Payscale != nil {
+		RegisterPayscaleRoutes(mux, options.Resolver, options.Policy, options.Payscale)
+	}
+	if options.HonorSks != nil {
+		RegisterHonorSksRoutes(mux, options.Resolver, options.Policy, options.HonorSks)
+	}
+	if options.Bpjs != nil {
+		RegisterBpjsRoutes(mux, options.Resolver, options.Policy, options.Bpjs)
+	}
+	if options.Pph21Ter != nil {
+		RegisterPph21TerRoutes(mux, options.Resolver, options.Policy, options.Pph21Ter)
 	}
 	if options.Holiday != nil {
 		RegisterHolidayRoutes(mux, options.Resolver, options.Policy, options.Holiday)
@@ -136,6 +230,12 @@ func NewMuxWithOptions(options MuxOptions) *http.ServeMux {
 	}
 	if options.SLODashboard != nil {
 		RegisterSLOAdminRoutes(mux, options.Resolver, options.Policy, options.SLODashboard)
+	}
+	if options.OpsOutbox != nil {
+		RegisterOpsRoutes(mux, options.Resolver, options.Policy, options.OpsOutbox)
+	}
+	if options.RBAC != nil {
+		RegisterRBACAdminRoutes(mux, options.Resolver, options.Policy, options.RBAC)
 	}
 	RegisterLogoutRoute(mux, options.Resolver, options.SessionRevoker)
 	if options.SessionIssuer != nil {
@@ -171,9 +271,22 @@ func HandleMe(policy auth.Policy, me *meapp.Service) http.HandlerFunc {
 // respondProfile menyusun ProfileResponse dari principal, policy, dan
 // (opsional) record profil terbaru.
 func respondProfile(w http.ResponseWriter, r *http.Request, principal auth.Principal, policy auth.Policy, me *meapp.Service) {
+	// Daftar permission efektif per principal: mulai dari grant statis
+	// (PermissionLister), lalu disaring dengan evaluator RBAC (ScopedPolicy)
+	// bila tersedia, sehingga pencabutan RBAC tercermin di /me (DEC-096).
 	permissions := []string{}
+	var candidates []auth.Permission
 	if lister, ok := policy.(auth.PermissionLister); ok && lister != nil {
-		for _, permission := range lister.List(principal.RoleName) {
+		candidates = lister.List(principal.RoleName)
+	}
+	for _, permission := range candidates {
+		allowed := false
+		if sp, ok := policy.(auth.ScopedPolicy); ok {
+			allowed = sp.AllowsScoped(r.Context(), principal, permission)
+		} else if policy != nil {
+			allowed = policy.Allows(principal.RoleName, permission)
+		}
+		if allowed {
 			permissions = append(permissions, string(permission))
 		}
 	}

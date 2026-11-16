@@ -130,6 +130,7 @@ func issuePerfSession(ctx context.Context) (string, error) {
 	}
 	var admin models.User
 	err = db.WithContext(ctx).
+		Select("\"user\".\"id\"").
 		Joins("JOIN \"Role\" ON \"Role\".\"id\" = \"user\".\"roleId\"").
 		Where("\"user\".\"aktif\" = ? AND \"Role\".\"name\" = ?", true, "admin").
 		First(&admin).Error

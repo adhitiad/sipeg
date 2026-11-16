@@ -11,18 +11,23 @@ import {
 import { Button } from '@/components/ui/button'
 import { useLocale, useMessages } from '@/i18n/locale-context'
 import {
+  JABATAN_SORT_FIELDS,
   useJabatansPage,
   type JabatanListParams,
   type JabatanSortField,
-  type JabatanSortOrder,
 } from '@/lib/jabatan'
 import type { Jabatan } from '@/validations/schemas'
 import { useSession } from '@/lib/session'
+import { useTableControls, visibleRange } from '@/lib/table-state'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
 const SEARCH_DEBOUNCE_MS = 300
 
+/**
+ * Halaman master jabatan. Backend memegang pagination, sorting, dan filtering,
+ * jadi halaman ini hanya menyimpan state kendali tabel.
+ */
 export default function JabatanPage() {
   const t = useMessages()
   const { locale } = useLocale()
@@ -36,21 +41,23 @@ export default function JabatanPage() {
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [jenis, setJenis] = useState<string | null>(null)
-  const [sort, setSort] = useState<JabatanSortField>('nama')
-  const [order, setOrder] = useState<JabatanSortOrder>('asc')
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState<JabatanPageSize>(25)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [editingJabatan, setEditingJabatan] = useState<Jabatan | null>(null)
   const [archivingJabatan, setArchivingJabatan] = useState<Jabatan | null>(null)
+  const controls = useTableControls<JabatanSortField>({
+    sortFields: JABATAN_SORT_FIELDS,
+    initialSort: 'nama',
+    initialPageSize: 25,
+  })
+  const { sort, order, page, pageSize, resetPage } = controls
 
   useEffect(() => {
     const timer = setTimeout(() => {
       setSearch(searchInput.trim())
-      setPage(1)
+      resetPage()
     }, SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(timer)
-  }, [searchInput])
+  }, [searchInput, resetPage])
 
   const params: JabatanListParams = useMemo(
     () => ({ page, pageSize, search, jenis, sort, order }),
@@ -81,8 +88,7 @@ export default function JabatanPage() {
   const data = query.data
   const localeTag = locale === 'id' ? 'id-ID' : 'en-US'
   const totalItems = data?.totalItems ?? 0
-  const from = totalItems === 0 ? 0 : (page - 1) * pageSize + 1
-  const to = Math.min(page * pageSize, totalItems)
+  const [from, to] = visibleRange(page, pageSize, totalItems)
 
   const labels = {
     caption: t('jabatan.tableCaption'),
@@ -91,42 +97,29 @@ export default function JabatanPage() {
     status: t('organizations.colStatus'),
     active: t('organizations.statusActive'),
     inactive: t('organizations.statusInactive'),
+    searchLabel: t('jabatan.searchLabel'),
+    searchPlaceholder: t('jabatan.searchPlaceholder'),
+    jenisLabel: t('jabatan.typeLabel'),
+    jenisAll: t('jabatan.typeAll'),
+    emptyTitle: t('jabatan.emptyTitle'),
+    emptyHint: t('jabatan.emptyDescription'),
+    loadingLabel: t('common.loadingTable'),
     resultLabel: t('jabatan.resultCount', {
       from: new Intl.NumberFormat(localeTag).format(from),
       to: new Intl.NumberFormat(localeTag).format(to),
       total: new Intl.NumberFormat(localeTag).format(totalItems),
     }),
-    refreshingLabel: t('audit.refreshing'),
-    prevPage: t('audit.prevPage'),
-    nextPage: t('audit.nextPage'),
-    pageInfo: t('audit.pageInfo', {
-      page: String(page),
-      total: String(Math.max(data?.totalPages ?? 1, 1)),
-    }),
-    searchLabel: t('jabatan.searchLabel'),
-    searchPlaceholder: t('jabatan.searchPlaceholder'),
-    jenisLabel: t('jabatan.typeLabel'),
-    jenisAll: t('jabatan.typeAll'),
-    pageSizeLabel: t('organizations.pageSize'),
-    itemsPerPage: t('jabatan.itemsPerPage', {
-      from: new Intl.NumberFormat(localeTag).format(from),
-      to: new Intl.NumberFormat(localeTag).format(to),
-      total: new Intl.NumberFormat(localeTag).format(totalItems),
-    }),
+    pageInfo: t('common.pageInfo'),
+    prevPage: t('common.prevPage'),
+    nextPage: t('common.nextPage'),
+    pageSizeLabel: t('common.pageSize'),
+    itemsPerPage: t('common.itemsPerPage'),
+    sortBy: t('common.sortBy'),
     edit: t('common.edit'),
     archive: t('organizations.archive'),
+    actions: t('common.actions'),
     typeStruktural: t('jabatan.typeStruktural'),
     typeFungsional: t('jabatan.typeFungsional'),
-  }
-
-  function handleSortChange(field: JabatanSortField) {
-    if (field === sort) {
-      setOrder((current) => (current === 'asc' ? 'desc' : 'asc'))
-      return
-    }
-    setSort(field)
-    setOrder('asc')
-    setPage(1)
   }
 
   function handleCreateSuccess(created: Jabatan) {
@@ -170,7 +163,11 @@ export default function JabatanPage() {
       </div>
 
       {query.isPending ? (
-        <div className="island-shell flex flex-col items-center gap-4 rounded-2xl px-6 py-12 text-center">
+        <div
+          role="status"
+          aria-live="polite"
+          className="island-shell flex flex-col items-center gap-4 rounded-2xl px-6 py-12 text-center"
+        >
           <LoadingBars size="md" decorative />
           <p className="m-0 text-sm text-[var(--sea-ink-soft)]">
             {t('jabatan.loadingTitle')}
@@ -199,19 +196,23 @@ export default function JabatanPage() {
         <JabatanTable
           jabatans={data.items}
           page={page}
-          pageSize={pageSize}
+          pageSize={pageSize as JabatanPageSize}
           totalPages={data.totalPages}
           totalItems={data.totalItems}
+          isLoading={query.isPending}
           isFetching={query.isFetching}
           search={searchInput}
           jenis={jenis}
           sort={sort}
           order={order}
-          onPageChange={setPage}
-          onPageSizeChange={setPageSize}
+          onPageChange={controls.setPage}
+          onPageSizeChange={(size) => controls.setPageSize(size as JabatanPageSize)}
           onSearchChange={setSearchInput}
-          onSortChange={handleSortChange}
-          onJenisChange={setJenis}
+          onSortChange={controls.applySort}
+          onJenisChange={(value) => {
+            setJenis(value)
+            resetPage()
+          }}
           onEdit={(jabatan) => setEditingJabatan(jabatan)}
           onArchive={(jabatan) => setArchivingJabatan(jabatan)}
           canManage={canManage}

@@ -1,0 +1,55 @@
+groups:
+  - name: simpeg-infra
+    rules:
+      - alert: InstanceDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Target scrape tidak tersedia"
+          description: "{{ $labels.job }} / {{ $labels.instance }} tidak dapat di-scrape selama 2 menit."
+
+      - alert: BackendProbeFailed
+        expr: probe_success{job="blackbox", instance=~".*/(health|ready)"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Probe backend gagal"
+          description: "Endpoint {{ $labels.instance }} gagal diprobe selama 2 menit (cek /health, /ready, dan dependency)."
+
+      - alert: HighContainerMemory
+        expr: container_spec_memory_limit_bytes > 0 and (container_memory_working_set_bytes / container_spec_memory_limit_bytes) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Penggunaan memori container tinggi"
+          description: "Container {{ $labels.name }} memakai >85% batas memori selama 5 menit."
+
+      - alert: HighHostCPU
+        expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CPU host tinggi"
+          description: "Penggunaan CPU >85% selama 5 menit pada {{ $labels.instance }}."
+
+      - alert: RabbitMQTargetDown
+        expr: up{job="rabbitmq"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Metrik RabbitMQ tidak tersedia"
+          description: "Scrape RabbitMQ gagal; verifikasi plugin rabbitmq_prometheus (port 15692) dan jaringan simpeg-broker."
+
+  # Tambahan (aktifkan bila metrik tersedia di target, $0/self-hosted):
+  # - outbox FAILED/backlog & usia pesan tertua: dari polling aman ke /api/v1/admin/ops/status (ops:read)
+  #   atau query PostgreSQL terjadwal ke tabel outboxMessage.
+  # - dead-letter RabbitMQ (simpeg.jobs.dead): dari metrik rabbitmq_prometheus/antrian.
+  # - error rate/latensi API: dari sloMetric (/api/v1/admin/slo/metrics, slo:read, SLO_ENABLED) atau log agregasi.
+  # - Supabase Free: pantau metrik yang tersedia di dashboard/project; PITR umumnya tidak tersedia.
+  # Lihat docs/RUNBOOK.md §9.

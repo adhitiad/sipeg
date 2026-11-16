@@ -26,8 +26,8 @@ func NewLeaveService(repo repository.LeaveRepository, policy auth.Policy, scopeR
 // List mengembalikan daftar pengajuan cuti sesuai filter dan cakupan principal.
 func (s *LeaveService) List(ctx context.Context, principal auth.Principal, options listing.Options) (listing.Page[models.Cuti], error) {
 	switch {
-	case allows(s.policy, principal, "cuti:read:any"):
-	case allows(s.policy, principal, "cuti:read:homebase"):
+	case allows(ctx, s.policy, principal, "cuti:read:any"):
+	case allows(ctx, s.policy, principal, "cuti:read:homebase"):
 		scope, err := s.scope.resolve(ctx, principal)
 		if err != nil {
 			return listing.Page[models.Cuti]{}, err
@@ -36,7 +36,7 @@ func (s *LeaveService) List(ctx context.Context, principal auth.Principal, optio
 			return listing.EmptyPage[models.Cuti](options.Page, options.PageSize), nil
 		}
 		options.ScopeHomebaseIDs = scope.List()
-	case allows(s.policy, principal, "cuti:read:self"):
+	case allows(ctx, s.policy, principal, "cuti:read:self"):
 		options.UserID = principal.UserID
 	default:
 		return listing.Page[models.Cuti]{}, domain.ErrForbidden
@@ -57,7 +57,7 @@ func (s *LeaveService) List(ctx context.Context, principal auth.Principal, optio
 
 // Get mengembalikan satu pengajuan cuti bila principal berhak membacanya.
 func (s *LeaveService) Get(ctx context.Context, principal auth.Principal, id string) (models.Cuti, error) {
-	needsScope := allows(s.policy, principal, "cuti:read:homebase") && !allows(s.policy, principal, "cuti:read:any")
+	needsScope := allows(ctx, s.policy, principal, "cuti:read:homebase") && !allows(ctx, s.policy, principal, "cuti:read:any")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.Cuti{}, err
@@ -67,7 +67,7 @@ func (s *LeaveService) Get(ctx context.Context, principal auth.Principal, id str
 	if err != nil {
 		return models.Cuti{}, err
 	}
-	if !s.canRead(scoped, item) {
+	if !s.canRead(ctx, scoped, item) {
 		return models.Cuti{}, domain.ErrForbidden
 	}
 	return item, nil
@@ -75,16 +75,22 @@ func (s *LeaveService) Get(ctx context.Context, principal auth.Principal, id str
 
 // Create membuat pengajuan cuti baru. Status awal selalu MENUNGGU.
 func (s *LeaveService) Create(ctx context.Context, principal auth.Principal, input domain.CreateCuti) (models.Cuti, error) {
-	needsScope := allows(s.policy, principal, "cuti:create:homebase") && !allows(s.policy, principal, "cuti:create")
+	needsScope := allows(ctx, s.policy, principal, "cuti:create:homebase") && !allows(ctx, s.policy, principal, "cuti:create")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.Cuti{}, err
 	}
-	if !s.canCreate(scoped, input.UserID) {
+	if !s.canCreate(ctx, scoped, input.UserID) {
 		return models.Cuti{}, domain.ErrForbidden
 	}
 	item := input.Record()
 	if err := domain.ValidasiCuti(item); err != nil {
+		return models.Cuti{}, err
+	}
+	if err := s.checkKategoriCuti(ctx, item); err != nil {
+		return models.Cuti{}, err
+	}
+	if err := s.checkLeavePolicy(ctx, item, ""); err != nil {
 		return models.Cuti{}, err
 	}
 	return s.repo.CreateCuti(ctx, principal.UserID, item)
@@ -98,7 +104,7 @@ func (s *LeaveService) Update(ctx context.Context, principal auth.Principal, id 
 	if err := patch.Validate(); err != nil {
 		return models.Cuti{}, err
 	}
-	needsScope := allows(s.policy, principal, "cuti:update:homebase") && !allows(s.policy, principal, "cuti:update:any")
+	needsScope := allows(ctx, s.policy, principal, "cuti:update:homebase") && !allows(ctx, s.policy, principal, "cuti:update:any")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.Cuti{}, err
@@ -107,7 +113,7 @@ func (s *LeaveService) Update(ctx context.Context, principal auth.Principal, id 
 	if err != nil {
 		return models.Cuti{}, err
 	}
-	if !s.canWrite(scoped, item) {
+	if !s.canWrite(ctx, scoped, item) {
 		return models.Cuti{}, domain.ErrForbidden
 	}
 	merged, err := domain.ApplyCutiPatch(item, patch)
@@ -117,12 +123,18 @@ func (s *LeaveService) Update(ctx context.Context, principal auth.Principal, id 
 	if err := domain.ValidasiCuti(merged); err != nil {
 		return models.Cuti{}, err
 	}
+	if err := s.checkKategoriCuti(ctx, merged); err != nil {
+		return models.Cuti{}, err
+	}
+	if err := s.checkLeavePolicy(ctx, merged, id); err != nil {
+		return models.Cuti{}, err
+	}
 	return s.repo.UpdateCuti(ctx, principal.UserID, id, merged)
 }
 
 // Approve menyetujui pengajuan cuti. Hanya atasan/HRD dengan cakupan unit.
 func (s *LeaveService) Approve(ctx context.Context, principal auth.Principal, id string, catatan *string) (models.Cuti, error) {
-	needsScope := allows(s.policy, principal, "cuti:approve:homebase") && !allows(s.policy, principal, "cuti:approve:any")
+	needsScope := allows(ctx, s.policy, principal, "cuti:approve:homebase") && !allows(ctx, s.policy, principal, "cuti:approve:any")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.Cuti{}, err
@@ -131,7 +143,7 @@ func (s *LeaveService) Approve(ctx context.Context, principal auth.Principal, id
 	if err != nil {
 		return models.Cuti{}, err
 	}
-	if !s.canApprove(scoped, item) {
+	if !s.canApprove(ctx, scoped, item) {
 		return models.Cuti{}, domain.ErrForbidden
 	}
 	// Eviden dicek ulang saat persetujuan supaya pengajuan yang sudah
@@ -144,7 +156,7 @@ func (s *LeaveService) Approve(ctx context.Context, principal auth.Principal, id
 
 // Reject menolak pengajuan cuti. Hanya atasan/HRD dengan cakupan unit.
 func (s *LeaveService) Reject(ctx context.Context, principal auth.Principal, id string, catatan *string) (models.Cuti, error) {
-	needsScope := allows(s.policy, principal, "cuti:approve:homebase") && !allows(s.policy, principal, "cuti:approve:any")
+	needsScope := allows(ctx, s.policy, principal, "cuti:approve:homebase") && !allows(ctx, s.policy, principal, "cuti:approve:any")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.Cuti{}, err
@@ -153,10 +165,34 @@ func (s *LeaveService) Reject(ctx context.Context, principal auth.Principal, id 
 	if err != nil {
 		return models.Cuti{}, err
 	}
-	if !s.canApprove(scoped, item) {
+	if !s.canApprove(ctx, scoped, item) {
 		return models.Cuti{}, domain.ErrForbidden
 	}
 	return s.repo.RejectCuti(ctx, principal.UserID, id, catatan)
+}
+
+// Cancel membatalkan pengajuan cuti (MENUNGGU atau DISETUJUI).
+func (s *LeaveService) Cancel(ctx context.Context, principal auth.Principal, id string, catatan *string) (models.Cuti, error) {
+	isApprover := allows(ctx, s.policy, principal, "cuti:approve:homebase") || allows(ctx, s.policy, principal, "cuti:approve:any")
+	item, err := s.repo.GetCuti(ctx, id)
+	if err != nil {
+		return models.Cuti{}, err
+	}
+	if isApprover {
+		needsScope := allows(ctx, s.policy, principal, "cuti:approve:homebase") && !allows(ctx, s.policy, principal, "cuti:approve:any")
+		scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
+		if err != nil {
+			return models.Cuti{}, err
+		}
+		if !s.canApprove(ctx, scoped, item) {
+			return models.Cuti{}, domain.ErrForbidden
+		}
+		return s.repo.CancelCuti(ctx, principal.UserID, id, catatan)
+	}
+	if allows(ctx, s.policy, principal, "cuti:cancel:self") && item.UserId == principal.UserID {
+		return s.repo.CancelCuti(ctx, principal.UserID, id, catatan)
+	}
+	return models.Cuti{}, domain.ErrForbidden
 }
 
 func (s *LeaveService) scopedPrincipal(ctx context.Context, principal auth.Principal, needsScope bool) (scopedPrincipal, error) {
@@ -170,14 +206,14 @@ func (s *LeaveService) scopedPrincipal(ctx context.Context, principal auth.Princ
 	return scopedPrincipal{principal: principal, scope: scope}, nil
 }
 
-func (s *LeaveService) canRead(scoped scopedPrincipal, item models.Cuti) bool {
-	if allows(s.policy, scoped.principal, "cuti:read:any") {
+func (s *LeaveService) canRead(ctx context.Context, scoped scopedPrincipal, item models.Cuti) bool {
+	if allows(ctx, s.policy, scoped.principal, "cuti:read:any") {
 		return true
 	}
-	if scoped.principal.UserID == item.UserId && allows(s.policy, scoped.principal, "cuti:read:self") {
+	if scoped.principal.UserID == item.UserId && allows(ctx, s.policy, scoped.principal, "cuti:read:self") {
 		return true
 	}
-	if allows(s.policy, scoped.principal, "cuti:read:homebase") && !scoped.scope.Empty() {
+	if allows(ctx, s.policy, scoped.principal, "cuti:read:homebase") && !scoped.scope.Empty() {
 		homebaseID, err := s.repo.UserHomebaseID(context.Background(), item.UserId)
 		if err == nil && homebaseID != "" && scoped.scope.Contains(homebaseID) {
 			return true
@@ -186,15 +222,15 @@ func (s *LeaveService) canRead(scoped scopedPrincipal, item models.Cuti) bool {
 	return false
 }
 
-func (s *LeaveService) canCreate(scoped scopedPrincipal, userID string) bool {
-	if allows(s.policy, scoped.principal, "cuti:create:any") {
+func (s *LeaveService) canCreate(ctx context.Context, scoped scopedPrincipal, userID string) bool {
+	if allows(ctx, s.policy, scoped.principal, "cuti:create:any") {
 		return true
 	}
-	if allows(s.policy, scoped.principal, "cuti:create") {
+	if allows(ctx, s.policy, scoped.principal, "cuti:create") {
 		// Tanpa suffix :any atau :homebase = hanya untuk diri sendiri.
 		return scoped.principal.UserID == userID
 	}
-	if !allows(s.policy, scoped.principal, "cuti:create:homebase") {
+	if !allows(ctx, s.policy, scoped.principal, "cuti:create:homebase") {
 		return false
 	}
 	if scoped.principal.UserID == userID {
@@ -210,14 +246,14 @@ func (s *LeaveService) canCreate(scoped scopedPrincipal, userID string) bool {
 	return scoped.scope.Contains(homebaseID)
 }
 
-func (s *LeaveService) canWrite(scoped scopedPrincipal, item models.Cuti) bool {
-	if allows(s.policy, scoped.principal, "cuti:update:any") {
+func (s *LeaveService) canWrite(ctx context.Context, scoped scopedPrincipal, item models.Cuti) bool {
+	if allows(ctx, s.policy, scoped.principal, "cuti:update:any") {
 		return true
 	}
-	if scoped.principal.UserID == item.UserId && allows(s.policy, scoped.principal, "cuti:update:homebase") {
+	if scoped.principal.UserID == item.UserId && allows(ctx, s.policy, scoped.principal, "cuti:update:homebase") {
 		return true
 	}
-	if allows(s.policy, scoped.principal, "cuti:update:homebase") && !scoped.scope.Empty() {
+	if allows(ctx, s.policy, scoped.principal, "cuti:update:homebase") && !scoped.scope.Empty() {
 		homebaseID, err := s.repo.UserHomebaseID(context.Background(), item.UserId)
 		if err == nil && homebaseID != "" && scoped.scope.Contains(homebaseID) {
 			return true
@@ -226,11 +262,11 @@ func (s *LeaveService) canWrite(scoped scopedPrincipal, item models.Cuti) bool {
 	return false
 }
 
-func (s *LeaveService) canApprove(scoped scopedPrincipal, item models.Cuti) bool {
-	if allows(s.policy, scoped.principal, "cuti:approve:any") {
+func (s *LeaveService) canApprove(ctx context.Context, scoped scopedPrincipal, item models.Cuti) bool {
+	if allows(ctx, s.policy, scoped.principal, "cuti:approve:any") {
 		return true
 	}
-	if allows(s.policy, scoped.principal, "cuti:approve:homebase") && !scoped.scope.Empty() {
+	if allows(ctx, s.policy, scoped.principal, "cuti:approve:homebase") && !scoped.scope.Empty() {
 		homebaseID, err := s.repo.UserHomebaseID(context.Background(), item.UserId)
 		if err == nil && homebaseID != "" && scoped.scope.Contains(homebaseID) {
 			return true

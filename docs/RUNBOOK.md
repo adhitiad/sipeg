@@ -120,12 +120,10 @@ Perubahan role harus melalui endpoint yang berjejak audit.
 Integrasi tersebut belum diimplementasikan. Bila integrasi sudah aktif:
 
 1.Setiap integrasi wajib punya fallback ke sumber kebenaran di PostgreSQL.
-   Redis dan queue **tidak boleh** menjadi sumber kebenaran untuk data pegawai,
-   payroll, atau pembayaran.
-2. Callback QStash diverifikasi signature-nya terhadap raw request body sebelum
-   diproses, dan handler harus idempoten karena retry dapat mengulang delivery.
-3. Notifikasi gaji hanya dikirim setelah konfirmasi pembayaran tersimpan sebagai
-   terkonfirmasi, bukan saat slip diterbitkan.
+Redis dan queue **tidak boleh** menjadi sumber kebenaran untuk data pegawai,
+payroll, atau pembayaran. 2. Callback QStash diverifikasi signature-nya terhadap raw request body sebelum
+diproses, dan handler harus idempoten karena retry dapat mengulang delivery. 3. Notifikasi gaji hanya dikirim setelah konfirmasi pembayaran tersimpan sebagai
+terkonfirmasi, bukan saat slip diterbitkan.
 
 ## 7. Pemulihan setelah penerapan migrasi
 
@@ -163,6 +161,75 @@ pernah dijalankan karena environment `staging`/`production` dan secret
 `DATABASE_URL` belum dibuat di GitHub. Sebelum menjalankan workflow di
 produksi, cobalah urutan perintahnya (`migrate status` → `migrate up` →
 `migrate status`) pada database uji terlebih dahulu.
+
+## 7A. Seed RBAC scoped (pasca-migrasi `000032`)
+
+Kapan perlu: setelah migrasi `000032_rbac_scoped.sql` terpasang di target dan
+sebelum RBAC dipakai untuk pencabutan izin. Tanpa assignment, evaluator RBAC
+tidak berkuasa dan grant statis tetap berlaku (`DEC-087`–`DEC-089`).
+
+**Prasyarat:** migrasi `000001`–`000032` terpasang (`go run ./cmd/migrate status`
+→ versi 32), backup target sudah diuji, dan Environment GitHub/mesin operator
+memiliki `DATABASE_URL` untuk database tersebut.
+
+**Langkah (urutan wajib):**
+
+1. **Dry-run lebih dulu** — tidak menulis apa pun:
+
+   ```bash
+   cd backend
+   $env:DATABASE_URL = "postgres://..."
+   go run ./cmd/rbacseed
+   ```
+
+   Periksa ringkasan: jumlah role/permission/matriks yang akan dibuat dan
+   jumlah pengguna yang akan mendapat assignment. Pengguna dengan role tak
+   dikenal atau akun nonaktif **dilewati** (reported, bukan error).
+
+2. **Verifikasi versi skema** pada target:
+
+   ```bash
+   go run ./cmd/perfbench schema
+   ```
+
+   Selisih kolom pada tabel `rbac_*` harus nol sebelum seed dijalankan.
+
+3. **Terapkan (hanya di staging lebih dulu):**
+
+   ```bash
+   go run ./cmd/rbacseed --apply
+   ```
+
+   Penulisan berjalan dalam satu transaksi (gagal = tidak ada yang berubah).
+   Perintah bersifat **idempoten**: menjalankan ulang hanya menambahkan yang
+   hilang (role/permission/matriks), pengguna yang sudah punya assignment
+   dilewati.
+
+4. **Verifikasi setelah seed:**
+
+   ```sql
+   SELECT code, tier_level FROM rbac_roles ORDER BY code;
+   SELECT r.code, count(*) FROM rbac_role_permissions rp
+     JOIN rbac_roles r ON r.id = rp.role_id GROUP BY r.code;
+   SELECT s.user_id, r.code, s.unit_id FROM rbac_user_role_scopes s
+     JOIN rbac_roles r ON r.id = s.role_id ORDER BY r.code;
+   ```
+
+   Assignment admin transcends organisasi (`unit_id` kosong); operator/atasan/
+   pegawai memakai unit penugasannya sebagai informasi cakupan.
+
+5. **Uji penegakan (opsional, staging):** hapus satu grant role-permission,
+   lalu panggil endpoint terkait memakai sesi pengguna yang terdampak —
+   hasilnya harus `403` meski grant statis mengizinkan (RBAC otoritatif).
+   Kembalikan grant dengan `go run ./cmd/rbacseed --apply`.
+
+6. **Produksi:** hanya setelah staging bersih, gate rilis terpenuhi, dan
+   persetujuan pemilik tertulis (`docs/STAGING-RELEASE-CHECKLIST.md`).
+
+**Bila perlu membatalkan:** hapus assignment yang dibuat seed (baris
+`rbac_user_role_scopes` untuk pengguna terkait). Tanpa assignment, evaluator
+kembali ke grant statis. Hapus matriks/role hanya bila tidak ada pengguna
+yang memakainya.
 
 ## 8. Skema dan mapping GORM tidak sinkron
 
@@ -235,6 +302,7 @@ berisi pesan yang gagal diproses.
   ```
 
 **Tindakan:**
+
 - RabbitMQ: bila `simpeg.jobs.dead` berisi pesan, periksa log `mq_job_failed`
   untuk penyebabnya, perbaiki, lalu jalankan ulang pekerjaannya dengan
   `jobsched publish <kind>`. Pesan dead-letter tidak kembali otomatis karena
@@ -252,23 +320,23 @@ menyebut `smtp` pada pesan galat.
 
 **Diagnosis:** mode keamanan SMTP ditentukan oleh `SMTP_SECURE` dan porta:
 
-| Mode | Perilaku | Porta lazim |
-|------|-----------|-------------|
-| `SMTP_SECURE=true` | TLS langsung sejak koneksi pertama | 465 |
-| `SMTP_SECURE=false` | Koneksi polos, dinaikkan lewat STARTTLS bila tersedia | 587 |
-| `SMTP_SECURE` kosong | Mode ditebak dari porta: 465 memakai TLS langsung, porta lain memakai STARTTLS | — |
+| Mode                 | Perilaku                                                                       | Porta lazim |
+| -------------------- | ------------------------------------------------------------------------------ | ----------- |
+| `SMTP_SECURE=true`   | TLS langsung sejak koneksi pertama                                             | 465         |
+| `SMTP_SECURE=false`  | Koneksi polos, dinaikkan lewat STARTTLS bila tersedia                          | 587         |
+| `SMTP_SECURE` kosong | Mode ditebak dari porta: 465 memakai TLS langsung, porta lain memakai STARTTLS | —           |
 
 Galat `tls: first record does not look like a TLS handshake` berarti mode TLS
 langsung dipakai pada porta submission. Galat `535` dari Google Workspace
-berarti kredensial ditolak; Google Workspace menuntut *app password*, bukan
+berarti kredensial ditolak; Google Workspace menuntut _app password_, bukan
 sandi akun biasa.
 
 Bentuk `SMTP_FROM` boleh berupa alamat polos maupun bentuk baku
 `"Nama Tampilan" <alamat@domain>`. Bentuk kedua dipakai apa adanya pada
 header `From`, sedangkan perintah SMTP `MAIL FROM` memakai alamat polosnya.
 
-**Tindakan:** samakan `SMTP_SECURE` dengan porta server, lalu gunakan *app
-password* yang sah bila penyedia adalah Google Workspace.
+**Tindakan:** samakan `SMTP_SECURE` dengan porta server, lalu gunakan _app
+password_ yang sah bila penyedia adalah Google Workspace.
 
 ## 8A. Pemeriksaan SLO terjadwal
 
@@ -308,7 +376,7 @@ data mentah per jendela.
 ## 8B. Pekerjaan terjadwal RabbitMQ (self-hosted)
 
 **Gejala:** pekerjaan harian (pembersihan jejak audit, pemberitahuan slip
-gaji H+1) tidak berjalan, padahal deployment memakai docker/podman dengan
+gaji H-1, sejak `DEC-078`; sebelumnya H+1) tidak berjalan, padahal deployment memakai docker/podman dengan
 `RABBITMQ_URL` terisi.
 
 **Diagnosis:** tiga komponen harus hidup:
@@ -341,12 +409,12 @@ kredensial `RABBITMQ_URL` dan jaringan antar container.
 
 **Dua sumber bukti:**
 
-| Sumber | Isi | Dipakai untuk |
-|--------|-----|---------------|
-| Log keamanan (`msg`: `auth_failed`, `access_denied`, `rate_limited`) | `client_ip`, `path`, `status`, `request_id`, `user_id`, `role` | Deteksi volume dan korelasi cepat |
-| Log `auth_failed` runtime Better Auth (frontend) | `path`, `reason`, `ts` (tanpa `client_ip`/kredensial, `DEC-050`) | Menelusuri kegagalan login email/OAuth, termasuk Google OAuth |
-| Jejak audit aksi `authz.denied` | aktor, unit cakupan, izin diminta, pola route | Menelusuri pihak yang mencoba akses di luar haknya |
-| Log keamanan `webhook_signature_rejected` | `job`, `path`, `request_id` | Mendeteksi callback QStash yang tidak sah |
+| Sumber                                                               | Isi                                                              | Dipakai untuk                                                 |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------- |
+| Log keamanan (`msg`: `auth_failed`, `access_denied`, `rate_limited`) | `client_ip`, `path`, `status`, `request_id`, `user_id`, `role`   | Deteksi volume dan korelasi cepat                             |
+| Log `auth_failed` runtime Better Auth (frontend)                     | `path`, `reason`, `ts` (tanpa `client_ip`/kredensial, `DEC-050`) | Menelusuri kegagalan login email/OAuth, termasuk Google OAuth |
+| Jejak audit aksi `authz.denied`                                      | aktor, unit cakupan, izin diminta, pola route                    | Menelusuri pihak yang mencoba akses di luar haknya            |
+| Log keamanan `webhook_signature_rejected`                            | `job`, `path`, `request_id`                                      | Mendeteksi callback QStash yang tidak sah                     |
 
 Kolom `client_ip` hanya tersedia pada log keamanan backend; aturan alert per
 IP (lihat tabel ambang di bawah) berlaku untuk log backend. Log `auth_failed`
@@ -380,12 +448,12 @@ psql "$DATABASE_URL" -c "select \"createdAt\", \"aktorId\", \"unitId\", \"ketera
 **Ambang alert awal.** Nilai berikut adalah titik awal untuk disetel operator,
 belum berdasarkan baseline volume:
 
-| Event | Syarat alert awal |
-|-------|-------------------|
-| `auth_failed` | lebih dari 20 kejadian dari satu `client_ip` dalam 5 menit |
-| `access_denied` | lebih dari 50 kejadian dari satu `client_ip` dalam 5 menit |
-| `rate_limited` | muncul berulang pada path autentikasi |
-| `webhook_signature_rejected` | lebih dari 3 kejadian dalam 10 menit |
+| Event                        | Syarat alert awal                                          |
+| ---------------------------- | ---------------------------------------------------------- |
+| `auth_failed`                | lebih dari 20 kejadian dari satu `client_ip` dalam 5 menit |
+| `access_denied`              | lebih dari 50 kejadian dari satu `client_ip` dalam 5 menit |
+| `rate_limited`               | muncul berulang pada path autentikasi                      |
+| `webhook_signature_rejected` | lebih dari 3 kejadian dalam 10 menit                       |
 
 **Jangan:** menganggap `access_denied` sebagai bug. `403` pada endpoint
 terlindungi adalah hasil yang benar untuk role yang tidak memegang izin, dan
@@ -420,11 +488,17 @@ Upstash pada dashboard penyedia.
 timeout berulang, dan antrean keluar (outbox) menumpuk.
 
 **Diagnosis:**
+
 - QStash: periksa `qstash_schedule_failed` dan `qstash_job_payload_failed`
   (bagian 8.2).
 - SMTP: periksa log `smtp` pada pesan galat worker outbox (bagian 8.3).
 - Penyedia hari libur: kalender dibaca dari tabel `HariLibur` lokal, tidak
   bergantung pada penyedia runtime; penyegaran hanya dipicu admin.
+- Status antrean keluar (agregat, tanpa payload/identitas): `GET /api/v1/admin/ops/status`
+  (permission `ops:read`, admin) mengembalikan jumlah pesan per status
+  (`PENDING`/`PROCESSING`/`DONE`/`FAILED`), usia pesan tertua yang belum
+  selesai, dan jumlah `FAILED` per jenis pekerjaan. Gunakan ini untuk
+  memantau keterlambatan antrean dan kegagalan notifikasi/pengiriman.
 
 **Tindakan:** backend menggunakan outbox persisten di PostgreSQL sehingga
 pesan tidak hilang saat dependency eksternal down. Worker mencoba ulang
@@ -440,12 +514,17 @@ breaker saat integrasi tersebut dipakai pada production.
 ditentukan.
 
 **Diagnosis:**
+
 - `RPO_HOURS` (bawaan 24 jam) dan `RTO_HOURS` (bawaan 4 jam) dikonfigurasi
   melalui `.env` dan divalidasi `config.Load()`. Nilai awal diratifikasi
   24 jam / 4 jam pada 13 November 2026 (`DEC-050`); keduanya belum diukur
   terhadap produksi.
-- Backup dan PITR (point-in-time recovery) dijalankan melalui tier Supabase
-  yang dipilih, bukan melalui skrip backend.
+- Backup dan PITR (point-in-time recovery) dijalankan melalui tier/fitur
+  Supabase project target, bukan melalui skrip backend. **Kemampuan PITR dan
+  opsi restore bergantung pada tier/fitur project aktual; tier Free umumnya
+  menyediakan backup harian/pemulihan terbatas dan tidak setara PITR penuh.**
+  Wajib verifikasi kemampuan yang tersedia pada project Supabase target
+  sebelum menyatakan RPO/RTO terpenuhi.
 
 **Bukti drill (13 November 2026, `DEC-050`):** drill dijalankan terhadap
 database disposable lokal `simpeg-verify-pg` (postgres:16-alpine), **bukan**
@@ -458,54 +537,127 @@ Supabase production:
   indeks, 167 constraint, 68 tabel dengan RLS aktif, `user`=4, `session`=8,
   `account`=4, `auditLog`=8;
 - database `simpeg_restore_drill` dihapus setelah verifikasi;
-- **belum diuji:** PITR, restore pada tier Supabase berbayar, dan restore
-  pada database target produksi. Uji di lingkungan terpisah tetap wajib
-  dilakukan sebelum klaim RTO 4 jam dianggap terpenuhi untuk produksi.
+- **belum diuji:** PITR, restore pada tier Supabase berbayar/target, dan
+  restore pada database target produksi. Uji di lingkungan terpisah tetap
+  wajib dilakukan sebelum klaim RTO/RPO dianggap terpenuhi untuk produksi.
 
-**Tindakan:** uji backup/restore pada database terpisah dengan data sintetis,
-catat waktu yang dibutuhkan untuk pulihkan ke titik waktu tertentu, dan
-bandingkan dengan `RPO_HOURS` dan `RTO_HOURS`. Dokumentasikan hasil uji pada
-catatan operasi. Jangan gunakan data pegawai produksi untuk uji restore.
+**Prosedur uji backup/restore (operasional, pemilik: adhitiad/admin, `DEC-065`):**
 
-## 9. Dashboard dan alert
+1. **Verifikasi kemampuan:** catat tier, region, dan fitur backup/restore/PITR
+   project Supabase target (dashboard/dokumentasi resmi project). Jika PITR
+   tidak tersedia (mis. tier Free), gunakan backup harian/ekspor yang tersedia
+   dan/atau `pg_dump` konsisten; nyatakan batasan titik pemulihan secara
+   eksplisit.
+2. **Siapkan target uji terpisah:** database disposable/non-produksi yang
+   disetujui (jangan menimpa database produksi). Catat waktu mulai.
+3. **Ambil/ambil-alih cadangan:** gunakan mekanisme tier (restore/backup yang
+   tersedia) atau `pg_dump` dari sumber yang sah; simpan artefak sementara di
+   lokasi aman, hapus setelah verifikasi.
+4. **Pulihkan:** restore ke target uji; catat durasi hingga database siap.
+5. **Verifikasi pascapulih:** cek `GET /ready`, `goose_db_version`/status
+   migrasi, jumlah tabel/indeks/RLS penting, hitungan baris kunci (mis.
+   `user`, `session`, `auditLog`, tabel domain relevan), dan sampel baca API
+   read-only bila perlu.
+6. **Ukur & catat:** bandingkan titik data yang dipulihkan dengan RPO target
+   dan durasi pulih dengan RTO target; catat tanggal, metode, durasi, titik
+   data, temuan, dan tindak lanjut pada catatan operasi/runbook. Database uji
+   dihapus setelah verifikasi.
+7. **Keamanan data:** jangan menggunakan/menyebarkan data pegawai produksi di
+   luar prosedur yang disetujui; gunakan data sintetis bila memungkinkan.
+
+**Dokumen pendukung:** formulir hasil dan checklist drill ada di
+`docs/backup-restore-drill.md`; helper PowerShell
+`scripts/backup-restore-drill.ps1` menjalankan dump, restore, dan verifikasi ke
+target disposable dengan kredensial yang dibaca hanya dari environment
+(`SOURCE_DATABASE_URL`/`TARGET_DATABASE_URL`). Helper membantu langkah 2–6,
+namun tidak menggantikan verifikasi pascapulih manual pada formulir.
+
+**Tindakan:** jadwalkan uji berkala pada database target/representatif dan
+perbarui bukti setiap kali topologi, tier, atau skema berubah secara
+signifikan.
+
+## 9. Dashboard, monitoring, dan alert
 
 **Gejala:** operator tidak mengetahui layanan mana yang gagal, dampak ke
 pengguna, atau langkah pemulihannya.
 
-**Diagnosis:** backend menyediakan log terstruktur JSON satu baris per entri
-dengan correlation ID (`X-Request-ID`), dan metrik SLO disimpan di PostgreSQL
-(`sloMetric`) dan ditampilkan pada halaman admin `/admin/slo` (backend:
-`GET /api/v1/admin/slo/metrics`, permission `slo:read`, admin saja,
-baca-saja, lihat `DEC-050`). Halaman ini mencakup error rate, latency
-(rata-rata/p95/p99/maks) per rute, dan jendela 24 jam atau 7 hari —
-**tidak** mencakup saturasi, health dependency, keterlambatan antrean, atau
-kegagalan notifikasi, dan **aturan alert belum terpasang pada
-infrastruktur mana pun** pada rilis ini. Tanpa `SLO_ENABLED=true` pada
-backend, `sloMetric` kosong dan halaman menampilkan total nol.
+**Sumber sinyal yang tersedia di aplikasi (sudah ada):**
 
-**Tindakan:** dasbor internal adalah titik awal yang sudah ada, bukan
-platform monitoring. Pasang aturan alert pada platform monitoring yang
-dipakai organisasi (atau scraper sederhana yang membaca
-`GET /api/v1/admin/slo/metrics`) dengan metrik berikut sebagai titik awal:
+- **Health:** `/health` (liveness) dan `/ready` (readiness dependency wajib,
+  saat ini PostgreSQL).
+- **Log terstruktur:** JSON satu baris ke stdout dengan `X-Request-ID`; redaksi
+  kredensial/body/query (`internal/observability`). Peristiwa keamanan
+  (`auth_failed`, `access_denied`, `rate_limited`, `webhook_signature_rejected`)
+  dan pekerjaan (`mq_job_*`, `outbox_*`, `slo_*`) tercatat sebagai event.
+- **Metrik SLO (agregat):** `sloMetric` di PostgreSQL, halaman admin `/admin/slo`
+  dan `GET /api/v1/admin/slo/metrics` (`slo:read`, admin). Mencakup error rate
+  dan latensi (rata-rata/p95/p99/maks) per rute pada jendela 24 jam/7 hari.
+  Bergantung `SLO_ENABLED=true`.
+- **Status operasional antrean keluar:** `GET /api/v1/admin/ops/status`
+  (`ops:read`, admin) memuat agregat outbox per status, usia pesan tertua yang
+  belum selesai, dan kegagalan per jenis — sinyal keterlambatan antrean dan
+  kegagalan notifikasi/pengiriman asinkron (`DEC-065`).
 
-| Metrik | Sumber | Ambang alert awal |
-|--------|--------|-------------------|
-| Error rate API | `sloMetric.errorCount / requestCount` | > 1% dalam 5 menit |
-| Latency p95 | histogram bucket pada `sloMetric` (dihitung oleh evaluasi `slo.evaluate`, bukan kolom tunggal) | > 800 ms dalam 5 menit |
-| Koneksi pool PostgreSQL | `DB_MAX_OPEN_CONNS` vs aktif | > 80% batas pooler |
-| Antrean keluar (outbox) | `outboxMessage` status `FAILED` | > 0 pesan |
-| Pesan gagal QStash | `qstash_job_payload_failed` | > 3 dalam 10 menit |
-| Email gagal | `outbox` worker error SMTP | > 0 pesan permanen |
+Dasbor internal adalah titik awal, bukan platform monitoring penuh; cakupan
+saturasi, health dependency eksternal, metrik Redis/QStash/SMTP/storage, dan
+backlog broker RabbitMQ memerlukan pengumpulan di infrastruktur.
 
-Jenis alert:
-- **Kritis:** API error rate > 5%, koneksi pool > 90%, outbox dead-letter > 10
-  pesan.
-- **Peringatan:** API error rate > 1%, latency p95 > 800 ms, email gagal
-  permanen.
+**Stack monitoring/alerting yang dipilih (`DEC-065`, target: Docker + RabbitMQ
+self-hosted + stdout JSON + Supabase):** observability self-hosted berbasis
+Docker (templat awal di `observability/`): Prometheus + Alertmanager + Grafana,
+Loki + Promtail/Grafana Alloy untuk log stdout JSON, node-exporter & cAdvisor
+untuk saturasi host/container, blackbox-exporter untuk probe `/health`/`/ready`
+dan endpoint kritis, serta metrik RabbitMQ via plugin/endpoint Prometheus
+management. Aturan alert dipasang di Alertmanager/Prometheus; penerima dan
+eskalasi ditetapkan pemilik (adhitiad/admin). **Pemasangan, wiring ke target,
+dan uji tembak alert masih harus dibuktikan di infrastruktur.**
 
-Log keamanan (`auth_failed`, `access_denied`, `rate_limited`) dan jejak audit
-(`authz.denied`) juga boleh diekspor ke SIEM untuk deteksi insiden keamanan
-(bagian 9).
+Panduan pemasangan, konfigurasi, dan uji tembak alert ada di
+`observability/README.md`. Sumber sinyal aplikasi yang dipakai stack itu:
+`GET /api/v1/admin/slo/metrics` (`slo:read`) untuk agregat error/latensi,
+`GET /api/v1/admin/ops/status` (`ops:read`) untuk agregat antrean keluar, dan
+log JSON terstruktur ke stdout. Status operasional antrean keluar yang dibaca
+`/admin/ops/status` bersifat agregat per status, usia pesan tertua, dan
+kegagalan per jenis; payload, dedupe key, dan penerima tidak pernah diekspos.
+
+**Ambang alert awal (titik awal, wajib disesuaikan dengan baseline produksi):**
+
+| Metrik                      | Sumber                                                             | Ambang alert awal                                             |
+| --------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------- |
+| Error rate API              | `sloMetric.errorCount / requestCount` atau metrik HTTP teragregasi | > 1% dalam 5 menit (kritikal > 5%)                            |
+| Latency p95                 | histogram bucket `sloMetric` / evaluasi `slo.evaluate`             | > 800 ms dalam 5 menit                                        |
+| Saturasi host/container     | node-exporter/cAdvisor (CPU, memori, disk)                         | CPU/memori tinggi berkelanjutan (mis. > 85% selama 5 menit)   |
+| Pool/koneksi PostgreSQL     | metrik pool aplikasi/DB Supabase                                   | > 80% batas (kritikal > 90%)                                  |
+| Antrean keluar (outbox)     | `GET /api/v1/admin/ops/status` atau query `outboxMessage`          | `FAILED` > 0 (kritikal > 10); `PENDING`/usia tertua meningkat |
+| Antrean broker              | metrik RabbitMQ (`simpeg.jobs`, `simpeg.jobs.dead`)                | pesan di dead-letter > 0; backlog bertumbuh                   |
+| Kegagalan notifikasi/QStash | `FAILED` outbox per kind `email.*`, log `qstash_*`/`smtp`          | > 0 pesan permanen; `qstash_job_payload_failed` > 3/10 menit  |
+| Health dependency           | probe `/ready`, blackbox/health Redis/RabbitMQ/Supabase            | tidak sehat/timeout berulang                                  |
+
+Log keamanan (`auth_failed`, `access_denied`, `rate_limited`, `webhook_signature_rejected`)
+dan jejak audit (`authz.denied`) dapat diekspor ke SIEM/log alerting untuk
+deteksi insiden (lihat bagian insiden keamanan).
+
+## 9A. Retensi dan operasi log produksi
+
+**Kebijakan (`DEC-065`, pemilik: adhitiad/admin):**
+
+- **Sumber:** log aplikasi JSON ke stdout (container Docker), dikumpulkan oleh
+  Promtail/Grafana Alloy ke Loki (atau stack log setara pada target).
+- **Retensi log agregasi:** awal **30 hari** (dapat diubah sesuai kapasitas;
+  nilai efektif wajib dicatat pada konfigurasi deployment). Retensi ini
+  terpisah dari retensi data di database.
+- **Retensi data terjadwal di database:** jejak audit `AUDIT_RETENTION_DAYS`
+  (bawaan 90 hari, pembersihan terjadwal) dan metrik SLO `SLO_RETENTION_DAYS`
+  (bawaan 30 hari).
+- **Akses:** dibatasi admin/operator yang berwenang sesuai kebijakan
+  organisasi; jangan menyalin log ke saluran publik.
+- **Isi & redaksi:** log tidak boleh memuat kredensial, body permintaan, atau
+  nilai query string; penelusuran insiden memakai `request_id`, `msg`, `path`,
+  `status`, dan metadata non-sensitif yang memang dicatat.
+- **Operasi:** pastikan label/field untuk korelasi (`request_id`, service/job)
+  konsisten, rotasi/retensi di-backend log aktif, dan prosedur pencarian
+  insiden diuji. **Konfigurasi agregasi/retensi/akses pada deployment target
+  masih harus dipasang dan diverifikasi.**
 
 ## 10. Autentikasi dan Sesi
 
@@ -513,10 +665,10 @@ Log keamanan (`auth_failed`, `access_denied`, `rate_limited`) dan jejak audit
 
 Backend mendukung dua jenis sesi:
 
-| Jenis | Penyimpanan | Revokasi | Keterangan |
-|-------|-------------|----------|------------|
-| JWT Better Auth | Better Auth runtime (frontend) | Milik runtime Better Auth | Verifikasi via `BETTER_AUTH_SECRET` dengan `golang-jwt/jwt/v5` |
-| Sesi opaque GORM | Tabel `session` di PostgreSQL | `POST /api/auth/logout` menghapus baris `session` | Resolusi via `auth.CombinedSessionResolver` |
+| Jenis            | Penyimpanan                    | Revokasi                                          | Keterangan                                                     |
+| ---------------- | ------------------------------ | ------------------------------------------------- | -------------------------------------------------------------- |
+| JWT Better Auth  | Better Auth runtime (frontend) | Milik runtime Better Auth                         | Verifikasi via `BETTER_AUTH_SECRET` dengan `golang-jwt/jwt/v5` |
+| Sesi opaque GORM | Tabel `session` di PostgreSQL  | `POST /api/auth/logout` menghapus baris `session` | Resolusi via `auth.CombinedSessionResolver`                    |
 
 **Penting:** runtime Better Auth **terpasang tertanam di server frontend** pada `/api/auth/*` (lihat `DEC-049`): sesi 7 hari dengan rolling refresh 1 hari, pendaftaran publik dimatikan, akun dibuat administrator. Masuk/keluar terverifikasi terhadap database uji disposable untuk seluruh role; logout di frontend memanggil `POST /api/v1/auth/logout` (mencabut sesi opaque) dan `POST /api/auth/sign-out` (mencabut sesi runtime Better Auth). Google OAuth dan MFA TOTP diimplementasikan 2026-11-13 (`DEC-058`); verifikasi live menunggu kredensial Google Workspace dan redirect URI yang terdaftar.
 
@@ -525,11 +677,13 @@ Backend mendukung dua jenis sesi:
 **Gejala:** sesi tetap dapat digunakan setelah `POST /api/auth/logout`, atau token JWT tetap valid setelah dicabut.
 
 **Diagnosis:**
+
 - `POST /api/auth/logout` (daftarkan via `httpserver.RegisterLogoutRoute`) **hanya mencabut sesi opaque GORM** (menghapus baris `session` di PostgreSQL). Penrevokasi token JWT tetap menjadi tanggung jawab runtime Better Auth, bukan backend Go.
 - Role dibaca dari tabel `Role` pada setiap permintaan, sehingga perubahan role berlaku tanpa sesi baru.
 - Akun nonaktif (`aktif = false`) dan baris `session` yang dihapus ditolak sebagai `401`.
 
 **Tindakan:**
+
 1. Untuk sesi opaque: panggil `POST /api/auth/logout`, lalu verifikasi permintaan berikutnya dengan token yang sama menerima `401`.
 2. Untuk token JWT: cabut melalui runtime Better Auth (`POST /api/auth/sign-out`; runtime terpasang tertanam di server frontend sejak `DEC-049`).
 3. Jika akun dicurigai berbahaya: nonaktifkan akun (`aktif = false`) pada tabel `user`, lalu sesi berikutnya akan ditolak.
@@ -541,6 +695,7 @@ Backend mendukung dua jenis sesi:
 **Diagnosis:** resolver sesi tidak dapat terhubung ke database PostgreSQL. Periksa `DATABASE_URL` dan koneksi pooler.
 
 **Tindakan:** verifikasi koneksi database:
+
 ```bash
 cd backend
 export DATABASE_URL="postgres://<user>:<sandi>@<host>:5432/<database>?sslmode=require"
@@ -554,5 +709,3 @@ go run ./cmd/migrate status
 **Diagnosis:** grant statis dikonfigurasi di `backend/cmd/server/main.go` (matriks disetujui di `docs/PRD.md` §11). Role atau izin yang tidak tercantum tetap ditolak (deny-by-default). Permission berakhiran `:any` = lintas seluruh organisasi (khusus `admin`); `:homebase` = dibatasi pada unit penugasan principal beserta seluruh turunannya (`operator`, `atasan`); `:self` = hanya record milik principal sendiri (`pegawai`).
 
 **Tindakan:** verifikasi grant pada role principal melalui `GET /api/v1/me` dan cek matriks izin di `docs/PRD.md` §11. Jangan memperluas grant tanpa memverifikasi route dan query.
-
-

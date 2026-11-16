@@ -4,7 +4,7 @@
 // tahunan yang dipicu admin. Data disimpan pada tabel `HariLibur` dan dibaca
 // sebagai data referensi; pembacaan tidak pernah bergantung pada penyedia.
 // Perubahan kalender tidak memicu pergeseran tanggal gajian maupun
-// pemberitahuan slip gaji H+1, yang memakai tanggal kalender tetap.
+// pemberitahuan slip gaji H-1, yang memakai tanggal kalender tetap.
 package holiday
 
 import (

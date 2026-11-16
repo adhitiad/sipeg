@@ -6,7 +6,7 @@
 // audit ditulis. Bila salah satu langkah gagal, seluruh perubahan dibatalkan.
 //
 // Jadwal tanggal gajian per unit dan pembacaan slip yang siap diberi
-// pemberitahuan H+1 memakai port yang sama.
+// pemberitahuan H-1 memakai port yang sama.
 package repository
 
 import (
@@ -26,6 +26,9 @@ type Repository interface {
 	GetSlip(context.Context, string) (models.Gaji, error)
 	// RecordPayment mencatat konfirmasi pembayaran untuk sebuah slip.
 	RecordPayment(context.Context, string, string, domain.PaymentInput, domain.Notification) (models.Gaji, error)
+	// PublishSlip menandai slip DRAF menjadi TERBIT; slip yang sudah
+	// TERBIT/TERBAYAR/BATAL ditolak dengan domain.ErrConflict.
+	PublishSlip(context.Context, string, string, *string) (models.Gaji, error)
 	// ConfirmedPayment melaporkan apakah pembayaran untuk pegawai dan
 	// periode tertentu sudah tercatat sebagai terkonfirmasi.
 	ConfirmedPayment(context.Context, string, string) (bool, error)
@@ -36,7 +39,7 @@ type Repository interface {
 	// berarti tidak ada unit yang boleh dijangkau.
 	ListSchedules(context.Context, []string) ([]models.JadwalGaji, error)
 	// FindDueReminders membaca slip gaji yang siap diberi pemberitahuan
-	// ketersediaan H+1 hingga periode berjalan.
+	// ketersediaan H-1 hingga periode berjalan.
 	FindDueReminders(context.Context, time.Time) ([]Reminder, error)
 	// EnqueueNotifications menulis pesan notifikasi ke antrean keluar dan
 	// mengembalikan jumlah pesan yang benar-benar ditulis.

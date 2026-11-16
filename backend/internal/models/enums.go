@@ -40,6 +40,15 @@ const (
 	SubJenisKeluargaLain    SubJenisIzinPenting = "KELUARGA_LAIN"
 )
 
+// SubJenisBersalin membedakan cuti bersalin MELAHIRKAN (3 bulan) dari
+// cuti KEGUGURAN (1,5 bulan) sesuai aturan Universitas.
+type SubJenisBersalin string
+
+const (
+	SubJenisMelahirkan SubJenisBersalin = "MELAHIRKAN"
+	SubJenisKeguguran  SubJenisBersalin = "KEGUGURAN"
+)
+
 // JenisEviden menandai bentuk bukti yang menyertai pengajuan cuti.
 type JenisEviden string
 
@@ -61,6 +70,9 @@ const (
 	StatusMenunggu  StatusPersetujuan = "MENUNGGU"
 	StatusDisetujui StatusPersetujuan = "DISETUJUI"
 	StatusDitolak   StatusPersetujuan = "DITOLAK"
+	// StatusBatal menandai pengajuan yang dibatalkan setelah persetujuan
+	// (atau sebelumnya); saldo yang terpotong dikembalikan untuk cuti tahunan.
+	StatusBatal StatusPersetujuan = "BATAL"
 )
 
 type TingkatTerusan string
@@ -77,6 +89,7 @@ const (
 	StatusSlipDraf     StatusSlipGaji = "DRAF"
 	StatusSlipTerbit   StatusSlipGaji = "TERBIT"
 	StatusSlipTerbayar StatusSlipGaji = "TERBAYAR"
+	StatusSlipBatal    StatusSlipGaji = "BATAL"
 )
 
 type HasilUjiKapabilitas string
@@ -98,6 +111,23 @@ type JenisJabatan string
 const (
 	JenisJabatanStruktural JenisJabatan = "STRUKTURAL"
 	JenisJabatanFungsional JenisJabatan = "FUNGSIONAL"
+)
+
+// JenisBPJS adalah jenis peserta BPJS (KESEHATAN/KETENAGAKERJAAN).
+type JenisBPJS string
+
+const (
+	JenisBPJSKesehatan       JenisBPJS = "KESEHATAN"
+	JenisBPJSKetenagakerjaan JenisBPJS = "KETENAGAKERJAAN"
+)
+
+// PtkpKategoriTER adalah kategori PTKP untuk skema TER (PMK 168/2023).
+type PtkpKategoriTER string
+
+const (
+	PtkpKategoriA PtkpKategoriTER = "A"
+	PtkpKategoriB PtkpKategoriTER = "B"
+	PtkpKategoriC PtkpKategoriTER = "C"
 )
 
 type JenisOrganisasi string
@@ -144,13 +174,51 @@ const (
 	SanksiPotongTunjangan JenisSanksi = "POTONG_TUNJANGAN"
 )
 
+// JenisPemberhentian adalah jenis pemberhentian pegawai (HORMAT vs
+// TIDAK_HORMAT). BUP dan pengunduran diri dipetakan ke HORMAT.
 type JenisPemberhentian string
 
 const (
-	PemberhentianBUP            JenisPemberhentian = "BUP"
+	PemberhentianBup            JenisPemberhentian = "BUP"
 	PemberhentianAtasPermintaan JenisPemberhentian = "ATAS_PERMINTAAN_SENDIRI"
 	PemberhentianHormat         JenisPemberhentian = "HORMAT"
 	PemberhentianTidakHormat    JenisPemberhentian = "TIDAK_HORMAT"
+)
+
+// JenisSk adalah jenis surat keputusan yayasan/rektor (DEC-083).
+type JenisSk string
+
+const (
+	JenisSkPengangkatan      JenisSk = "PENGANGKATAN"
+	JenisSkMutasi            JenisSk = "MUTASI"
+	JenisSkPhk               JenisSk = "PHK"
+	JenisSkJabatanStruktural JenisSk = "JABATAN_STRUKTURAL"
+	JenisSkPenugasan         JenisSk = "PENUGASAN"
+)
+
+// TingkatSk menentukan penerbit surat keputusan.
+type TingkatSk string
+
+const (
+	TingkatSkYayasan TingkatSk = "YAYASAN"
+	TingkatSkRektor  TingkatSk = "REKTOR"
+)
+
+// JenisKontrak adalah jenis kontrak kepegawaian.
+type JenisKontrak string
+
+const (
+	JenisKontrakPKWT  JenisKontrak = "PKWT"
+	JenisKontrakPKWTT JenisKontrak = "PKWTT"
+)
+
+// StatusKontrak adalah status siklus hidup kontrak.
+type StatusKontrak string
+
+const (
+	StatusKontrakAktif        StatusKontrak = "AKTIF"
+	StatusKontrakBerakhir     StatusKontrak = "BERAKHIR"
+	StatusKontrakDiperpanjang StatusKontrak = "DIPERPANJANG"
 )
 
 type KanalPesan string

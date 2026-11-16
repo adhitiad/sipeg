@@ -24,6 +24,10 @@ var (
 	// ErrConflict menandai slip yang sudah dibayar atau statusnya tidak
 	// memungkinkan untuk dibayar.
 	ErrConflict = errors.New("payroll slip conflicts with existing data")
+	// ErrPegawaiTidakAktif menandai permintaan slip untuk pegawai yang
+	// sudah dinonaktifkan (approve pemberhentian menonaktifkan pegawai —
+	// `DEC-083`) pada periode setelah bulan pemberhentian.
+	ErrPegawaiTidakAktif = errors.New("employee is inactive")
 	// ErrForbidden menandai aksi yang di luar cakupan atau permission principal.
 	ErrForbidden = errors.New("action is not permitted for this principal")
 )

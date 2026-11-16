@@ -25,9 +25,9 @@ func NewJabatanService(repo repository.JabatanRepository, policy auth.Policy) *J
 	return &JabatanService{repo: repo, policy: policy}
 }
 
-func (s *JabatanService) canRead(principal auth.Principal) bool {
+func (s *JabatanService) canRead(ctx context.Context, principal auth.Principal) bool {
 	for _, permission := range []auth.Permission{"jabatan:read", "jabatan:manage"} {
-		if allows(s.policy, principal, permission) {
+		if allows(ctx, s.policy, principal, permission) {
 			return true
 		}
 	}
@@ -36,7 +36,7 @@ func (s *JabatanService) canRead(principal auth.Principal) bool {
 
 // List mengembalikan halaman master jabatan sesuai filter yang diminta.
 func (s *JabatanService) List(ctx context.Context, principal auth.Principal, options listing.Options) (listing.Page[models.Jabatan], error) {
-	if !s.canRead(principal) {
+	if !s.canRead(ctx, principal) {
 		return listing.Page[models.Jabatan]{}, domain.ErrForbidden
 	}
 	jabatans, total, err := s.repo.ListJabatans(ctx, options)
@@ -54,7 +54,7 @@ func (s *JabatanService) List(ctx context.Context, principal auth.Principal, opt
 
 // Get mengembalikan satu master jabatan.
 func (s *JabatanService) Get(ctx context.Context, principal auth.Principal, id string) (models.Jabatan, error) {
-	if !s.canRead(principal) {
+	if !s.canRead(ctx, principal) {
 		return models.Jabatan{}, domain.ErrForbidden
 	}
 	return s.repo.GetJabatan(ctx, id)
@@ -62,7 +62,7 @@ func (s *JabatanService) Get(ctx context.Context, principal auth.Principal, id s
 
 // Create membuat master jabatan baru (khusus admin).
 func (s *JabatanService) Create(ctx context.Context, principal auth.Principal, input domain.CreateJabatan) (models.Jabatan, error) {
-	if !allows(s.policy, principal, "jabatan:manage") {
+	if !allows(ctx, s.policy, principal, "jabatan:manage") {
 		return models.Jabatan{}, domain.ErrForbidden
 	}
 	input.Nama = strings.TrimSpace(input.Nama)
@@ -82,7 +82,7 @@ func (s *JabatanService) Create(ctx context.Context, principal auth.Principal, i
 
 // Update memperbarui master jabatan (khusus admin).
 func (s *JabatanService) Update(ctx context.Context, principal auth.Principal, id string, patch domain.JabatanPatch) (models.Jabatan, error) {
-	if !allows(s.policy, principal, "jabatan:manage") {
+	if !allows(ctx, s.policy, principal, "jabatan:manage") {
 		return models.Jabatan{}, domain.ErrForbidden
 	}
 	if err := patch.Validate(); err != nil {
@@ -93,7 +93,7 @@ func (s *JabatanService) Update(ctx context.Context, principal auth.Principal, i
 
 // Archive menonaktifkan master jabatan (khusus admin).
 func (s *JabatanService) Archive(ctx context.Context, principal auth.Principal, id string) error {
-	if !allows(s.policy, principal, "jabatan:manage") {
+	if !allows(ctx, s.policy, principal, "jabatan:manage") {
 		return domain.ErrForbidden
 	}
 	return s.repo.ArchiveJabatan(ctx, principal.UserID, id)

@@ -46,8 +46,12 @@ const (
 	// sebuah unit.
 	ActionPayrollScheduleUpdated = "payroll.schedule.updated"
 
+	// ActionSlipPDFDownloaded menandai pengunduhan PDF slip gaji. Dicatat
+	// best-effort untuk observabilitas/forensik; bukan pembatas jumlah
+	// unduhan.
+	ActionSlipPDFDownloaded = "payroll.slip.pdf.downloaded"
 	// ActionPayrollNotified menandai pekerjaan terjadwal pemberitahuan slip
-	// gaji H+1. Jejak hanya memuat jumlah, bukan penerima.
+	// gaji H-1. Jejak hanya memuat jumlah, bukan penerima.
 	ActionPayrollNotified = "payroll.notified"
 
 	// ActionHolidayRefreshed menandai sinkronisasi ulang kalender hari libur
@@ -114,10 +118,87 @@ const (
 	ActionCutiUpdated  = "cuti.updated"
 	ActionCutiApproved = "cuti.approved"
 	ActionCutiRejected = "cuti.rejected"
+	// ActionCutiCanceled menandai pembatalan pengajuan cuti (MENUNGGU
+	// atau DISETUJUI) oleh pemegang permission cuti:approve; saldo yang
+	// terpotong dikembalikan untuk cuti tahunan.
+	ActionCutiCanceled = "cuti.canceled"
+
+	// ActionPemberhentianProposed menandai pengajuan pemberhentian dibuat.
+	ActionPemberhentianProposed = "pemberhentian.proposed"
+	// ActionPemberhentianApproved menandai pengajuan pemberhentian disetujui.
+	ActionPemberhentianApproved = "pemberhentian.approved"
+	// ActionPemberhentianRejected menandai pengajuan pemberhentian ditolak.
+	ActionPemberhentianRejected = "pemberhentian.rejected"
+	// ActionPensiunKonfigurasiCreated menandai penambahan konfigurasi
+	// pensiun per kategori status (effective-dated).
+	ActionPensiunKonfigurasiCreated = "pensiun.konfigurasi.created"
+	// ActionPensiunKonfigurasiUpdated menandai perubahan konfigurasi pensiun.
+	ActionPensiunKonfigurasiUpdated = "pensiun.konfigurasi.updated"
+	// ActionPensiunKonfigurasiDeleted menandai penghapusan konfigurasi pensiun.
+	ActionPensiunKonfigurasiDeleted = "pensiun.konfigurasi.deleted"
+	// ActionPensiunKepesertaanCreated menandai penambahan kepesertaan DPLK pegawai.
+	ActionPensiunKepesertaanCreated = "pensiun.kepesertaan.created"
+	// ActionPensiunKepesertaanUpdated menandai perubahan kepesertaan DPLK pegawai.
+	ActionPensiunKepesertaanUpdated = "pensiun.kepesertaan.updated"
+	// ActionPensiunKepesertaanDeactivated menandai penonaktifan kepesertaan DPLK.
+	ActionPensiunKepesertaanDeactivated = "pensiun.kepesertaan.deactivated"
+	// ActionPerpanjanganCreated menandai perpanjangan kontrak pasca-BUP
+	// dibuat (DEC-083).
+	ActionPerpanjanganCreated = "perpanjangan.created"
+
+	// ActionThrConfigUpdated menandai perubahan konfigurasi THR per tahun
+	// (besaran, persentase, tanggal berlaku) oleh admin atau operator.
+	ActionThrConfigUpdated = "payroll.thr.config.updated"
+
+	// ActionThrConfigDeleted menandai penghapusan konfigurasi THR per tahun.
+	ActionThrConfigDeleted = "payroll.thr.config.deleted"
+
+	// ActionThrGenerated menandai ringkasan pembuatan THR sebuah pegawai
+	// (slip penerimaan terpisah, tanpa potongan normal).
+	ActionThrGenerated = "payroll.thr.generated"
 
 	ActionJabatanCreated  = "jabatan.created"
 	ActionJabatanUpdated  = "jabatan.updated"
 	ActionJabatanArchived = "jabatan.archived"
+
+	// Aksi pembuatan slip oleh mesin hitung.
+	// ActionSlipPublished menandai slip gaji DRAF diterbitkan menjadi
+	// TERBIT (prasyarat konfirmasi pembayaran dan pemberitahuan H-1).
+	ActionSlipPublished = "payroll.slip.published"
+
+	ActionSlipGenerated = "payroll.slip.generated"
+
+	// Aksi area presensi administratif.
+	ActionPinCreated       = "attendance.pin.created"
+	ActionPinDeleted       = "attendance.pin.deleted"
+	ActionPinImported      = "attendance.pin.imported"
+	ActionPresensiUpserted = "attendance.presensi.upserted"
+	ActionPresensiDerived  = "attendance.presensi.derived"
+
+	// Aksi data skala gaji pokok yayasan.
+	ActionSkalaCreated       = "skala.created"
+	ActionSkalaUpdated       = "skala.updated"
+	ActionSkalaDetailCreated = "skala.detail.created"
+	ActionSkalaDetailUpdated = "skala.detail.updated"
+	ActionSkalaDetailDeleted = "skala.detail.deleted"
+
+	// Aksi honor mengajar per SKS (dosen LB).
+	ActionHonorRateCreated     = "honor.rate.created"
+	ActionHonorRateUpdated     = "honor.rate.updated"
+	ActionHonorPeriodeAssigned = "honor.periode.assigned"
+	ActionHonorPeriodeUpdated  = "honor.periode.updated"
+	ActionHonorPeriodeRemoved  = "honor.periode.removed"
+
+	// Aksi BPJS konfigurasi dan kepesertaan.
+	ActionBpjsKonfigurasiCreated = "bpjs.konfigurasi.created"
+	ActionBpjsKonfigurasiUpdated = "bpjs.konfigurasi.updated"
+	ActionBpjsPesertaCreated     = "bpjs.peserta.created"
+	ActionBpjsPesertaUpdated     = "bpjs.peserta.updated"
+
+	// Aksi PPh 21 TER.
+	ActionPPh21TerCreated = "pph21.ter.created"
+	ActionPPh21TerUpdated = "pph21.ter.updated"
+	ActionPPh21TerDeleted = "pph21.ter.deleted"
 )
 
 // Entry menggambarkan satu catatan jejak audit.

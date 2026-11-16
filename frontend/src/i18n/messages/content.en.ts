@@ -1,14 +1,18 @@
 import type { contentMessagesId } from './content.id'
 
 export const contentMessagesEn = {
-  'landing.heroTitle': 'Staff data in one place',
+  'landing.kicker': 'For higher education staff offices',
+  'landing.heroTitle': 'One system for campus staff records',
   'landing.heroLead':
-    'SIMPEG keeps employee records, unit structure, attendance, leave requests, and pay slips in a single database. Each user only sees the parts they are authorised to see.',
+    'SIMPEG brings employee records, unit structure, attendance, leave requests, and pay slips into a single database. Each user opens only what they are authorised to see, and every important change is written to the audit trail.',
   'landing.primaryCta': 'Sign in to SIMPEG',
   'landing.secondaryCta': 'Read about the system',
+  'landing.heroFactRoles': 'Four access roles, data scope follows the assigned unit',
+  'landing.heroFactAudit': 'Important changes are recorded with the actor and the time',
+  'landing.heroFactStack': 'PostgreSQL database, versioned API, web interface',
   'landing.scopeTitle': 'What SIMPEG keeps',
   'landing.scopeLead':
-    'The six groups of data below already have a place in the database schema and the API.',
+    'The eight groups of data below already have a place in the database schema and the API.',
   'landing.scope.employee.title': 'Employee records',
   'landing.scope.employee.body':
     'Identity, contact details, position history, education history, and salary history.',
@@ -27,19 +31,46 @@ export const contentMessagesEn = {
   'landing.scope.performance.title': 'Performance and tridharma',
   'landing.scope.performance.body':
     'Performance targets, appraisals, and education, research, community service, and support activities.',
+  'landing.scope.archive.title': 'Staff documents',
+  'landing.scope.archive.body':
+    'Document archive per employee with file type, size, and validity period.',
+  'landing.scope.audit.title': 'Audit trail',
+  'landing.scope.audit.body':
+    'Append-only record of important changes, with the actor, the time, and the unit.',
+  'landing.cycleTitle': 'One working cycle, from master data to pay slip',
+  'landing.cycleLead':
+    'The order follows the real work of a staff office, not the order of the menu.',
+  'landing.cycleIntro':
+    'Employee and unit records are entered once. Daily activity, approvals, and payroll then run on that same data, so a figure on a pay slip can be traced back to its source.',
+  'landing.cycle.data.title': 'Master data and work units',
+  'landing.cycle.data.body':
+    'Identity, position, education history, and unit structure with its parents and children.',
+  'landing.cycle.daily.title': 'Attendance and leave',
+  'landing.cycle.daily.body':
+    'Daily records, leave requests, quota balances, and approvals by supervisory level.',
+  'landing.cycle.payroll.title': 'Payroll per period',
+  'landing.cycle.payroll.body':
+    'Salary components, pay slips per period, pay dates per unit, and payment confirmation.',
+  'landing.cycle.evaluation.title': 'Appraisal, documents, and audit trail',
+  'landing.cycle.evaluation.body':
+    'Performance targets, tridharma activities, staff documents, and change records that cannot be deleted.',
   'landing.rolesTitle': 'Who uses SIMPEG',
   'landing.rolesLead': 'Access follows your role. Broader roles hold a wider unit scope.',
   'landing.role.admin.title': 'Administrator',
   'landing.role.admin.body':
     'Manages employee data, organisation, payroll, and the audit trail across the institution.',
+  'landing.role.admin.scope': 'Whole organisation',
   'landing.role.operator.title': 'Operator',
   'landing.role.operator.body':
     'Manages employee data and work units within their assigned unit and its descendants.',
+  'landing.role.operator.scope': 'Assigned unit and its descendants',
   'landing.role.atasan.title': 'Supervisor',
   'landing.role.atasan.body':
     'Reviews leave requests and oversees employee data within their assigned unit.',
+  'landing.role.atasan.scope': 'Assigned unit and its descendants',
   'landing.role.pegawai.title': 'Employee',
   'landing.role.pegawai.body': 'Sees their own data, pay slips, and leave requests.',
+  'landing.role.pegawai.scope': 'Own records only',
   'landing.accessTitle': 'How access works',
   'landing.accessLead':
     'There is no self-registration. Accounts are created by the institution administrator.',
@@ -138,4 +169,13 @@ export const contentMessagesEn = {
   'legal.updated': 'Last updated: 12 November 2026',
   'legal.contact':
     'Questions about this document should be filed with the institution administrator.',
+  'seo.siteTitle': 'SIMPEG',
+  'seo.siteDescription':
+    'SIMPEG is a staff information system for managing employee records, organisation, attendance, leave, and payroll.',
+  'seo.landingTitle': 'SIMPEG, Staff Information System',
+  'seo.landingDescription':
+    'One database for employee records, unit structure, attendance, leave requests, and pay slips in higher education institutions.',
+  'seo.loginTitle': 'Sign in to SIMPEG',
+  'seo.loginDescription':
+    'Sign in to SIMPEG to manage employee records, organisation, attendance, leave, and payroll.',
 } as const satisfies Record<keyof typeof contentMessagesId, string>

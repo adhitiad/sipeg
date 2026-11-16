@@ -10,7 +10,7 @@ func All() []any {
 		&KomponenGaji{}, &Gaji{}, &GajiTunjangan{}, &GajiPotongan{}, &HariLibur{},
 		&JadwalGaji{}, &SasaranKinerja{}, &Pengumuman{}, &Notifikasi{},
 		&Lembur{}, &TugasBelajar{}, &Survei{}, &PertanyaanSurvei{}, &JawabanSurvei{},
-		&PartisipasiSurvei{}, &Presensi{}, &MesinAbsensi{}, &AttendanceEvent{},
+		&PartisipasiSurvei{}, &Presensi{}, &MesinAbsensi{}, &MesinAbsensiPin{}, &AttendanceEvent{},
 		&TemplateSidikJari{}, &Role{}, &RiwayatJabatan{}, &RiwayatPendidikan{},
 		&RiwayatGaji{}, &Cuti{}, &TerusanCuti{}, &SaldoCuti{}, &PeriodeSakit{},
 		&Pesangon{}, &UjiKapabilitas{}, &MutasiJabatan{}, &Dokumen{}, &Peringatan{},
@@ -24,5 +24,9 @@ func All() []any {
 		&KeluargaPegawai{}, &RiwayatGolongan{}, &KomponenTunjangan{}, &KomponenPotongan{},
 		&ArsipDokumenPegawai{}, &RiwayatSertifikasi{}, &RiwayatPelatihan{}, &SisterSyncMap{},
 		&RiwayatPenghargaan{}, &Jabatan{},
+		&SkalaGaji{}, &SkalaGajiDetail{}, &KategoriStatusPegawai{},
+		&HonorSksRate{}, &HonorSksPeriode{}, &BpjsKonfigurasi{}, &BpjsPeserta{}, &Pph21TerTarif{}, &ThrKonfigurasi{},
+		&SuratKeputusan{}, &KontrakKerja{}, &PesangonAturan{}, &PensiunKonfigurasi{}, &PensiunKepesertaan{},
+		&RbacPermission{}, &RbacRole{}, &RbacRolePermission{}, &RbacUserRoleScope{},
 	}
 }

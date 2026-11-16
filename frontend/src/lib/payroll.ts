@@ -1,5 +1,6 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { apiRequest } from '@/lib/api'
+import { API_BASE_URL, apiRequest } from '@/lib/api'
+import { getAuthToken } from '@/lib/auth-token'
 import {
   payrollPageSchema,
   payrollScheduleListSchema,
@@ -10,12 +11,12 @@ import {
   type PayrollSlip,
 } from '@/validations/schemas'
 
-export const PAYROLL_SORT_FIELDS = [
-  'periode',
-  'status',
-  'createdAt',
-  'updatedAt',
-] as const
+/**
+ * Kolom urut yang diizinkan backend untuk daftar slip gaji. Backend hanya
+ * menerima createdAt, periode, dan tanggalGaji; kolom lain ditolak dengan
+ * 400 invalid_query.
+ */
+export const PAYROLL_SORT_FIELDS = ['createdAt', 'periode', 'tanggalGaji'] as const
 export type PayrollSortField = (typeof PAYROLL_SORT_FIELDS)[number]
 export type PayrollSortOrder = 'asc' | 'desc'
 
@@ -32,6 +33,42 @@ export const payrollSlipsQueryKey = (params: PayrollListParams) =>
   ['payroll', 'slips', params] as const
 
 export const payrollSlipQueryKey = (id: string) => ['payroll', 'slip', id] as const
+
+/** Mengunduh slip gaji sebagai PDF (token hanya di memori, jadi lewat fetch + blob). */
+export async function downloadSlipPdf(id: string, nomorSlip: string): Promise<void> {
+  const headers: Record<string, string> = {}
+  const token = getAuthToken()
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+  const response = await fetch(`${API_BASE_URL}/payroll/slips/${id}/pdf`, { headers })
+  if (!response.ok) {
+    throw new Error(`PDF slip gagal diunduh (${response.status})`)
+  }
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `slip-${nomorSlip}.pdf`
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
+
+/** Membuat atau mengganti slip DRAF lewat mesin hitung (payroll:manage). */
+export async function generateSlip(data: {
+  userId: string
+  periode: string
+  kategoriStatusId?: string
+  tingkat?: number
+}): Promise<PayrollSlip> {
+  const payload = await apiRequest<unknown>('/payroll/slips/generate', {
+    method: 'POST',
+    body: data,
+  })
+  return payrollSlipSchema.parse(payload)
+}
 
 export async function fetchPayrollSlips(params: PayrollListParams): Promise<PayrollPage> {
   const query = new URLSearchParams({
@@ -63,6 +100,15 @@ export async function confirmPayrollPayment(
   const payload = await apiRequest<unknown>(`/payroll/slips/${id}/payment`, {
     method: 'POST',
     body: data,
+  })
+  return payrollSlipSchema.parse(payload)
+}
+
+/** Menerbitkan slip DRAF menjadi TERBIT (prasyarat konfirmasi pembayaran). */
+export async function publishSlip(id: string): Promise<PayrollSlip> {
+  const payload = await apiRequest<unknown>(`/payroll/slips/${id}/terbit`, {
+    method: 'POST',
+    body: {},
   })
   return payrollSlipSchema.parse(payload)
 }

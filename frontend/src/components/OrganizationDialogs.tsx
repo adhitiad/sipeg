@@ -38,11 +38,13 @@ import {
   type OrganizationUpdate,
 } from '@/validations/schemas'
 
-const createSchema = organizationCreateSchema.extend({
+// Skema update memuat refinement (minimal satu field), sehingga Zod 4 hanya
+// mengizinkan safeExtend untuk mengganti kunci tanpa membuang refinement itu.
+const createSchema = organizationCreateSchema.safeExtend({
   name: z.string().min(1, 'Nama unit wajib diisi').max(200),
 })
 
-const updateSchema = organizationUpdateSchema.extend({
+const updateSchema = organizationUpdateSchema.safeExtend({
   name: z.string().min(1, 'Nama unit wajib diisi').max(200).optional(),
 })
 

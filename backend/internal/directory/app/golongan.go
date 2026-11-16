@@ -26,8 +26,8 @@ func NewGolonganService(repo repository.GolonganRepository, policy auth.Policy, 
 
 func (s *GolonganService) List(ctx context.Context, principal auth.Principal, options listing.Options) (listing.Page[models.RiwayatGolongan], error) {
 	switch {
-	case allows(s.policy, principal, "golongan:read:any"):
-	case allows(s.policy, principal, "golongan:read:homebase"):
+	case allows(ctx, s.policy, principal, "golongan:read:any"):
+	case allows(ctx, s.policy, principal, "golongan:read:homebase"):
 		scope, err := s.scope.resolve(ctx, principal)
 		if err != nil {
 			return listing.Page[models.RiwayatGolongan]{}, err
@@ -36,7 +36,7 @@ func (s *GolonganService) List(ctx context.Context, principal auth.Principal, op
 			return listing.EmptyPage[models.RiwayatGolongan](options.Page, options.PageSize), nil
 		}
 		options.ScopeHomebaseIDs = scope.List()
-	case allows(s.policy, principal, "golongan:read:self"):
+	case allows(ctx, s.policy, principal, "golongan:read:self"):
 		options.UserID = principal.UserID
 	default:
 		return listing.Page[models.RiwayatGolongan]{}, domain.ErrForbidden
@@ -52,7 +52,7 @@ func (s *GolonganService) List(ctx context.Context, principal auth.Principal, op
 }
 
 func (s *GolonganService) Get(ctx context.Context, principal auth.Principal, id string) (models.RiwayatGolongan, error) {
-	needsScope := allows(s.policy, principal, "golongan:read:homebase") && !allows(s.policy, principal, "golongan:read:any")
+	needsScope := allows(ctx, s.policy, principal, "golongan:read:homebase") && !allows(ctx, s.policy, principal, "golongan:read:any")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.RiwayatGolongan{}, err
@@ -61,7 +61,7 @@ func (s *GolonganService) Get(ctx context.Context, principal auth.Principal, id 
 	if err != nil {
 		return models.RiwayatGolongan{}, err
 	}
-	if !s.canRead(scoped, item) {
+	if !s.canRead(ctx, scoped, item) {
 		return models.RiwayatGolongan{}, domain.ErrForbidden
 	}
 	return item, nil
@@ -71,12 +71,12 @@ func (s *GolonganService) Create(ctx context.Context, principal auth.Principal, 
 	if err := input.Validate(); err != nil {
 		return models.RiwayatGolongan{}, err
 	}
-	needsScope := allows(s.policy, principal, "golongan:create:homebase") && !allows(s.policy, principal, "golongan:create")
+	needsScope := allows(ctx, s.policy, principal, "golongan:create:homebase") && !allows(ctx, s.policy, principal, "golongan:create")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.RiwayatGolongan{}, err
 	}
-	if !s.canCreate(scoped, &input.UserID) {
+	if !s.canCreate(ctx, scoped, &input.UserID) {
 		return models.RiwayatGolongan{}, domain.ErrForbidden
 	}
 	tmt, err := time.Parse("2006-01-02", input.TMT)
@@ -101,7 +101,7 @@ func (s *GolonganService) Update(ctx context.Context, principal auth.Principal, 
 	if err := patch.Validate(); err != nil {
 		return models.RiwayatGolongan{}, err
 	}
-	needsScope := allows(s.policy, principal, "golongan:update:homebase") && !allows(s.policy, principal, "golongan:update:any")
+	needsScope := allows(ctx, s.policy, principal, "golongan:update:homebase") && !allows(ctx, s.policy, principal, "golongan:update:any")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.RiwayatGolongan{}, err
@@ -110,14 +110,14 @@ func (s *GolonganService) Update(ctx context.Context, principal auth.Principal, 
 	if err != nil {
 		return models.RiwayatGolongan{}, err
 	}
-	if !s.canWrite(scoped, item) {
+	if !s.canWrite(ctx, scoped, item) {
 		return models.RiwayatGolongan{}, domain.ErrForbidden
 	}
 	return s.repo.UpdateGolongan(ctx, principal.UserID, id, patch)
 }
 
 func (s *GolonganService) Archive(ctx context.Context, principal auth.Principal, id string) error {
-	needsScope := allows(s.policy, principal, "golongan:archive:homebase") && !allows(s.policy, principal, "golongan:archive")
+	needsScope := allows(ctx, s.policy, principal, "golongan:archive:homebase") && !allows(ctx, s.policy, principal, "golongan:archive")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return err
@@ -126,7 +126,7 @@ func (s *GolonganService) Archive(ctx context.Context, principal auth.Principal,
 	if err != nil {
 		return err
 	}
-	if !s.canArchive(scoped, item) {
+	if !s.canArchive(ctx, scoped, item) {
 		return domain.ErrForbidden
 	}
 	return s.repo.ArchiveGolongan(ctx, principal.UserID, id)
@@ -143,7 +143,7 @@ func (s *GolonganService) scopedPrincipal(ctx context.Context, principal auth.Pr
 	return scopedPrincipal{principal: principal, scope: scope}, nil
 }
 
-func (s *GolonganService) canRead(scoped scopedPrincipal, item models.RiwayatGolongan) bool {
+func (s *GolonganService) canRead(ctx context.Context, scoped scopedPrincipal, item models.RiwayatGolongan) bool {
 	for _, permission := range []auth.Permission{"golongan:read:any", "golongan:read:homebase", "golongan:read:self"} {
 		if auth.CanAccessUserInScope(scoped.principal, item.UserId, item.UserId, permission, s.policy, scoped.scope) {
 			return true
@@ -152,11 +152,11 @@ func (s *GolonganService) canRead(scoped scopedPrincipal, item models.RiwayatGol
 	return false
 }
 
-func (s *GolonganService) canCreate(scoped scopedPrincipal, userID *string) bool {
-	if allows(s.policy, scoped.principal, "golongan:create") {
+func (s *GolonganService) canCreate(ctx context.Context, scoped scopedPrincipal, userID *string) bool {
+	if allows(ctx, s.policy, scoped.principal, "golongan:create") {
 		return true
 	}
-	if !allows(s.policy, scoped.principal, "golongan:create:homebase") {
+	if !allows(ctx, s.policy, scoped.principal, "golongan:create:homebase") {
 		return false
 	}
 	if userID == nil || *userID == "" {
@@ -165,7 +165,7 @@ func (s *GolonganService) canCreate(scoped scopedPrincipal, userID *string) bool
 	return scoped.scope.Contains(*userID)
 }
 
-func (s *GolonganService) canWrite(scoped scopedPrincipal, item models.RiwayatGolongan) bool {
+func (s *GolonganService) canWrite(ctx context.Context, scoped scopedPrincipal, item models.RiwayatGolongan) bool {
 	for _, permission := range []auth.Permission{"golongan:update:any", "golongan:update:homebase"} {
 		if auth.CanAccessUserInScope(scoped.principal, item.UserId, item.UserId, permission, s.policy, scoped.scope) {
 			return true
@@ -174,7 +174,7 @@ func (s *GolonganService) canWrite(scoped scopedPrincipal, item models.RiwayatGo
 	return false
 }
 
-func (s *GolonganService) canArchive(scoped scopedPrincipal, item models.RiwayatGolongan) bool {
+func (s *GolonganService) canArchive(ctx context.Context, scoped scopedPrincipal, item models.RiwayatGolongan) bool {
 	for _, permission := range []auth.Permission{"golongan:archive", "golongan:archive:homebase"} {
 		if auth.CanAccessUserInScope(scoped.principal, item.UserId, item.UserId, permission, s.policy, scoped.scope) {
 			return true

@@ -50,6 +50,7 @@ type emailPayload struct {
 	UserID    string `json:"userId"`
 	Subject   string `json:"subject"`
 	Body      string `json:"body"`
+	Token     string `json:"token,omitempty"`
 }
 
 // SalaryPaidPayload menyusun payload notifikasi gaji.
@@ -127,11 +128,13 @@ func (d *EmailDeliverer) deliverSalaryNotice(ctx context.Context, payload emailP
 	return d.Sender.Send(ctx, SalaryPaidNotice(payload.Recipient, payload.Name, payload.Period, link))
 }
 
-// deliverSlipAvailable mengirim pemberitahuan ketersediaan slip gaji.
+// deliverSlipAvailable mengirim pemberitahuan ketersediaan slip gaji H-1.
 //
 // Pemberitahuan ini bukan bukti pembayaran: tidak ada pemeriksaan konfirmasi
 // pembayaran di sini, dan isi pesannya tidak memuat nominal maupun klaim bahwa
-// gaji sudah dibayar. Pesan hanya mengarahkan pegawai ke halaman penggajian.
+// gaji sudah dibayar. QR dan tautan menunjuk ke halaman verifikasi publik
+// slip; tanpa token (slip lama), tautan jatuh ke halaman penggajian yang
+// terautentikasi.
 func (d *EmailDeliverer) deliverSlipAvailable(ctx context.Context, payload emailPayload) error {
 	if strings.TrimSpace(payload.Recipient) == "" || strings.TrimSpace(payload.Period) == "" {
 		return permanentError{err: fmt.Errorf("%w: penerima dan periode wajib diisi", ErrInvalidPayload)}
@@ -141,7 +144,16 @@ func (d *EmailDeliverer) deliverSlipAvailable(ctx context.Context, payload email
 	}
 
 	link := strings.TrimRight(d.BaseURL, "/") + "/penggajian?periode=" + payload.Period
-	return d.Sender.Send(ctx, SlipAvailableNotice(payload.Recipient, payload.Name, payload.Period, link))
+	if token := strings.TrimSpace(payload.Token); token != "" {
+		// Tautan verifikasi publik slip: QR dan tautan menunjuk ke halaman
+		// yang sama; tanpa nominal.
+		link = strings.TrimRight(d.BaseURL, "/") + "/verify/slip/" + token
+	}
+	notice, err := SlipAvailableNotice(payload.Recipient, payload.Name, payload.Period, link)
+	if err != nil {
+		return permanentError{err: fmt.Errorf("%w: %s", ErrInvalidPayload, err.Error())}
+	}
+	return d.Sender.Send(ctx, notice)
 }
 
 // deliverGeneric mengirim pemberitahuan umum tanpa data keuangan.

@@ -1,13 +1,20 @@
 import { useMemo, useState, type ChangeEvent } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { ShieldAlert } from 'lucide-react'
-import AttendanceTable from '@/components/AttendanceTable'
+import AttendanceTable, { type AttendancePageSize } from '@/components/AttendanceTable'
 import LoadingRadar from '@/components/LoadingRadar'
 import RetryButton from '@/components/RetryButton'
 import { Input } from '@/components/ui/input'
 import { useLocale, useMessages } from '@/i18n/locale-context'
-import { useAttendanceRecords, type AttendanceListParams } from '@/lib/attendance'
+import {
+  ATTENDANCE_SORT_FIELDS,
+  useAttendanceRecords,
+  type AttendanceListParams,
+  type AttendanceSortField,
+  type AttendanceSortOrder,
+} from '@/lib/attendance'
 import { useSession } from '@/lib/session'
+import { useTableControls, visibleRange } from '@/lib/table-state'
 
 const MS_PER_DAY = 86_400_000
 
@@ -47,37 +54,40 @@ function AttendanceRecordsPage() {
   const today = useMemo(() => jakartaToday(), [])
   const [from, setFrom] = useState(() => `${today.slice(0, 7)}-01`)
   const [to, setTo] = useState(today)
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState<10 | 25 | 50 | 100>(20 as 10 | 25 | 50 | 100)
-  const [search, setSearch] = useState('')
-  const [sort, setSort] = useState<'date'>('date')
-  const [order, setOrder] = useState<'asc' | 'desc'>('asc')
   const [status, setStatus] = useState<string | null>(null)
+  const controls = useTableControls<AttendanceSortField>({
+    sortFields: ATTENDANCE_SORT_FIELDS,
+    initialSort: 'tanggal',
+    initialOrder: 'desc',
+    initialPageSize: 20,
+  })
+  const { sort, order, page, pageSize, resetPage } = controls
 
   const rangeDays = from && to ? daysBetween(from, to) : 0
   const rangeValid = from !== '' && to !== '' && from <= to && rangeDays <= 365
 
   const params: AttendanceListParams = useMemo(
-    () => ({ page, pageSize, from, to, search, sort, order, status }),
-    [page, pageSize, from, to, search, sort, order, status],
+    () => ({ page, pageSize, from, to, sort, order, status }),
+    [page, pageSize, from, to, sort, order, status],
   )
 
   const query = useAttendanceRecords(params, rangeValid)
 
   function handleFromChange(value: string) {
     setFrom(value)
-    setPage(1)
+    resetPage()
   }
 
   function handleToChange(value: string) {
     setTo(value)
-    setPage(1)
+    resetPage()
   }
 
-  function handleSortChange(sortField: 'date', nextOrder: 'asc' | 'desc') {
-    setSort(sortField)
-    setOrder(nextOrder)
-    setPage(1)
+  function handleSortChange(
+    sortField: AttendanceSortField,
+    nextOrder: AttendanceSortOrder,
+  ) {
+    controls.applySort(sortField, nextOrder)
   }
 
   if (session.data && !canReadSelf) {
@@ -102,10 +112,7 @@ function AttendanceRecordsPage() {
   const data = query.data
   const localeTag = locale === 'id' ? 'id-ID' : 'en-US'
   const totalItems = data?.totalItems ?? 0
-  const [rangeFrom, rangeTo] =
-    totalItems === 0
-      ? [0, 0]
-      : [(page - 1) * pageSize + 1, Math.min(page * pageSize, totalItems)]
+  const [rangeFrom, rangeTo] = visibleRange(page, pageSize, totalItems)
 
   const labels = {
     caption: t('attendance.tableCaption'),
@@ -114,28 +121,22 @@ function AttendanceRecordsPage() {
     status: t('attendance.colStatus'),
     note: t('attendance.colNote'),
     source: t('attendance.colSource'),
-    resultLabel: t('attendance.resultCount', {
+    emptyTitle: t('attendance.emptyTitle'),
+    emptyDescription: t('attendance.emptyDescription'),
+    loadingLabel: t('common.loadingTable'),
+    resultLabel: t('common.resultCount', {
       from: new Intl.NumberFormat(localeTag).format(rangeFrom),
       to: new Intl.NumberFormat(localeTag).format(rangeTo),
       total: new Intl.NumberFormat(localeTag).format(totalItems),
     }),
-    refreshingLabel: t('attendance.refreshing'),
-    prevPage: t('attendance.prevPage'),
-    nextPage: t('attendance.nextPage'),
-    pageInfo: t('attendance.pageInfo', {
-      page: String(page),
-      total: String(Math.max(data?.totalPages ?? 1, 1)),
-    }),
-    searchLabel: t('attendance.teamSearchLabel'),
-    searchPlaceholder: t('attendance.teamSearchPlaceholder'),
+    pageInfo: t('common.pageInfo'),
+    prevPage: t('common.prevPage'),
+    nextPage: t('common.nextPage'),
+    pageSizeLabel: t('common.pageSize'),
+    itemsPerPage: t('common.itemsPerPage'),
+    sortBy: t('common.sortBy'),
     statusLabel: t('attendance.colStatus'),
     statusAll: t('attendance.statusAll'),
-    pageSizeLabel: t('attendance.pageSize'),
-    itemsPerPage: t('attendance.teamResultCount', {
-      from: new Intl.NumberFormat(localeTag).format(rangeFrom),
-      to: new Intl.NumberFormat(localeTag).format(rangeTo),
-      total: new Intl.NumberFormat(localeTag).format(totalItems),
-    }),
     statusHadir: t('attendance.statusHadir'),
     statusIzin: t('attendance.statusIzin'),
     statusSakit: t('attendance.statusSakit'),
@@ -233,19 +234,20 @@ function AttendanceRecordsPage() {
         <AttendanceTable
           items={data.items}
           page={page}
-          pageSize={pageSize}
+          pageSize={pageSize as AttendancePageSize}
           totalPages={data.totalPages}
           totalItems={data.totalItems}
           isFetching={query.isFetching}
-          search={search}
           sort={sort}
           order={order}
           status={status}
-          onPageChange={setPage}
-          onPageSizeChange={setPageSize}
-          onSearchChange={setSearch}
+          onPageChange={controls.setPage}
+          onPageSizeChange={(size) => controls.setPageSize(size as AttendancePageSize)}
           onSortChange={handleSortChange}
-          onStatusChange={setStatus}
+          onStatusChange={(value) => {
+            setStatus(value)
+            resetPage()
+          }}
           labels={labels}
         />
       )}

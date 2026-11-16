@@ -17,7 +17,7 @@ import (
 // JobKindAuditCleanup menandai pekerjaan pembersihan jejak audit.
 const JobKindAuditCleanup = "audit.cleanup"
 
-// JobKindPayrollNotify menandai pekerjaan pemberitahuan slip gaji H+1.
+// JobKindPayrollNotify menandai pekerjaan pemberitahuan slip gaji H-1.
 const JobKindPayrollNotify = "payroll.notify"
 
 // HeaderMessageID memuat id pesan QStash pada header callback.
@@ -84,7 +84,7 @@ func (api qstashAPI) auditCleanup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": deleted})
 }
 
-// payrollNotify menjalankan pemberitahuan ketersediaan slip gaji H+1.
+// payrollNotify menjalankan pemberitahuan ketersediaan slip gaji H-1.
 //
 // Pekerjaan ini idempoten: slip yang pesannya sudah diantrekan dilewati oleh
 // kunci idempotensi antrean keluar, sehingga percobaan ulang QStash maupun

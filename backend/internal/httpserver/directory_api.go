@@ -155,11 +155,12 @@ func RegisterDirectoryRoutes(mux *http.ServeMux, resolver auth.SessionResolver, 
 	}
 	if api.leave != nil {
 		mux.Handle("GET "+APIPrefix+"/cuti", protectedAny([]auth.Permission{"cuti:read:any", "cuti:read:homebase", "cuti:read:self"}, http.HandlerFunc(api.listCuti)))
-		mux.Handle("POST "+APIPrefix+"/cuti", protectedAny([]auth.Permission{"cuti:create", "cuti:create:homebase"}, http.HandlerFunc(api.createCuti)))
+		mux.Handle("POST "+APIPrefix+"/cuti", protectedAny([]auth.Permission{"cuti:create", "cuti:create:any", "cuti:create:homebase"}, http.HandlerFunc(api.createCuti)))
 		mux.Handle("GET "+APIPrefix+"/cuti/{cutiId}", protectedAny([]auth.Permission{"cuti:read:any", "cuti:read:homebase", "cuti:read:self"}, http.HandlerFunc(api.getCuti)))
 		mux.Handle("PATCH "+APIPrefix+"/cuti/{cutiId}", protectedAny([]auth.Permission{"cuti:update:any", "cuti:update:homebase"}, http.HandlerFunc(api.updateCuti)))
 		mux.Handle("POST "+APIPrefix+"/cuti/{cutiId}/approve", protectedAny([]auth.Permission{"cuti:approve:any", "cuti:approve:homebase"}, http.HandlerFunc(api.approveCuti)))
 		mux.Handle("POST "+APIPrefix+"/cuti/{cutiId}/reject", protectedAny([]auth.Permission{"cuti:approve:any", "cuti:approve:homebase"}, http.HandlerFunc(api.rejectCuti)))
+		mux.Handle("POST "+APIPrefix+"/cuti/{cutiId}/cancel", protectedAny([]auth.Permission{"cuti:approve:any", "cuti:approve:homebase", "cuti:cancel:self"}, http.HandlerFunc(api.cancelCuti)))
 	}
 
 	// ═══════════════════════════ SKP ═══════════════════════════

@@ -65,6 +65,9 @@ type Config struct {
 	PIIEncryptionKey []byte
 	// AppBaseURL adalah origin aplikasi untuk tautan pada pemberitahuan.
 	AppBaseURL string
+	// PayrollSlipOrgName adalah nama instansi yang dicetak pada kop slip
+	// gaji. Kosong berarti slip menampilkan label generik.
+	PayrollSlipOrgName string
 
 	// Google OAuth configuration for Better Auth runtime.
 	GoogleClientID     string
@@ -174,6 +177,7 @@ func Load() (Config, error) {
 		PIIEncryptionKey:        piiEncryptionKey,
 		SessionLifetime:         envDuration("SESSION_LIFETIME", defaultSessionLifetime),
 		AppBaseURL:              strings.TrimSpace(os.Getenv("APP_BASE_URL")),
+		PayrollSlipOrgName:      strings.TrimSpace(os.Getenv("PAYROLL_SLIP_ORG_NAME")),
 		GoogleClientID:          strings.TrimSpace(os.Getenv("GOOGLE_CLIENT_ID")),
 		GoogleClientSecret:      strings.TrimSpace(os.Getenv("GOOGLE_CLIENT_SECRET")),
 		AllowedEmailDomains:     splitList(os.Getenv("ALLOWED_EMAIL_DOMAINS")),

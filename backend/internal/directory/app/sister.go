@@ -26,8 +26,8 @@ func NewSisterService(repo repository.SisterRepository, policy auth.Policy, scop
 
 func (s *SisterService) List(ctx context.Context, principal auth.Principal, options listing.Options) (listing.Page[models.SisterSyncMap], error) {
 	switch {
-	case allows(s.policy, principal, "sister:read:any"):
-	case allows(s.policy, principal, "sister:read:homebase"):
+	case allows(ctx, s.policy, principal, "sister:read:any"):
+	case allows(ctx, s.policy, principal, "sister:read:homebase"):
 		scope, err := s.scope.resolve(ctx, principal)
 		if err != nil {
 			return listing.Page[models.SisterSyncMap]{}, err
@@ -36,7 +36,7 @@ func (s *SisterService) List(ctx context.Context, principal auth.Principal, opti
 			return listing.EmptyPage[models.SisterSyncMap](options.Page, options.PageSize), nil
 		}
 		options.ScopeHomebaseIDs = scope.List()
-	case allows(s.policy, principal, "sister:read:self"):
+	case allows(ctx, s.policy, principal, "sister:read:self"):
 		options.UserID = principal.UserID
 	default:
 		return listing.Page[models.SisterSyncMap]{}, domain.ErrForbidden
@@ -52,7 +52,7 @@ func (s *SisterService) List(ctx context.Context, principal auth.Principal, opti
 }
 
 func (s *SisterService) Get(ctx context.Context, principal auth.Principal, id string) (models.SisterSyncMap, error) {
-	needsScope := allows(s.policy, principal, "sister:read:homebase") && !allows(s.policy, principal, "sister:read:any")
+	needsScope := allows(ctx, s.policy, principal, "sister:read:homebase") && !allows(ctx, s.policy, principal, "sister:read:any")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.SisterSyncMap{}, err
@@ -61,7 +61,7 @@ func (s *SisterService) Get(ctx context.Context, principal auth.Principal, id st
 	if err != nil {
 		return models.SisterSyncMap{}, err
 	}
-	if !s.canRead(scoped, item) {
+	if !s.canRead(ctx, scoped, item) {
 		return models.SisterSyncMap{}, domain.ErrForbidden
 	}
 	return item, nil
@@ -71,12 +71,12 @@ func (s *SisterService) Create(ctx context.Context, principal auth.Principal, in
 	if err := input.Validate(); err != nil {
 		return models.SisterSyncMap{}, err
 	}
-	needsScope := allows(s.policy, principal, "sister:create:homebase") && !allows(s.policy, principal, "sister:create")
+	needsScope := allows(ctx, s.policy, principal, "sister:create:homebase") && !allows(ctx, s.policy, principal, "sister:create")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.SisterSyncMap{}, err
 	}
-	if !s.canCreate(scoped, &input.UserID) {
+	if !s.canCreate(ctx, scoped, &input.UserID) {
 		return models.SisterSyncMap{}, domain.ErrForbidden
 	}
 	item := models.SisterSyncMap{
@@ -95,7 +95,7 @@ func (s *SisterService) Update(ctx context.Context, principal auth.Principal, id
 	if err := patch.Validate(); err != nil {
 		return models.SisterSyncMap{}, err
 	}
-	needsScope := allows(s.policy, principal, "sister:update:homebase") && !allows(s.policy, principal, "sister:update:any")
+	needsScope := allows(ctx, s.policy, principal, "sister:update:homebase") && !allows(ctx, s.policy, principal, "sister:update:any")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.SisterSyncMap{}, err
@@ -104,14 +104,14 @@ func (s *SisterService) Update(ctx context.Context, principal auth.Principal, id
 	if err != nil {
 		return models.SisterSyncMap{}, err
 	}
-	if !s.canWrite(scoped, item) {
+	if !s.canWrite(ctx, scoped, item) {
 		return models.SisterSyncMap{}, domain.ErrForbidden
 	}
 	return s.repo.UpdateSister(ctx, principal.UserID, id, patch)
 }
 
 func (s *SisterService) Archive(ctx context.Context, principal auth.Principal, id string) error {
-	needsScope := allows(s.policy, principal, "sister:archive:homebase") && !allows(s.policy, principal, "sister:archive")
+	needsScope := allows(ctx, s.policy, principal, "sister:archive:homebase") && !allows(ctx, s.policy, principal, "sister:archive")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return err
@@ -120,7 +120,7 @@ func (s *SisterService) Archive(ctx context.Context, principal auth.Principal, i
 	if err != nil {
 		return err
 	}
-	if !s.canArchive(scoped, item) {
+	if !s.canArchive(ctx, scoped, item) {
 		return domain.ErrForbidden
 	}
 	return s.repo.ArchiveSister(ctx, principal.UserID, id)
@@ -137,7 +137,7 @@ func (s *SisterService) scopedPrincipal(ctx context.Context, principal auth.Prin
 	return scopedPrincipal{principal: principal, scope: scope}, nil
 }
 
-func (s *SisterService) canRead(scoped scopedPrincipal, item models.SisterSyncMap) bool {
+func (s *SisterService) canRead(ctx context.Context, scoped scopedPrincipal, item models.SisterSyncMap) bool {
 	for _, permission := range []auth.Permission{"sister:read:any", "sister:read:homebase", "sister:read:self"} {
 		if auth.CanAccessUserInScope(scoped.principal, item.UserId, item.UserId, permission, s.policy, scoped.scope) {
 			return true
@@ -146,11 +146,11 @@ func (s *SisterService) canRead(scoped scopedPrincipal, item models.SisterSyncMa
 	return false
 }
 
-func (s *SisterService) canCreate(scoped scopedPrincipal, userID *string) bool {
-	if allows(s.policy, scoped.principal, "sister:create") {
+func (s *SisterService) canCreate(ctx context.Context, scoped scopedPrincipal, userID *string) bool {
+	if allows(ctx, s.policy, scoped.principal, "sister:create") {
 		return true
 	}
-	if !allows(s.policy, scoped.principal, "sister:create:homebase") {
+	if !allows(ctx, s.policy, scoped.principal, "sister:create:homebase") {
 		return false
 	}
 	if userID == nil || *userID == "" {
@@ -159,7 +159,7 @@ func (s *SisterService) canCreate(scoped scopedPrincipal, userID *string) bool {
 	return scoped.scope.Contains(*userID)
 }
 
-func (s *SisterService) canWrite(scoped scopedPrincipal, item models.SisterSyncMap) bool {
+func (s *SisterService) canWrite(ctx context.Context, scoped scopedPrincipal, item models.SisterSyncMap) bool {
 	for _, permission := range []auth.Permission{"sister:update:any", "sister:update:homebase"} {
 		if auth.CanAccessUserInScope(scoped.principal, item.UserId, item.UserId, permission, s.policy, scoped.scope) {
 			return true
@@ -168,7 +168,7 @@ func (s *SisterService) canWrite(scoped scopedPrincipal, item models.SisterSyncM
 	return false
 }
 
-func (s *SisterService) canArchive(scoped scopedPrincipal, item models.SisterSyncMap) bool {
+func (s *SisterService) canArchive(ctx context.Context, scoped scopedPrincipal, item models.SisterSyncMap) bool {
 	for _, permission := range []auth.Permission{"sister:archive", "sister:archive:homebase"} {
 		if auth.CanAccessUserInScope(scoped.principal, item.UserId, item.UserId, permission, s.policy, scoped.scope) {
 			return true
@@ -179,7 +179,7 @@ func (s *SisterService) canArchive(scoped scopedPrincipal, item models.SisterSyn
 
 // SyncNow memperbarui waktu sinkronisasi terakhir.
 func (s *SisterService) SyncNow(ctx context.Context, principal auth.Principal, id string) (models.SisterSyncMap, error) {
-	if !allows(s.policy, principal, "sister:manage") {
+	if !allows(ctx, s.policy, principal, "sister:manage") {
 		return models.SisterSyncMap{}, domain.ErrForbidden
 	}
 	now := time.Now()

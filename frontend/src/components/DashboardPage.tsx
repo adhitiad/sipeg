@@ -42,6 +42,7 @@ function StatCard({
 }
 
 function StatusBar({ active, inactive }: { active: number; inactive: number }) {
+  const t = useMessages()
   const total = active + inactive
   const activePct = total === 0 ? 0 : Math.round((active / total) * 100)
   const inactivePct = total === 0 ? 0 : 100 - activePct
@@ -50,7 +51,16 @@ function StatusBar({ active, inactive }: { active: number; inactive: number }) {
       <div
         className="flex h-3 w-full overflow-hidden rounded-full bg-[var(--surface-strong)]"
         role="img"
-        aria-label={`Aktif ${activePct} persen, nonaktif ${inactivePct} persen`}
+        aria-label={
+          t('employees.statusActive') +
+          ' ' +
+          activePct +
+          '%, ' +
+          t('employees.statusInactive') +
+          ' ' +
+          inactivePct +
+          '%'
+        }
       >
         <span className="bg-[var(--lagoon)]" style={{ width: `${activePct}%` }} />
         <span className="bg-[var(--sea-ink-soft)]" style={{ width: `${inactivePct}%` }} />
@@ -58,14 +68,14 @@ function StatusBar({ active, inactive }: { active: number; inactive: number }) {
       <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-[var(--sea-ink-soft)]">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-full bg-[var(--lagoon)]" aria-hidden="true" />
-          Aktif
+          {t('employees.statusActive')}
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span
             className="h-2 w-2 rounded-full bg-[var(--sea-ink-soft)]"
             aria-hidden="true"
           />
-          Nonaktif
+          {t('employees.statusInactive')}
         </span>
       </div>
     </div>

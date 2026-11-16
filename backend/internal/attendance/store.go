@@ -24,6 +24,14 @@ type RecordFilter struct {
 	Until    time.Time
 	Page     int
 	PageSize int
+	// Sort adalah kunci sort dari allowlist RekamSortFields.
+	Sort string
+	// Order adalah arah pengurutan: "asc" atau "desc".
+	Order string
+	// Status menyaring status presensi; kosong berarti semua status.
+	Status string
+	// Search menyaring nama pegawai pada rekam pribadi.
+	Search string
 }
 
 type RecordPage struct {

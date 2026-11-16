@@ -1,6 +1,7 @@
+import { useMemo } from 'react'
 import { Link } from '@tanstack/react-router'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
-import SortIcon from '@/components/SortIcon'
+import type { ColumnDef } from '@tanstack/react-table'
+import { DataTable } from '@/components/DataTable'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -9,16 +10,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { useMessages } from '@/i18n/locale-context'
+import { PAYROLL_SORT_FIELDS } from '@/lib/payroll'
+import type { PayrollSortField, PayrollSortOrder } from '@/lib/payroll'
+import { visibleRange } from '@/lib/table-state'
 import type { PayrollSlip } from '@/validations/schemas'
 
 const PAGE_SIZES = [10, 25, 50, 100] as const
@@ -33,15 +28,21 @@ type PayrollSlipsTableProps = {
   isFetching: boolean
   search: string
   status: string | null
-  sort: 'periode' | 'status' | 'createdAt' | 'updatedAt'
-  order: 'asc' | 'desc'
+  sort: PayrollSortField
+  order: PayrollSortOrder
   onPageChange: (page: number) => void
   onPageSizeChange: (size: PayrollPageSize) => void
   onSearchChange: (value: string) => void
   onStatusChange: (value: string | null) => void
-  onSortChange: (field: 'periode' | 'status' | 'createdAt' | 'updatedAt') => void
+  onSortChange: (field: PayrollSortField, order: PayrollSortOrder) => void
 }
 
+/**
+ * Tabel slip gaji. Backend memegang penyaringan, pengurutan, dan pemotongan
+ * baris, jadi tabel ini hanya meneruskan pilihan pengguna ke mesin tabel
+ * bersama. Kolom status tidak dapat diurutkan karena di luar allowlist
+ * backend.
+ */
 export default function PayrollSlipsTable({
   slips,
   page,
@@ -60,18 +61,94 @@ export default function PayrollSlipsTable({
   onSortChange,
 }: PayrollSlipsTableProps) {
   const t = useMessages()
-  const safeTotalPages = Math.max(1, totalPages)
-  const canPrev = page > 1
-  const canNext = page < safeTotalPages
+  const [from, to] = visibleRange(page, pageSize, totalItems)
+
+  const columns = useMemo<ColumnDef<PayrollSlip, unknown>[]>(
+    () => [
+      {
+        id: 'periode',
+        accessorFn: (row) => row.periode,
+        header: t('payroll.colPeriod'),
+        cell: ({ row }) => {
+          const isThr = row.original.pendapatan?.some((item) => item.jenis === 'THR')
+          return (
+            <span className="inline-flex items-center gap-2 whitespace-normal text-[var(--sea-ink)]">
+              {row.original.periodeLabel ?? row.original.periode}
+              {isThr ? (
+                <span className="inline-flex items-center rounded-full border border-[var(--chip-line)] bg-[var(--chip-bg)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[var(--sea-ink)]">
+                  {t('payroll.thrBadge')}
+                </span>
+              ) : null}
+            </span>
+          )
+        },
+      },
+      {
+        id: 'nomorSlip',
+        accessorFn: (row) => row.nomorSlip,
+        header: t('payroll.colSlipNumber'),
+        cell: ({ row }) => (
+          <span className="font-medium break-words whitespace-normal">
+            {row.original.nomorSlip}
+          </span>
+        ),
+      },
+      {
+        id: 'nama',
+        accessorFn: (row) => row.nama ?? '',
+        header: t('payroll.colEmployee'),
+        cell: ({ row }) => (
+          <span className="whitespace-normal text-[var(--sea-ink-soft)]">
+            {row.original.nama ?? '-'}
+          </span>
+        ),
+      },
+      {
+        id: 'status',
+        accessorFn: (row) => row.status,
+        header: t('payroll.colStatus'),
+        cell: ({ row }) => (
+          <span className="whitespace-normal text-[var(--sea-ink-soft)]">
+            {row.original.statusLabel ?? row.original.status}
+          </span>
+        ),
+      },
+      {
+        id: 'totalGaji',
+        accessorFn: (row) => row.totalGaji,
+        header: t('payroll.colTotal'),
+        cell: ({ row }) => (
+          <span className="font-medium whitespace-normal text-[var(--sea-ink)]">
+            {row.original.totalGaji}
+          </span>
+        ),
+      },
+      {
+        id: 'aksi',
+        header: () => <span className="sr-only">{t('payroll.viewDetail')}</span>,
+        cell: ({ row }) => (
+          <Link
+            to="/payroll/slips/$payrollId"
+            params={{ payrollId: row.original.id }}
+            className="inline-flex items-center rounded-full border border-[var(--chip-line)] bg-[var(--chip-bg)] px-3 py-1 text-xs font-semibold text-[var(--sea-ink)] transition hover:bg-[var(--link-bg-hover)]"
+          >
+            {t('payroll.viewDetail')}
+          </Link>
+        ),
+      },
+    ],
+    [t],
+  )
 
   return (
-    <div>
-      <div className="mb-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-end">
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
         <label className="grid gap-1">
-          <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--kicker)]">
+          <span className="text-xs font-semibold tracking-[0.16em] text-[var(--kicker)] uppercase">
             {t('payroll.searchLabel')}
           </span>
           <Input
+            type="search"
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder={t('payroll.searchPlaceholder')}
@@ -79,14 +156,17 @@ export default function PayrollSlipsTable({
           />
         </label>
         <label className="grid gap-1">
-          <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--kicker)]">
+          <span className="text-xs font-semibold tracking-[0.16em] text-[var(--kicker)] uppercase">
             {t('payroll.filterStatus')}
           </span>
           <Select
             value={status ?? 'ALL'}
             onValueChange={(value) => onStatusChange(value === 'ALL' ? null : value)}
           >
-            <SelectTrigger className="h-11 w-[180px]">
+            <SelectTrigger
+              className="h-11 w-[180px]"
+              aria-label={t('payroll.filterStatus')}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -97,136 +177,42 @@ export default function PayrollSlipsTable({
             </SelectContent>
           </Select>
         </label>
-        <label className="grid gap-1">
-          <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--kicker)]">
-            {t('payroll.pageSizeLabel')}
-          </span>
-          <Select
-            value={String(pageSize)}
-            onValueChange={(value) => onPageSizeChange(Number(value) as PayrollPageSize)}
-          >
-            <SelectTrigger className="h-11 w-[120px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PAGE_SIZES.map((size) => (
-                <SelectItem key={size} value={String(size)}>
-                  {size}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </label>
       </div>
 
-      <div className="mb-2 flex items-center justify-between text-xs text-[var(--sea-ink-soft)]">
-        <span>{t('payroll.resultLabel', { count: String(totalItems) })}</span>
-        {isFetching ? <span>{t('payroll.refreshingLabel')}</span> : <span />}
-      </div>
-
-      {slips.length === 0 ? (
-        <p className="m-0 py-8 text-center text-sm text-[var(--sea-ink-soft)]">
-          {t('payroll.slipsEmpty')}
-        </p>
-      ) : (
-        <Table className="min-w-[48rem]">
-          <TableCaption className="sr-only">{t('payroll.tableCaption')}</TableCaption>
-          <TableHeader>
-            <TableRow className="border-[var(--line)] hover:bg-transparent">
-              <TableHead scope="col" className="px-4 py-3">
-                <button
-                  type="button"
-                  onClick={() => onSortChange('periode')}
-                  aria-label={t('payroll.colPeriod')}
-                  className="island-kicker inline-flex items-center gap-1"
-                >
-                  {t('payroll.colPeriod')}
-                  <SortIcon active={sort === 'periode'} order={order} />
-                </button>
-              </TableHead>
-              <TableHead scope="col" className="px-4 py-3">
-                {t('payroll.colSlipNumber')}
-              </TableHead>
-              <TableHead scope="col" className="px-4 py-3">
-                {t('payroll.colEmployee')}
-              </TableHead>
-              <TableHead scope="col" className="px-4 py-3">
-                <button
-                  type="button"
-                  onClick={() => onSortChange('status')}
-                  aria-label={t('payroll.colStatus')}
-                  className="island-kicker inline-flex items-center gap-1"
-                >
-                  {t('payroll.colStatus')}
-                  <SortIcon active={sort === 'status'} order={order} />
-                </button>
-              </TableHead>
-              <TableHead scope="col" className="px-4 py-3 text-right">
-                {t('payroll.colTotal')}
-              </TableHead>
-              <TableHead scope="col" className="px-4 py-3 text-right">
-                <span className="sr-only">{t('payroll.viewDetail')}</span>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody aria-busy={isFetching}>
-            {slips.map((slip) => (
-              <TableRow key={slip.id} className="border-[var(--line)] last:border-0">
-                <TableCell className="px-4 py-3 text-[var(--sea-ink)]">
-                  {slip.periodeLabel ?? slip.periode}
-                </TableCell>
-                <TableCell className="px-4 py-3 font-medium text-[var(--sea-ink)] break-words">
-                  {slip.nomorSlip}
-                </TableCell>
-                <TableCell className="px-4 py-3 text-[var(--sea-ink-soft)]">
-                  {slip.nama ?? '-'}
-                </TableCell>
-                <TableCell className="px-4 py-3 text-[var(--sea-ink-soft)]">
-                  {slip.statusLabel ?? slip.status}
-                </TableCell>
-                <TableCell className="px-4 py-3 text-right font-medium text-[var(--sea-ink)]">
-                  {slip.totalGaji}
-                </TableCell>
-                <TableCell className="px-4 py-3 text-right">
-                  <Link
-                    to="/payroll/slips/$payrollId"
-                    params={{ payrollId: slip.id }}
-                    className="inline-flex items-center rounded-full border border-[var(--chip-line)] bg-[var(--chip-bg)] px-3 py-1 text-xs font-semibold text-[var(--sea-ink)] transition hover:bg-[var(--link-bg-hover)]"
-                  >
-                    {t('payroll.viewDetail')}
-                  </Link>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
-
-      <div className="mt-4 flex items-center justify-between gap-3">
-        <p className="m-0 text-xs text-[var(--sea-ink-soft)]">
-          {t('payroll.pageInfo', { page: String(page), total: String(safeTotalPages) })}
-        </p>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => onPageChange(page - 1)}
-            disabled={!canPrev}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--chip-line)] bg-[var(--chip-bg)] text-[var(--sea-ink)] transition hover:bg-[var(--link-bg-hover)] disabled:opacity-40"
-            aria-label={t('payroll.prevPage')}
-          >
-            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            onClick={() => onPageChange(page + 1)}
-            disabled={!canNext}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--chip-line)] bg-[var(--chip-bg)] text-[var(--sea-ink)] transition hover:bg-[var(--link-bg-hover)] disabled:opacity-40"
-            aria-label={t('payroll.nextPage')}
-          >
-            <ChevronRight className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </div>
-      </div>
+      <DataTable
+        columns={columns}
+        data={slips}
+        getRowId={(row) => row.id}
+        sortFields={PAYROLL_SORT_FIELDS}
+        sort={sort}
+        order={order}
+        onSortChange={onSortChange}
+        page={page}
+        pageSize={pageSize}
+        totalItems={totalItems}
+        totalPages={totalPages}
+        onPageChange={onPageChange}
+        onPageSizeChange={(size) => onPageSizeChange(size as PayrollPageSize)}
+        pageSizeOptions={PAGE_SIZES}
+        isFetching={isFetching}
+        labels={{
+          caption: t('payroll.tableCaption'),
+          loadingLabel: t('payroll.refreshingLabel'),
+          emptyTitle: t('payroll.slipsEmpty'),
+          emptyDescription: t('common.emptyDescription'),
+          resultLabel: t('common.resultCount', {
+            from: String(from),
+            to: String(to),
+            total: String(totalItems),
+          }),
+          pageInfo: t('common.pageInfo'),
+          prevPage: t('common.prevPage'),
+          nextPage: t('common.nextPage'),
+          pageSizeLabel: t('common.pageSize'),
+          itemsPerPage: t('common.itemsPerPage'),
+          sortBy: t('common.sortBy'),
+        }}
+      />
     </div>
   )
 }

@@ -1,7 +1,7 @@
-import type { Employee } from '@/validations/schemas'
-import type { EmployeeSortField, EmployeeSortOrder } from '@/lib/employees'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
-import SortIcon from '@/components/SortIcon'
+import { useMemo } from 'react'
+import type { ColumnDef } from '@tanstack/react-table'
+import { Search } from 'lucide-react'
+import { DataTable } from '@/components/DataTable'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -10,15 +10,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { EMPLOYEE_SORT_FIELDS } from '@/lib/employees'
+import type { EmployeeSortField, EmployeeSortOrder } from '@/lib/employees'
+import type { Employee } from '@/validations/schemas'
 
 const PAGE_SIZES = [10, 20, 25, 50, 100] as const
 export type EmployeePageSize = (typeof PAGE_SIZES)[number]
@@ -35,7 +29,7 @@ type EmployeeTableProps = {
   isFetching: boolean
   search: string
   homebaseId: string | null
-  onSortChange: (field: EmployeeSortField) => void
+  onSortChange: (field: EmployeeSortField, order: EmployeeSortOrder) => void
   onPageChange: (page: number) => void
   onPageSizeChange: (size: EmployeePageSize) => void
   onSearchChange: (value: string) => void
@@ -62,22 +56,14 @@ type EmployeeTableProps = {
     unitAll: string
     pageSizeLabel: string
     itemsPerPage: string
+    sortBy: string
   }
-}
-
-function pageRange(totalItems: number, page: number, pageSize: number): [number, number] {
-  if (totalItems === 0) {
-    return [0, 0]
-  }
-  const from = (page - 1) * pageSize + 1
-  const to = Math.min(page * pageSize, totalItems)
-  return [from, to]
 }
 
 /**
- * Tabel daftar pegawai dengan kontrol lengkap: pencarian, filter unit,
- * pengurutan, ukuran halaman (10/25/50/100), dan paginasi. Urutan dan
- * penomoran halaman dikendalikan backend.
+ * Tabel daftar pegawai: pencarian, filter unit, pengurutan, ukuran halaman,
+ * dan paginasi. Urutan, penyaringan, dan pemotongan baris dikerjakan backend,
+ * jadi tabel hanya mengirim pilihan pengguna.
  */
 export default function EmployeeTable({
   employees,
@@ -98,31 +84,103 @@ export default function EmployeeTable({
   onHomebaseChange,
   labels,
 }: EmployeeTableProps) {
-  const [from, to] = pageRange(totalItems, page, pageSize)
+  const columns = useMemo<ColumnDef<Employee, unknown>[]>(
+    () => [
+      {
+        id: 'nama',
+        accessorFn: (row) => row.nama,
+        header: labels.name,
+        cell: ({ row }) => (
+          <span className="block">
+            <span className="block font-semibold break-words">{row.original.nama}</span>
+            <span className="block text-xs break-all text-[var(--sea-ink-soft)]">
+              {row.original.email}
+            </span>
+          </span>
+        ),
+      },
+      {
+        id: 'nip',
+        accessorFn: (row) => row.nip ?? '',
+        header: labels.nip,
+        cell: ({ row }) =>
+          row.original.nip ? (
+            <span className="font-mono text-xs">{row.original.nip}</span>
+          ) : (
+            <span className="text-[var(--sea-ink-soft)]">{labels.noValue}</span>
+          ),
+      },
+      {
+        id: 'homebaseId',
+        accessorFn: (row) => row.homebaseId ?? '',
+        header: labels.unit,
+        cell: ({ row }) =>
+          row.original.homebaseId ? (
+            <span className="break-words">
+              {unitNames.get(row.original.homebaseId) ?? row.original.homebaseId}
+            </span>
+          ) : (
+            <span className="text-[var(--sea-ink-soft)]">{labels.noUnit}</span>
+          ),
+      },
+      {
+        id: 'jabatanStruktural',
+        accessorFn: (row) => row.jabatanStruktural ?? row.jabatanFungsional ?? '',
+        header: labels.position,
+        cell: ({ row }) =>
+          row.original.jabatanStruktural ??
+          row.original.jabatanFungsional ?? (
+            <span className="text-[var(--sea-ink-soft)]">{labels.noValue}</span>
+          ),
+      },
+      {
+        id: 'aktif',
+        accessorFn: (row) => (row.aktif ? '1' : '0'),
+        header: labels.status,
+        cell: ({ row }) => (
+          <span
+            className={
+              row.original.aktif
+                ? 'font-medium text-[var(--sea-ink)]'
+                : 'text-[var(--sea-ink-soft)]'
+            }
+          >
+            {row.original.aktif ? labels.active : labels.inactive}
+          </span>
+        ),
+      },
+    ],
+    [labels, unitNames],
+  )
 
   return (
-    <div className="island-shell overflow-hidden rounded-2xl">
-      {/* Kontrol atas: pencarian, filter unit, ukuran halaman. */}
-      <div className="border-b border-[var(--line)] px-4 py-3 sm:flex sm:items-center sm:justify-between gap-3">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-center">
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
           <label
             htmlFor="employee-search"
-            className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--kicker)]"
+            className="text-xs font-semibold tracking-[0.16em] text-[var(--kicker)] uppercase"
           >
             {labels.searchLabel}
           </label>
-          <Input
-            id="employee-search"
-            type="search"
-            value={search}
-            onChange={(event) => onSearchChange(event.target.value)}
-            placeholder={labels.searchPlaceholder}
-            className="h-11 w-full sm:w-64"
-          />
+          <div className="relative">
+            <Search
+              className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-[var(--sea-ink-soft)]"
+              aria-hidden="true"
+            />
+            <Input
+              id="employee-search"
+              type="search"
+              value={search}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder={labels.searchPlaceholder}
+              className="h-11 w-full pl-9 sm:w-64"
+            />
+          </div>
         </div>
 
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-center">
-          <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--kicker)]">
+        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+          <span className="text-xs font-semibold tracking-[0.16em] text-[var(--kicker)] uppercase">
             {labels.unitLabel}
           </span>
           <Select
@@ -142,164 +200,36 @@ export default function EmployeeTable({
             </SelectContent>
           </Select>
         </div>
-
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-center">
-          <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--kicker)]">
-            {labels.pageSizeLabel}
-          </span>
-          <Select
-            value={String(pageSize)}
-            onValueChange={(value) =>
-              onPageSizeChange(value as unknown as EmployeePageSize)
-            }
-          >
-            <SelectTrigger className="h-11 w-20" aria-label={labels.pageSizeLabel}>
-              <SelectValue placeholder={String(pageSize)} />
-            </SelectTrigger>
-            <SelectContent>
-              {PAGE_SIZES.map((size) => (
-                <SelectItem key={size} value={String(size)}>
-                  {size}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
       </div>
 
-      <Table className="min-w-[42rem]">
-        <TableCaption className="sr-only">{labels.caption}</TableCaption>
-        <TableHeader>
-          <TableRow className="border-[var(--line)] hover:bg-transparent">
-            <TableHead
-              scope="col"
-              className="sticky left-0 z-10 border-r border-[var(--line)] bg-[var(--card)] px-4 py-3"
-            >
-              <button
-                type="button"
-                onClick={() => onSortChange('nama')}
-                aria-label={labels.name}
-                className="island-kicker -mx-2 inline-flex min-h-11 items-center gap-1 px-2 sm:min-h-0"
-              >
-                {labels.name}
-                <SortIcon active={sort === 'nama'} order={order} />
-              </button>
-            </TableHead>
-            <TableHead scope="col" className="px-4 py-3">
-              {labels.nip}
-            </TableHead>
-            <TableHead scope="col" className="px-4 py-3">
-              {labels.unit}
-            </TableHead>
-            <TableHead scope="col" className="px-4 py-3">
-              {labels.position}
-            </TableHead>
-            <TableHead scope="col" className="px-4 py-3">
-              {labels.status}
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody aria-busy={isFetching}>
-          {employees.map((employee) => (
-            <TableRow key={employee.id} className="border-[var(--line)] last:border-0">
-              <TableHead
-                scope="row"
-                className="sticky left-0 z-10 border-r border-[var(--line)] bg-[var(--card)] px-4 py-3 text-left font-semibold whitespace-normal"
-              >
-                <span className="block break-words">{employee.nama}</span>
-                <span className="block break-all text-xs font-normal text-[var(--sea-ink-soft)]">
-                  {employee.email}
-                </span>
-              </TableHead>
-              <TableCell className="px-4 py-3 font-mono text-xs">
-                {employee.nip ?? (
-                  <span className="font-sans text-[var(--sea-ink-soft)]">
-                    {labels.noValue}
-                  </span>
-                )}
-              </TableCell>
-              <TableCell className="px-4 py-3">
-                {employee.homebaseId ? (
-                  <span className="break-words">
-                    {unitNames.get(employee.homebaseId) ?? employee.homebaseId}
-                  </span>
-                ) : (
-                  <span className="text-[var(--sea-ink-soft)]">{labels.noUnit}</span>
-                )}
-              </TableCell>
-              <TableCell className="px-4 py-3">
-                {employee.jabatanStruktural ?? employee.jabatanFungsional ?? (
-                  <span className="text-[var(--sea-ink-soft)]">{labels.noValue}</span>
-                )}
-              </TableCell>
-              <TableCell className="px-4 py-3">
-                {employee.aktif ? labels.active : labels.inactive}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-
-      {/* Paginasi: prev, angka halaman, next. */}
-      <div className="flex flex-col gap-3 border-t border-[var(--line)] px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-        <p className="m-0 text-[var(--sea-ink-soft)]">
-          {labels.itemsPerPage
-            .replace('{from}', String(from))
-            .replace('{to}', String(to))
-            .replace('{total}', String(totalItems))}
-          {isFetching ? ` · ${labels.refreshingLabel}` : ''}
-        </p>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => onPageChange(page - 1)}
-            disabled={page <= 1}
-            aria-label={labels.prevPage}
-            className="h-11 rounded-full border border-[var(--chip-line)] bg-[var(--chip-bg)] px-4 text-xs font-semibold text-[var(--sea-ink)] disabled:cursor-not-allowed disabled:opacity-50 sm:h-9"
-          >
-            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-          </button>
-          {[...Array(Math.max(totalPages, 1))].map((p) => {
-            const n = p + 1
-            const active = n === page
-            return (
-              <button
-                key={n}
-                type="button"
-                onClick={() => onPageChange(n)}
-                aria-label={n === page ? 'Halaman ' + String(n) : undefined}
-                aria-current={active ? 'page' : undefined}
-                className={cn(
-                  'h-10 w-10 rounded-full text-xs font-semibold transition',
-                  active
-                    ? 'bg-[var(--lagoon)] text-white shadow-[0_0_0_1px_var(--lagoon)_inset]'
-                    : 'border border-[var(--line)] bg-[var(--chip-bg)] text-[var(--sea-ink)] hover:bg-[var(--surface-strong)] disabled:opacity-50',
-                )}
-              >
-                {String(n)}
-              </button>
-            )
-          })}
-          <button
-            type="button"
-            onClick={() => onPageChange(page + 1)}
-            disabled={page >= totalPages}
-            aria-label={labels.nextPage}
-            className="h-11 rounded-full border border-[var(--chip-line)] bg-[var(--chip-bg)] px-4 text-xs font-semibold text-[var(--sea-ink)] disabled:cursor-not-allowed disabled:opacity-50 sm:h-9"
-          >
-            <ChevronRight className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </div>
-        <span className="text-xs text-[var(--sea-ink-soft)]">
-          {labels.pageInfo
-            .replace('{page}', String(page))
-            .replace('{total}', String(Math.max(totalPages, 1)))}
-        </span>
-      </div>
+      <DataTable
+        columns={columns}
+        data={employees}
+        sortFields={EMPLOYEE_SORT_FIELDS}
+        sort={sort}
+        order={order}
+        onSortChange={onSortChange}
+        page={page}
+        pageSize={pageSize}
+        totalItems={totalItems}
+        totalPages={totalPages}
+        onPageChange={onPageChange}
+        onPageSizeChange={(size) => onPageSizeChange(size as EmployeePageSize)}
+        pageSizeOptions={PAGE_SIZES}
+        isFetching={isFetching}
+        labels={{
+          caption: labels.caption,
+          loadingLabel: labels.refreshingLabel,
+          emptyTitle: labels.caption,
+          resultLabel: labels.resultLabel,
+          pageInfo: labels.pageInfo,
+          prevPage: labels.prevPage,
+          nextPage: labels.nextPage,
+          pageSizeLabel: labels.pageSizeLabel,
+          itemsPerPage: labels.itemsPerPage,
+          sortBy: labels.sortBy,
+        }}
+      />
     </div>
   )
-}
-
-function cn(...classes: (string | boolean | undefined | null)[]): string {
-  return classes.filter(Boolean).join(' ')
 }

@@ -25,8 +25,8 @@ func NewTunjanganService(repo repository.TunjanganRepository, policy auth.Policy
 
 func (s *TunjanganService) List(ctx context.Context, principal auth.Principal, options listing.Options) (listing.Page[models.KomponenTunjangan], error) {
 	switch {
-	case allows(s.policy, principal, "tunjangan:read:any"):
-	case allows(s.policy, principal, "tunjangan:read:homebase"):
+	case allows(ctx, s.policy, principal, "tunjangan:read:any"):
+	case allows(ctx, s.policy, principal, "tunjangan:read:homebase"):
 		scope, err := s.scope.resolve(ctx, principal)
 		if err != nil {
 			return listing.Page[models.KomponenTunjangan]{}, err
@@ -35,7 +35,7 @@ func (s *TunjanganService) List(ctx context.Context, principal auth.Principal, o
 			return listing.EmptyPage[models.KomponenTunjangan](options.Page, options.PageSize), nil
 		}
 		options.ScopeHomebaseIDs = scope.List()
-	case allows(s.policy, principal, "tunjangan:read:self"):
+	case allows(ctx, s.policy, principal, "tunjangan:read:self"):
 		options.UserID = principal.UserID
 	default:
 		return listing.Page[models.KomponenTunjangan]{}, domain.ErrForbidden
@@ -51,7 +51,7 @@ func (s *TunjanganService) List(ctx context.Context, principal auth.Principal, o
 }
 
 func (s *TunjanganService) Get(ctx context.Context, principal auth.Principal, id string) (models.KomponenTunjangan, error) {
-	needsScope := allows(s.policy, principal, "tunjangan:read:homebase") && !allows(s.policy, principal, "tunjangan:read:any")
+	needsScope := allows(ctx, s.policy, principal, "tunjangan:read:homebase") && !allows(ctx, s.policy, principal, "tunjangan:read:any")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.KomponenTunjangan{}, err
@@ -70,12 +70,12 @@ func (s *TunjanganService) Create(ctx context.Context, principal auth.Principal,
 	if err := input.Validate(); err != nil {
 		return models.KomponenTunjangan{}, err
 	}
-	needsScope := allows(s.policy, principal, "tunjangan:create:homebase") && !allows(s.policy, principal, "tunjangan:create")
+	needsScope := allows(ctx, s.policy, principal, "tunjangan:create:homebase") && !allows(ctx, s.policy, principal, "tunjangan:create")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.KomponenTunjangan{}, err
 	}
-	if !s.canCreate(scoped, &input.UserID) {
+	if !s.canCreate(ctx, scoped, &input.UserID) {
 		return models.KomponenTunjangan{}, domain.ErrForbidden
 	}
 	item := models.KomponenTunjangan{
@@ -94,7 +94,7 @@ func (s *TunjanganService) Update(ctx context.Context, principal auth.Principal,
 	if err := patch.Validate(); err != nil {
 		return models.KomponenTunjangan{}, err
 	}
-	needsScope := allows(s.policy, principal, "tunjangan:update:homebase") && !allows(s.policy, principal, "tunjangan:update:any")
+	needsScope := allows(ctx, s.policy, principal, "tunjangan:update:homebase") && !allows(ctx, s.policy, principal, "tunjangan:update:any")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.KomponenTunjangan{}, err
@@ -110,7 +110,7 @@ func (s *TunjanganService) Update(ctx context.Context, principal auth.Principal,
 }
 
 func (s *TunjanganService) Archive(ctx context.Context, principal auth.Principal, id string) error {
-	needsScope := allows(s.policy, principal, "tunjangan:archive:homebase") && !allows(s.policy, principal, "tunjangan:archive")
+	needsScope := allows(ctx, s.policy, principal, "tunjangan:archive:homebase") && !allows(ctx, s.policy, principal, "tunjangan:archive")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return err
@@ -145,11 +145,11 @@ func (s *TunjanganService) canRead(scoped scopedPrincipal, item models.KomponenT
 	return false
 }
 
-func (s *TunjanganService) canCreate(scoped scopedPrincipal, userID *string) bool {
-	if allows(s.policy, scoped.principal, "tunjangan:create") {
+func (s *TunjanganService) canCreate(ctx context.Context, scoped scopedPrincipal, userID *string) bool {
+	if allows(ctx, s.policy, scoped.principal, "tunjangan:create") {
 		return true
 	}
-	if !allows(s.policy, scoped.principal, "tunjangan:create:homebase") {
+	if !allows(ctx, s.policy, scoped.principal, "tunjangan:create:homebase") {
 		return false
 	}
 	if userID == nil || *userID == "" {

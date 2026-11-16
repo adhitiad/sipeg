@@ -76,7 +76,14 @@ func (s *SMTPSender) Send(ctx context.Context, message Message) error {
 }
 
 // buildMessage menyusun email mentah dengan header wajib.
+// Bila HTMLBody dan InlineImages diisi, isi disusun multipart/related.
 func buildMessage(from string, message Message) []byte {
+	if message.HTMLBody != "" && len(message.InlineImages) > 0 {
+		raw, err := buildMultipartRelated(from, message)
+		if err == nil {
+			return raw
+		}
+	}
 	var builder strings.Builder
 	builder.WriteString("From: " + from + "\r\n")
 	builder.WriteString("To: " + message.To + "\r\n")

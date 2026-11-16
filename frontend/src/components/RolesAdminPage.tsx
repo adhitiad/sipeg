@@ -6,16 +6,17 @@ import RolesAdminTable, { type RolesPageSize } from '@/components/RolesAdminTabl
 import { useLocale, useMessages } from '@/i18n/locale-context'
 import {
   assignEmployeeRole,
+  EMPLOYEE_SORT_FIELDS,
   useEmployees,
   type EmployeeListParams,
   type EmployeeSortField,
-  type EmployeeSortOrder,
 } from '@/lib/employees'
 import { useOrganizations } from '@/lib/organizations'
 import { formatRoleName } from '@/lib/roles'
 import type { Employee } from '@/validations/schemas'
 import { useSession } from '@/lib/session'
 import { useQueryClient } from '@tanstack/react-query'
+import { useTableControls } from '@/lib/table-state'
 import { toast } from 'sonner'
 
 const SEARCH_DEBOUNCE_MS = 300
@@ -32,21 +33,23 @@ export default function RolesAdminPage() {
 
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
-  const [sort, setSort] = useState<EmployeeSortField>('nama')
-  const [order, setOrder] = useState<EmployeeSortOrder>('asc')
   const [homebaseId, setHomebaseId] = useState<string | null>(null)
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState<RolesPageSize>(25)
   const [draftRoles, setDraftRoles] = useState<Record<string, RoleName>>({})
   const [savingId, setSavingId] = useState<string | null>(null)
+  const controls = useTableControls<EmployeeSortField>({
+    sortFields: EMPLOYEE_SORT_FIELDS,
+    initialSort: 'nama',
+    initialPageSize: 25,
+  })
+  const { sort, order, page, pageSize, resetPage } = controls
 
   useEffect(() => {
     const timer = setTimeout(() => {
       setSearch(searchInput.trim())
-      setPage(1)
+      resetPage()
     }, SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(timer)
-  }, [searchInput])
+  }, [searchInput, resetPage])
 
   const params: EmployeeListParams = useMemo(
     () => ({ page, pageSize, search, sort, order, homebaseId }),
@@ -95,14 +98,8 @@ export default function RolesAdminPage() {
   const totalItems = data?.totalItems ?? 0
   const totalPages = Math.max(data?.totalPages ?? 1, 1)
 
-  function handleSortChange(field: EmployeeSortField) {
-    if (field === sort) {
-      setOrder((current) => (current === 'asc' ? 'desc' : 'asc'))
-      return
-    }
-    setSort(field)
-    setOrder('asc')
-    setPage(1)
+  function handleSortChange(field: EmployeeSortField, order: 'asc' | 'desc') {
+    controls.applySort(field, order)
   }
 
   function handleSave(employee: Employee, target: RoleName) {
@@ -165,7 +162,7 @@ export default function RolesAdminPage() {
           totalPages={totalPages}
           totalItems={totalItems}
           page={page}
-          pageSize={pageSize}
+          pageSize={pageSize as RolesPageSize}
           isFetching={query.isFetching}
           localeTag={localeTag}
           unitNames={unitNames}
@@ -176,10 +173,10 @@ export default function RolesAdminPage() {
           onSearchChange={setSearchInput}
           onHomebaseChange={(value) => {
             setHomebaseId(value)
-            setPage(1)
+            resetPage()
           }}
-          onPageSizeChange={setPageSize}
-          onPageChange={setPage}
+          onPageSizeChange={(size) => controls.setPageSize(size)}
+          onPageChange={controls.setPage}
           onSortChange={handleSortChange}
           onSave={handleSave}
           savingId={savingId}

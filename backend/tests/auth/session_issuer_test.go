@@ -36,10 +36,10 @@ func newIssuerDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock) {
 }
 
 func expectUserForIssuance(mock sqlmock.Sqlmock, userID string, roleID interface{}, aktif bool) {
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "user" WHERE id = $1`)).
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT "id","aktif","roleId","homebaseId" FROM "user" WHERE id = $1 ORDER BY "user"."id" LIMIT $2`)).
 		WithArgs(userID, sqlmock.AnyArg()).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "nama", "roleId", "homebaseId", "aktif"}).
-			AddRow(userID, "person@example.test", "Pegawai Uji", roleID, "unit-a", aktif))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "aktif", "roleId", "homebaseId"}).
+			AddRow(userID, aktif, roleID, "unit-a"))
 }
 
 func expectRoleForIssuance(mock sqlmock.Sqlmock, roleID, roleName string) {
@@ -112,7 +112,7 @@ func TestIssuerSkipsRoleLookupWhenRoleIdEmpty(t *testing.T) {
 
 func TestIssuerRejectsUnknownUser(t *testing.T) {
 	db, mock := newIssuerDB(t)
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "user" WHERE id = $1`)).
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT "id","aktif","roleId","homebaseId" FROM "user" WHERE id = $1 ORDER BY "user"."id" LIMIT $2`)).
 		WithArgs("user-missing", sqlmock.AnyArg()).
 		WillReturnError(gorm.ErrRecordNotFound)
 

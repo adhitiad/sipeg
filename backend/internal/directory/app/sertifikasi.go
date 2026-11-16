@@ -26,8 +26,8 @@ func NewSertifikasiService(repo repository.SertifikasiRepository, policy auth.Po
 
 func (s *SertifikasiService) List(ctx context.Context, principal auth.Principal, options listing.Options) (listing.Page[models.RiwayatSertifikasi], error) {
 	switch {
-	case allows(s.policy, principal, "sertifikasi:read:any"):
-	case allows(s.policy, principal, "sertifikasi:read:homebase"):
+	case allows(ctx, s.policy, principal, "sertifikasi:read:any"):
+	case allows(ctx, s.policy, principal, "sertifikasi:read:homebase"):
 		scope, err := s.scope.resolve(ctx, principal)
 		if err != nil {
 			return listing.Page[models.RiwayatSertifikasi]{}, err
@@ -36,7 +36,7 @@ func (s *SertifikasiService) List(ctx context.Context, principal auth.Principal,
 			return listing.EmptyPage[models.RiwayatSertifikasi](options.Page, options.PageSize), nil
 		}
 		options.ScopeHomebaseIDs = scope.List()
-	case allows(s.policy, principal, "sertifikasi:read:self"):
+	case allows(ctx, s.policy, principal, "sertifikasi:read:self"):
 		options.UserID = principal.UserID
 	default:
 		return listing.Page[models.RiwayatSertifikasi]{}, domain.ErrForbidden
@@ -52,7 +52,7 @@ func (s *SertifikasiService) List(ctx context.Context, principal auth.Principal,
 }
 
 func (s *SertifikasiService) Get(ctx context.Context, principal auth.Principal, id string) (models.RiwayatSertifikasi, error) {
-	needsScope := allows(s.policy, principal, "sertifikasi:read:homebase") && !allows(s.policy, principal, "sertifikasi:read:any")
+	needsScope := allows(ctx, s.policy, principal, "sertifikasi:read:homebase") && !allows(ctx, s.policy, principal, "sertifikasi:read:any")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.RiwayatSertifikasi{}, err
@@ -61,7 +61,7 @@ func (s *SertifikasiService) Get(ctx context.Context, principal auth.Principal, 
 	if err != nil {
 		return models.RiwayatSertifikasi{}, err
 	}
-	if !s.canRead(scoped, item) {
+	if !s.canRead(ctx, scoped, item) {
 		return models.RiwayatSertifikasi{}, domain.ErrForbidden
 	}
 	return item, nil
@@ -71,12 +71,12 @@ func (s *SertifikasiService) Create(ctx context.Context, principal auth.Principa
 	if err := input.Validate(); err != nil {
 		return models.RiwayatSertifikasi{}, err
 	}
-	needsScope := allows(s.policy, principal, "sertifikasi:create:homebase") && !allows(s.policy, principal, "sertifikasi:create")
+	needsScope := allows(ctx, s.policy, principal, "sertifikasi:create:homebase") && !allows(ctx, s.policy, principal, "sertifikasi:create")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.RiwayatSertifikasi{}, err
 	}
-	if !s.canCreate(scoped, &input.UserID) {
+	if !s.canCreate(ctx, scoped, &input.UserID) {
 		return models.RiwayatSertifikasi{}, domain.ErrForbidden
 	}
 	tanggalTerbit, err := time.Parse("2006-01-02", input.TanggalTerbit)
@@ -111,7 +111,7 @@ func (s *SertifikasiService) Update(ctx context.Context, principal auth.Principa
 	if err := patch.Validate(); err != nil {
 		return models.RiwayatSertifikasi{}, err
 	}
-	needsScope := allows(s.policy, principal, "sertifikasi:update:homebase") && !allows(s.policy, principal, "sertifikasi:update:any")
+	needsScope := allows(ctx, s.policy, principal, "sertifikasi:update:homebase") && !allows(ctx, s.policy, principal, "sertifikasi:update:any")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.RiwayatSertifikasi{}, err
@@ -120,14 +120,14 @@ func (s *SertifikasiService) Update(ctx context.Context, principal auth.Principa
 	if err != nil {
 		return models.RiwayatSertifikasi{}, err
 	}
-	if !s.canWrite(scoped, item) {
+	if !s.canWrite(ctx, scoped, item) {
 		return models.RiwayatSertifikasi{}, domain.ErrForbidden
 	}
 	return s.repo.UpdateSertifikasi(ctx, principal.UserID, id, patch)
 }
 
 func (s *SertifikasiService) Archive(ctx context.Context, principal auth.Principal, id string) error {
-	needsScope := allows(s.policy, principal, "sertifikasi:archive:homebase") && !allows(s.policy, principal, "sertifikasi:archive")
+	needsScope := allows(ctx, s.policy, principal, "sertifikasi:archive:homebase") && !allows(ctx, s.policy, principal, "sertifikasi:archive")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return err
@@ -136,7 +136,7 @@ func (s *SertifikasiService) Archive(ctx context.Context, principal auth.Princip
 	if err != nil {
 		return err
 	}
-	if !s.canArchive(scoped, item) {
+	if !s.canArchive(ctx, scoped, item) {
 		return domain.ErrForbidden
 	}
 	return s.repo.ArchiveSertifikasi(ctx, principal.UserID, id)
@@ -153,7 +153,7 @@ func (s *SertifikasiService) scopedPrincipal(ctx context.Context, principal auth
 	return scopedPrincipal{principal: principal, scope: scope}, nil
 }
 
-func (s *SertifikasiService) canRead(scoped scopedPrincipal, item models.RiwayatSertifikasi) bool {
+func (s *SertifikasiService) canRead(ctx context.Context, scoped scopedPrincipal, item models.RiwayatSertifikasi) bool {
 	for _, permission := range []auth.Permission{"sertifikasi:read:any", "sertifikasi:read:homebase", "sertifikasi:read:self"} {
 		if auth.CanAccessUserInScope(scoped.principal, item.UserId, item.UserId, permission, s.policy, scoped.scope) {
 			return true
@@ -162,11 +162,11 @@ func (s *SertifikasiService) canRead(scoped scopedPrincipal, item models.Riwayat
 	return false
 }
 
-func (s *SertifikasiService) canCreate(scoped scopedPrincipal, userID *string) bool {
-	if allows(s.policy, scoped.principal, "sertifikasi:create") {
+func (s *SertifikasiService) canCreate(ctx context.Context, scoped scopedPrincipal, userID *string) bool {
+	if allows(ctx, s.policy, scoped.principal, "sertifikasi:create") {
 		return true
 	}
-	if !allows(s.policy, scoped.principal, "sertifikasi:create:homebase") {
+	if !allows(ctx, s.policy, scoped.principal, "sertifikasi:create:homebase") {
 		return false
 	}
 	if userID == nil || *userID == "" {
@@ -175,7 +175,7 @@ func (s *SertifikasiService) canCreate(scoped scopedPrincipal, userID *string) b
 	return scoped.scope.Contains(*userID)
 }
 
-func (s *SertifikasiService) canWrite(scoped scopedPrincipal, item models.RiwayatSertifikasi) bool {
+func (s *SertifikasiService) canWrite(ctx context.Context, scoped scopedPrincipal, item models.RiwayatSertifikasi) bool {
 	for _, permission := range []auth.Permission{"sertifikasi:update:any", "sertifikasi:update:homebase"} {
 		if auth.CanAccessUserInScope(scoped.principal, item.UserId, item.UserId, permission, s.policy, scoped.scope) {
 			return true
@@ -184,7 +184,7 @@ func (s *SertifikasiService) canWrite(scoped scopedPrincipal, item models.Riwaya
 	return false
 }
 
-func (s *SertifikasiService) canArchive(scoped scopedPrincipal, item models.RiwayatSertifikasi) bool {
+func (s *SertifikasiService) canArchive(ctx context.Context, scoped scopedPrincipal, item models.RiwayatSertifikasi) bool {
 	for _, permission := range []auth.Permission{"sertifikasi:archive", "sertifikasi:archive:homebase"} {
 		if auth.CanAccessUserInScope(scoped.principal, item.UserId, item.UserId, permission, s.policy, scoped.scope) {
 			return true

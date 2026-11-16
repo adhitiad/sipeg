@@ -26,8 +26,8 @@ func NewPenghargaanService(repo repository.PenghargaanRepository, policy auth.Po
 
 func (s *PenghargaanService) List(ctx context.Context, principal auth.Principal, options listing.Options) (listing.Page[models.RiwayatPenghargaan], error) {
 	switch {
-	case allows(s.policy, principal, "penghargaan:read:any"):
-	case allows(s.policy, principal, "penghargaan:read:homebase"):
+	case allows(ctx, s.policy, principal, "penghargaan:read:any"):
+	case allows(ctx, s.policy, principal, "penghargaan:read:homebase"):
 		scope, err := s.scope.resolve(ctx, principal)
 		if err != nil {
 			return listing.Page[models.RiwayatPenghargaan]{}, err
@@ -36,7 +36,7 @@ func (s *PenghargaanService) List(ctx context.Context, principal auth.Principal,
 			return listing.EmptyPage[models.RiwayatPenghargaan](options.Page, options.PageSize), nil
 		}
 		options.ScopeHomebaseIDs = scope.List()
-	case allows(s.policy, principal, "penghargaan:read:self"):
+	case allows(ctx, s.policy, principal, "penghargaan:read:self"):
 		options.UserID = principal.UserID
 	default:
 		return listing.Page[models.RiwayatPenghargaan]{}, domain.ErrForbidden
@@ -52,7 +52,7 @@ func (s *PenghargaanService) List(ctx context.Context, principal auth.Principal,
 }
 
 func (s *PenghargaanService) Get(ctx context.Context, principal auth.Principal, id string) (models.RiwayatPenghargaan, error) {
-	needsScope := allows(s.policy, principal, "penghargaan:read:homebase") && !allows(s.policy, principal, "penghargaan:read:any")
+	needsScope := allows(ctx, s.policy, principal, "penghargaan:read:homebase") && !allows(ctx, s.policy, principal, "penghargaan:read:any")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.RiwayatPenghargaan{}, err
@@ -61,7 +61,7 @@ func (s *PenghargaanService) Get(ctx context.Context, principal auth.Principal, 
 	if err != nil {
 		return models.RiwayatPenghargaan{}, err
 	}
-	if !s.canRead(scoped, item) {
+	if !s.canRead(ctx, scoped, item) {
 		return models.RiwayatPenghargaan{}, domain.ErrForbidden
 	}
 	return item, nil
@@ -71,12 +71,12 @@ func (s *PenghargaanService) Create(ctx context.Context, principal auth.Principa
 	if err := input.Validate(); err != nil {
 		return models.RiwayatPenghargaan{}, err
 	}
-	needsScope := allows(s.policy, principal, "penghargaan:create:homebase") && !allows(s.policy, principal, "penghargaan:create")
+	needsScope := allows(ctx, s.policy, principal, "penghargaan:create:homebase") && !allows(ctx, s.policy, principal, "penghargaan:create")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.RiwayatPenghargaan{}, err
 	}
-	if !s.canCreate(scoped, &input.UserID) {
+	if !s.canCreate(ctx, scoped, &input.UserID) {
 		return models.RiwayatPenghargaan{}, domain.ErrForbidden
 	}
 	tanggalTerima, err := time.Parse("2006-01-02", input.TanggalTerima)
@@ -101,7 +101,7 @@ func (s *PenghargaanService) Update(ctx context.Context, principal auth.Principa
 	if err := patch.Validate(); err != nil {
 		return models.RiwayatPenghargaan{}, err
 	}
-	needsScope := allows(s.policy, principal, "penghargaan:update:homebase") && !allows(s.policy, principal, "penghargaan:update:any")
+	needsScope := allows(ctx, s.policy, principal, "penghargaan:update:homebase") && !allows(ctx, s.policy, principal, "penghargaan:update:any")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.RiwayatPenghargaan{}, err
@@ -110,14 +110,14 @@ func (s *PenghargaanService) Update(ctx context.Context, principal auth.Principa
 	if err != nil {
 		return models.RiwayatPenghargaan{}, err
 	}
-	if !s.canWrite(scoped, item) {
+	if !s.canWrite(ctx, scoped, item) {
 		return models.RiwayatPenghargaan{}, domain.ErrForbidden
 	}
 	return s.repo.UpdatePenghargaan(ctx, principal.UserID, id, patch)
 }
 
 func (s *PenghargaanService) Archive(ctx context.Context, principal auth.Principal, id string) error {
-	needsScope := allows(s.policy, principal, "penghargaan:archive:homebase") && !allows(s.policy, principal, "penghargaan:archive")
+	needsScope := allows(ctx, s.policy, principal, "penghargaan:archive:homebase") && !allows(ctx, s.policy, principal, "penghargaan:archive")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return err
@@ -126,7 +126,7 @@ func (s *PenghargaanService) Archive(ctx context.Context, principal auth.Princip
 	if err != nil {
 		return err
 	}
-	if !s.canArchive(scoped, item) {
+	if !s.canArchive(ctx, scoped, item) {
 		return domain.ErrForbidden
 	}
 	return s.repo.ArchivePenghargaan(ctx, principal.UserID, id)
@@ -143,7 +143,7 @@ func (s *PenghargaanService) scopedPrincipal(ctx context.Context, principal auth
 	return scopedPrincipal{principal: principal, scope: scope}, nil
 }
 
-func (s *PenghargaanService) canRead(scoped scopedPrincipal, item models.RiwayatPenghargaan) bool {
+func (s *PenghargaanService) canRead(ctx context.Context, scoped scopedPrincipal, item models.RiwayatPenghargaan) bool {
 	for _, permission := range []auth.Permission{"penghargaan:read:any", "penghargaan:read:homebase", "penghargaan:read:self"} {
 		if auth.CanAccessUserInScope(scoped.principal, item.UserId, item.UserId, permission, s.policy, scoped.scope) {
 			return true
@@ -152,11 +152,11 @@ func (s *PenghargaanService) canRead(scoped scopedPrincipal, item models.Riwayat
 	return false
 }
 
-func (s *PenghargaanService) canCreate(scoped scopedPrincipal, userID *string) bool {
-	if allows(s.policy, scoped.principal, "penghargaan:create") {
+func (s *PenghargaanService) canCreate(ctx context.Context, scoped scopedPrincipal, userID *string) bool {
+	if allows(ctx, s.policy, scoped.principal, "penghargaan:create") {
 		return true
 	}
-	if !allows(s.policy, scoped.principal, "penghargaan:create:homebase") {
+	if !allows(ctx, s.policy, scoped.principal, "penghargaan:create:homebase") {
 		return false
 	}
 	if userID == nil || *userID == "" {
@@ -165,7 +165,7 @@ func (s *PenghargaanService) canCreate(scoped scopedPrincipal, userID *string) b
 	return scoped.scope.Contains(*userID)
 }
 
-func (s *PenghargaanService) canWrite(scoped scopedPrincipal, item models.RiwayatPenghargaan) bool {
+func (s *PenghargaanService) canWrite(ctx context.Context, scoped scopedPrincipal, item models.RiwayatPenghargaan) bool {
 	for _, permission := range []auth.Permission{"penghargaan:update:any", "penghargaan:update:homebase"} {
 		if auth.CanAccessUserInScope(scoped.principal, item.UserId, item.UserId, permission, s.policy, scoped.scope) {
 			return true
@@ -174,7 +174,7 @@ func (s *PenghargaanService) canWrite(scoped scopedPrincipal, item models.Riwaya
 	return false
 }
 
-func (s *PenghargaanService) canArchive(scoped scopedPrincipal, item models.RiwayatPenghargaan) bool {
+func (s *PenghargaanService) canArchive(ctx context.Context, scoped scopedPrincipal, item models.RiwayatPenghargaan) bool {
 	for _, permission := range []auth.Permission{"penghargaan:archive", "penghargaan:archive:homebase"} {
 		if auth.CanAccessUserInScope(scoped.principal, item.UserId, item.UserId, permission, s.policy, scoped.scope) {
 			return true

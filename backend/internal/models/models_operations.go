@@ -98,6 +98,17 @@ type Presensi struct {
 	UpdatedBy   *string `gorm:"type:uuid"`
 }
 
+type MesinAbsensiPin struct {
+	BaseModel
+	// MachinePin unik global di seluruh mesin sejenis — pegawai dapat tap
+	// di mesin mana pun (DEC-077).
+	MachinePin string `gorm:"column:machinePin;uniqueIndex"`
+	UserId     string `gorm:"type:uuid;uniqueIndex;index:mesin_absensi_pin_user_idx"`
+	User       *User  `gorm:"foreignKey:UserId"`
+	Aktif      bool   `gorm:"default:true"`
+	Catatan    *string
+}
+
 type MesinAbsensi struct {
 	BaseModel
 	Nama            string

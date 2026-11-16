@@ -41,8 +41,8 @@ func TestScheduleInputValidate(t *testing.T) {
 func TestPaydayDateIsCalendarDate(t *testing.T) {
 	period := Period{Year: 2026, Month: time.November}
 	payday := PaydayDate(period, 25)
-	if payday.Day() != 25 || payday.Month() != time.November || payday.Year() != 2026 {
-		t.Fatalf("payday = %v", payday)
+	if payday.Day() != 25 || payday.Month() != time.December || payday.Year() != 2026 {
+		t.Fatalf("payday = %v, want 2026-12-25 (slip periode November dibayar 25 Desember)", payday)
 	}
 	if payday.Location() != time.UTC {
 		t.Fatalf("payday location = %v, want UTC", payday.Location())
@@ -50,20 +50,22 @@ func TestPaydayDateIsCalendarDate(t *testing.T) {
 }
 
 func TestNotifyDateIsCalendarNextDay(t *testing.T) {
-	// 28 November 2026 adalah Sabtu: pemberitahuan tetap berjalan pada
-	// tanggal kalender berikutnya dan tidak digeser ke hari kerja.
+	// 25 Desember 2026 adalah Jumat: pemberitahuan tetap berjalan pada
+	// tanggal kalender H-1 dan tidak digeser ke hari kerja.
 	period := Period{Year: 2026, Month: time.November}
-	notify := NotifyDate(period, 27)
-	if notify.Day() != 28 || notify.Month() != time.November {
-		t.Fatalf("notify = %v, want 2026-11-28", notify)
+	notify := NotifyDate(period, 25)
+	if notify.Day() != 24 || notify.Month() != time.December {
+		t.Fatalf("notify = %v, want 2026-12-24", notify)
 	}
 }
 
 func TestNotifyDateRollsIntoNextMonthFromPayday28(t *testing.T) {
+	// Slip periode Februari dibayar 28 Maret (bukan 28 Februari) — periode
+	// bulan sebelumnya sesuai keputusan pemilik 2026-11-14.
 	period := Period{Year: 2026, Month: time.February}
 	notify := NotifyDate(period, 28)
-	if notify.Month() != time.March || notify.Day() != 1 {
-		t.Fatalf("notify = %v, want 2026-03-01", notify)
+	if notify.Month() != time.March || notify.Day() != 27 {
+		t.Fatalf("notify = %v, want 2026-03-27", notify)
 	}
 }
 
@@ -71,19 +73,19 @@ func TestIsReminderDueAroundNotifyDate(t *testing.T) {
 	period := Period{Year: 2026, Month: time.October}
 	payday := 27
 
-	before := timeutil.DateOnly(time.Date(2026, 10, 27, 12, 0, 0, 0, timeutil.Location))
+	before := timeutil.DateOnly(time.Date(2026, 11, 25, 12, 0, 0, 0, timeutil.Location))
 	if IsReminderDue(period, payday, before) {
-		t.Fatal("pemberitahuan belum jatuh tempo sebelum H+1")
+		t.Fatal("pemberitahuan belum jatuh tempo sebelum H-1")
 	}
 
-	sameDay := timeutil.DateOnly(time.Date(2026, 10, 28, 0, 30, 0, 0, timeutil.Location))
+	sameDay := timeutil.DateOnly(time.Date(2026, 11, 26, 0, 30, 0, 0, timeutil.Location))
 	if !IsReminderDue(period, payday, sameDay) {
-		t.Fatal("pemberitahuan harus jatuh tempo pada H+1")
+		t.Fatal("pemberitahuan harus jatuh tempo pada H-1")
 	}
 
-	after := timeutil.DateOnly(time.Date(2026, 11, 10, 0, 0, 0, 0, timeutil.Location))
+	after := timeutil.DateOnly(time.Date(2026, 12, 10, 0, 0, 0, 0, timeutil.Location))
 	if !IsReminderDue(period, payday, after) {
-		t.Fatal("pemberitahuan tetap jatuh tempo setelah H+1 lewat")
+		t.Fatal("pemberitahuan tetap jatuh tempo setelah H-1 lewat")
 	}
 }
 

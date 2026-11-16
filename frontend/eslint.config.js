@@ -46,5 +46,15 @@ export default tseslint.config(
       'react-refresh/only-export-components': 'off',
     },
   },
+  {
+    files: ['src/components/DataTable.tsx'],
+    rules: {
+      // useReactTable dari TanStack Table mengembalikan objek baru pada
+      // setiap render. Aturan React Compiler menandai pola itu, sementara
+      // tabel ini memang harus memakai API tersebut supaya mode manual
+      // (server memegang pagination, sorting, dan filtering) berlaku.
+      'react-hooks/incompatible-library': 'off',
+    },
+  },
   prettier,
 )

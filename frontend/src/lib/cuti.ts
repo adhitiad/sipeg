@@ -112,3 +112,12 @@ export async function rejectCuti(id: string, data: CutiAction): Promise<Cuti> {
   })
   return cutiSchema.parse(payload)
 }
+
+/** Batalkan pengajuan cuti (MENUNGGU atau DISETUJUI) via POST /api/v1/cuti/{cutiId}/cancel. */
+export async function cancelCuti(id: string, data: CutiAction): Promise<Cuti> {
+  const payload = await apiRequest<unknown>(`/cuti/${id}/cancel`, {
+    method: 'POST',
+    body: data,
+  })
+  return cutiSchema.parse(payload)
+}

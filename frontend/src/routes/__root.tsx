@@ -8,12 +8,17 @@ import GlobalLoading from '@/components/GlobalLoading'
 import GlobalNotFound from '@/components/GlobalNotFound'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { LocaleProvider } from '@/i18n/locale'
+import { useMessages } from '@/i18n/locale-context'
+import { DEFAULT_LOCALE, translate, type MessageKey } from '@/i18n/dictionary'
+import { socialMeta } from '@/lib/seo'
 import type { RouterContext } from '@/lib/types/router'
 
 import appCss from '../styles.css?url'
 import componentsCss from '../styles/components.css?url'
 
 const THEME_INIT_SCRIPT = `(function(){try{var stored=window.localStorage.getItem('theme');var mode=(stored==='light'||stored==='dark')?stored:'light';var root=document.documentElement;root.classList.remove('light','dark');root.classList.add(mode);root.setAttribute('data-theme',mode);root.style.colorScheme=mode;}catch(e){}})();`
+
+const t = (key: MessageKey) => translate(DEFAULT_LOCALE, key)
 
 export const Route = createRootRouteWithContext<RouterContext>()({
   head: () => ({
@@ -23,16 +28,23 @@ export const Route = createRootRouteWithContext<RouterContext>()({
         name: 'viewport',
         content: 'width=device-width, initial-scale=1',
       },
-      { title: 'SIMPEG' },
+      { title: t('seo.siteTitle') },
       {
         name: 'description',
-        content:
-          'SIMPEG adalah sistem informasi kepegawaian untuk mengelola data pegawai, organisasi, cuti, dan penggajian.',
+        content: t('seo.siteDescription'),
       },
+      ...socialMeta({
+        title: t('seo.siteTitle'),
+        description: t('seo.siteDescription'),
+        path: '/',
+      }),
     ],
     links: [
       { rel: 'stylesheet', href: appCss },
       { rel: 'stylesheet', href: componentsCss },
+      { rel: 'icon', href: '/favicon.svg', type: 'image/svg+xml' },
+      { rel: 'icon', href: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+      { rel: 'apple-touch-icon', href: '/apple-touch-icon.png', sizes: '180x180' },
     ],
   }),
   errorComponent: GlobalError,
@@ -40,6 +52,15 @@ export const Route = createRootRouteWithContext<RouterContext>()({
   pendingComponent: GlobalLoading,
   shellComponent: RootDocument,
 })
+
+function SkipLink() {
+  const t = useMessages()
+  return (
+    <a href="#konten-utama" className="skip-link">
+      {t('nav.skipToContent')}
+    </a>
+  )
+}
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   const { queryClient } = Route.useRouteContext()
@@ -53,7 +74,12 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <body className="font-sans antialiased [overflow-wrap:anywhere]">
         <QueryClientProvider client={queryClient}>
           <LocaleProvider>
-            <TooltipProvider>{children}</TooltipProvider>
+            <SkipLink />
+            <TooltipProvider>
+              <div id="konten-utama" tabIndex={-1} className="outline-none">
+                {children}
+              </div>
+            </TooltipProvider>
             <AppToaster />
           </LocaleProvider>
         </QueryClientProvider>

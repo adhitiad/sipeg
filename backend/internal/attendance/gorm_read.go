@@ -4,20 +4,53 @@ import (
 	"context"
 	"time"
 
+	"gorm.io/gorm"
+
 	"simpeg/backend/internal/crypto"
+	"simpeg/backend/internal/listing"
 	"simpeg/backend/internal/models"
 	"simpeg/backend/internal/timeutil"
 )
 
+// RekamSortFields memetakan kunci sort ke kolom SQL untuk rekam presensi.
+// Nilai di luar allowlist jatuh ke kolom bawaan sehingga query tidak pernah
+// memakai kolom dari input mentah. Kunci "date" dipertahankan sebagai alias
+// lama untuk "tanggal" agar klien yang sudah berjalan tidak berubah perilaku.
+var RekamSortFields = map[string]string{
+	"tanggal": `"tanggal"`,
+	"date":    `"tanggal"`,
+	"status":  `"status"`,
+}
+
+// myRecordsScope membangun query dasar rekam pribadi tanpa klausa SELECT.
+// Pemanggil menambahkan Select("p.*") hanya pada query baris; klausa itu tidak
+// boleh dipakai saat menghitung total karena GORM akan membentuk
+// COUNT("p"."*") yang ditolak PostgreSQL (SQLSTATE 42703).
+func myRecordsScope(db *gorm.DB, userID string, filter RecordFilter) *gorm.DB {
+	query := db.Table(`"Presensi" AS p`).
+		Joins(`JOIN "user" AS u ON u."id" = p."userId"`).
+		Where(`p."userId" = ? AND p."tanggal" >= ? AND p."tanggal" < ?`, userID, filter.From, filter.Until)
+	if filter.Status != "" {
+		query = query.Where(`p."status" = ?`, filter.Status)
+	}
+	if filter.Search != "" {
+		query = query.Where(`u."nama" ILIKE ?`, "%"+filter.Search+"%")
+	}
+	return query
+}
+
 func (s GormStore) ListMyRecords(ctx context.Context, userID string, filter RecordFilter) ([]models.Presensi, int64, error) {
-	query := s.DB.WithContext(ctx).Model(&models.Presensi{}).
-		Where(`"userId" = ? AND "tanggal" >= ? AND "tanggal" < ?`, userID, filter.From, filter.Until)
+	db := s.DB.WithContext(ctx)
 	var total int64
-	if err := query.Count(&total).Error; err != nil {
+	if err := myRecordsScope(db, userID, filter).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 	var records []models.Presensi
-	err := query.Order(`"tanggal" DESC`).Offset((filter.Page - 1) * filter.PageSize).Limit(filter.PageSize).Find(&records).Error
+	order := listing.OrderClause(RekamSortFields, filter.Sort, filter.Order, "tanggal")
+	err := myRecordsScope(db, userID, filter).Select(`p.*`).Order(order).
+		Offset((filter.Page - 1) * filter.PageSize).
+		Limit(filter.PageSize).
+		Scan(&records).Error
 	return records, total, err
 }
 
@@ -31,24 +64,32 @@ type unitDayRow struct {
 	Note     *string                `gorm:"column:note"`
 }
 
-// ListUnitDay mengembalikan seluruh pegawai aktif dalam cakupan beserta
-// catatan Presensi untuk tanggal `day` (LEFT JOIN; pegawai tanpa catatan
-// tampil dengan status NULL). `homebaseIDs` nil berarti lintas organisasi.
-func (s GormStore) ListUnitDay(ctx context.Context, homebaseIDs []string, day time.Time) ([]UnitDayRow, error) {
+// unitDayScope menyusun query pegawai aktif dalam cakupan beserta catatan
+// Presensi untuk satu tanggal. Dipisah dari ListUnitDay agar bentuk SQL dapat
+// diperiksa tanpa database nyata.
+func unitDayScope(tx *gorm.DB, homebaseIDs []string, day time.Time) *gorm.DB {
 	start := timeutil.DateOnly(day)
 	end := start.AddDate(0, 0, 1)
-	query := s.DB.WithContext(ctx).Table(`"user" AS u`).
+	query := tx.Table(`"user" AS u`).
 		Select(`u."id" AS "id", u."nama" AS "nama", u."nip" AS "nip", u."homebaseId" AS "unitId",
 			h."name" AS "unitName", p."status" AS "status", p."keterangan" AS "note"`).
-		Joins(`LEFT JOIN "homebase" AS h ON h."id" = u."homebaseId"`).
+		Joins(`LEFT JOIN "Homebase" AS h ON h."id" = u."homebaseId"`).
 		Joins(`LEFT JOIN "Presensi" AS p ON p."userId" = u."id" AND p."tanggal" >= ? AND p."tanggal" < ?`,
 			start, end).
 		Where(`u."aktif" = ?`, true)
 	if homebaseIDs != nil {
 		query = query.Where(`u."homebaseId" IN ?`, homebaseIDs)
 	}
+	return query
+}
+
+// ListUnitDay mengembalikan seluruh pegawai aktif dalam cakupan beserta
+// catatan Presensi untuk tanggal `day` (LEFT JOIN; pegawai tanpa catatan
+// tampil dengan status NULL). `homebaseIDs` nil berarti lintas organisasi.
+func (s GormStore) ListUnitDay(ctx context.Context, homebaseIDs []string, day time.Time) ([]UnitDayRow, error) {
 	var rows []unitDayRow
-	if err := query.Order(`u."nama" ASC`).Scan(&rows).Error; err != nil {
+	if err := unitDayScope(s.DB.WithContext(ctx), homebaseIDs, day).
+		Order(`u."nama" ASC`).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	result := make([]UnitDayRow, 0, len(rows))

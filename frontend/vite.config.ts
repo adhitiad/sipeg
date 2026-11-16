@@ -1,4 +1,4 @@
-import { defineConfig, type Plugin } from 'vite'
+import { defineConfig, loadEnv, type Plugin } from 'vite'
 import { devtools } from '@tanstack/devtools-vite'
 
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
@@ -36,16 +36,22 @@ const securityHeadersPlugin = (): Plugin => ({
   },
 })
 
+const env = loadEnv(process.env.NODE_ENV ?? 'development', process.cwd(), '')
+// Target proksi dibaca dari VITE_API_PROXY_TARGET baik dari shell maupun
+// dari `.env` (loadEnv); sehingga `bun run dev` polos pun tetap mem-proxy
+// /api/v1 ke backend.
+const apiProxyTarget = process.env.VITE_API_PROXY_TARGET ?? env.VITE_API_PROXY_TARGET
+
 const config = defineConfig({
   resolve: { tsconfigPaths: true },
-  server: process.env.VITE_API_PROXY_TARGET
+  server: apiProxyTarget
     ? {
         proxy: {
           // Proksi same-origin untuk /api/v1 agar pengembangan harian tidak
           // bergantung pada CORS. Target dibaca dari VITE_API_PROXY_TARGET
           // (contoh: http://localhost:8080); bukan alamat yang dibaca antarmuka.
           '/api/v1': {
-            target: process.env.VITE_API_PROXY_TARGET,
+            target: apiProxyTarget,
             changeOrigin: true,
           },
         },

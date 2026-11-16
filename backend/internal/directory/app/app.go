@@ -41,7 +41,14 @@ func (s scopeResolver) resolve(ctx context.Context, principal auth.Principal) (a
 	return auth.NewUnitScope(principal.HomebaseID, unitIDs), nil
 }
 
-// allows melaporkan apakah role principal memiliki permission tertentu.
-func allows(policy auth.Policy, principal auth.Principal, permission auth.Permission) bool {
-	return policy != nil && policy.Allows(principal.RoleName, permission)
+// allows melaporkan apakah principal memiliki permission tertentu. Bila policy
+// mengimplementasikan auth.ScopedPolicy, evaluasi scoped dipakai.
+func allows(ctx context.Context, policy auth.Policy, principal auth.Principal, permission auth.Permission) bool {
+	if policy == nil {
+		return false
+	}
+	if sp, ok := policy.(auth.ScopedPolicy); ok {
+		return sp.AllowsScoped(ctx, principal, permission)
+	}
+	return policy.Allows(principal.RoleName, permission)
 }

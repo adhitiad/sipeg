@@ -14,14 +14,15 @@ import RetryButton from '@/components/RetryButton'
 import { Button } from '@/components/ui/button'
 import { useLocale, useMessages } from '@/i18n/locale-context'
 import {
+  ORGANIZATION_SORT_FIELDS,
   useOrganizations,
   useOrganizationsPage,
   type OrganizationListParams,
   type OrganizationSortField,
-  type OrganizationSortOrder,
 } from '@/lib/organizations'
 import type { Organization } from '@/validations/schemas'
 import { useSession } from '@/lib/session'
+import { useTableControls, visibleRange } from '@/lib/table-state'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
@@ -31,6 +32,10 @@ export const Route = createFileRoute('/_app/organizations')({
 
 const SEARCH_DEBOUNCE_MS = 300
 
+/**
+ * Halaman daftar unit organisasi. Backend memegang pagination, sorting, dan
+ * filtering, jadi halaman ini hanya menyimpan state kendali tabel.
+ */
 function OrganizationPage() {
   const t = useMessages()
   const { locale } = useLocale()
@@ -46,11 +51,7 @@ function OrganizationPage() {
 
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
-  const [sort, setSort] = useState<OrganizationSortField>('name')
-  const [order, setOrder] = useState<OrganizationSortOrder>('asc')
   const [jenis, setJenis] = useState<string | null>(null)
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState<OrganizationPageSize>(20)
 
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [editingOrganization, setEditingOrganization] = useState<Organization | null>(
@@ -60,13 +61,20 @@ function OrganizationPage() {
     null,
   )
 
+  const controls = useTableControls<OrganizationSortField>({
+    sortFields: ORGANIZATION_SORT_FIELDS,
+    initialSort: 'name',
+    initialPageSize: 20,
+  })
+  const { sort, order, page, pageSize, resetPage } = controls
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setSearch(searchInput.trim())
-      setPage(1)
+      resetPage()
     }, SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(timer)
-  }, [searchInput])
+  }, [searchInput, resetPage])
 
   const params: OrganizationListParams = useMemo(
     () => ({ page, pageSize, search, sort, order, jenis }),
@@ -107,10 +115,7 @@ function OrganizationPage() {
   const data = query.data
   const localeTag = locale === 'id' ? 'id-ID' : 'en-US'
   const totalItems = data?.totalItems ?? 0
-  const [from, to] =
-    totalItems === 0
-      ? [0, 0]
-      : [(page - 1) * pageSize + 1, Math.min(page * pageSize, totalItems)]
+  const [from, to] = visibleRange(page, pageSize, totalItems)
 
   const labels = {
     caption: t('organizations.tableCaption'),
@@ -121,45 +126,32 @@ function OrganizationPage() {
     active: t('organizations.statusActive'),
     inactive: t('organizations.statusInactive'),
     noParent: t('organizations.noParent'),
+    searchLabel: t('organizations.searchLabel'),
+    searchPlaceholder: t('organizations.searchPlaceholder'),
+    kindLabel: t('organizations.kindLabel'),
+    kindAll: t('organizations.kindAll'),
+    emptyTitle: t('organizations.emptyTitle'),
+    emptyHint: t('organizations.emptyDescription'),
+    loadingLabel: t('common.loadingTable'),
     resultLabel: t('organizations.resultCount', {
       from: new Intl.NumberFormat(localeTag).format(from),
       to: new Intl.NumberFormat(localeTag).format(to),
       total: new Intl.NumberFormat(localeTag).format(totalItems),
     }),
-    refreshingLabel: t('organizations.refreshing'),
-    prevPage: t('organizations.prevPage'),
-    nextPage: t('organizations.nextPage'),
-    pageInfo: t('organizations.pageInfo', {
-      page: String(page),
-      total: String(Math.max(data?.totalPages ?? 1, 1)),
-    }),
-    searchLabel: t('organizations.searchLabel'),
-    searchPlaceholder: t('organizations.searchPlaceholder'),
-    kindLabel: t('organizations.kindLabel'),
-    kindAll: t('organizations.kindAll'),
-    pageSizeLabel: t('organizations.pageSize'),
-    itemsPerPage: t('organizations.itemsPerPage', {
-      from: new Intl.NumberFormat(localeTag).format(from),
-      to: new Intl.NumberFormat(localeTag).format(to),
-      total: new Intl.NumberFormat(localeTag).format(totalItems),
-    }),
+    pageInfo: t('common.pageInfo'),
+    prevPage: t('common.prevPage'),
+    nextPage: t('common.nextPage'),
+    pageSizeLabel: t('common.pageSize'),
+    itemsPerPage: t('common.itemsPerPage'),
+    sortBy: t('common.sortBy'),
     edit: t('common.edit'),
     archive: t('organizations.archive'),
+    actions: t('common.actions'),
     typeUnit: t('organizations.typeUnit'),
     typeFakultas: t('organizations.typeFakultas'),
     typeJurusan: t('organizations.typeJurusan'),
     typeBiro: t('organizations.typeBiro'),
     typeBagian: t('organizations.typeBagian'),
-  }
-
-  function handleSortChange(field: OrganizationSortField) {
-    if (field === sort) {
-      setOrder((current) => (current === 'asc' ? 'desc' : 'asc'))
-      return
-    }
-    setSort(field)
-    setOrder('asc')
-    setPage(1)
   }
 
   function handleCreateSuccess(created: Organization) {
@@ -204,7 +196,11 @@ function OrganizationPage() {
       </div>
 
       {query.isPending ? (
-        <div className="island-shell flex flex-col items-center gap-4 rounded-2xl px-6 py-12 text-center">
+        <div
+          role="status"
+          aria-live="polite"
+          className="island-shell flex flex-col items-center gap-4 rounded-2xl px-6 py-12 text-center"
+        >
           <LoadingRadar size="md" decorative />
           <p className="m-0 text-sm text-[var(--sea-ink-soft)]">
             {t('organizations.loadingTitle')}
@@ -233,19 +229,23 @@ function OrganizationPage() {
         <OrganizationTable
           organizations={data.items}
           page={page}
-          pageSize={pageSize}
+          pageSize={pageSize as OrganizationPageSize}
           totalPages={data.totalPages}
           totalItems={data.totalItems}
+          isLoading={query.isPending}
           isFetching={query.isFetching}
           search={searchInput}
           sort={sort}
           order={order}
           kind={jenis}
-          onPageChange={setPage}
-          onPageSizeChange={setPageSize}
+          onPageChange={controls.setPage}
+          onPageSizeChange={(size) => controls.setPageSize(size as OrganizationPageSize)}
           onSearchChange={setSearchInput}
-          onSortChange={handleSortChange}
-          onKindChange={setJenis}
+          onSortChange={controls.applySort}
+          onKindChange={(value) => {
+            setJenis(value)
+            resetPage()
+          }}
           onEdit={(organization) => setEditingOrganization(organization)}
           onArchive={(organization) => setArchivingOrganization(organization)}
           canManage={canManage}

@@ -13,6 +13,8 @@ import (
 	"simpeg/backend/internal/attendance"
 	"simpeg/backend/internal/audit"
 	"simpeg/backend/internal/auth"
+	bpjsapp "simpeg/backend/internal/bpjs/app"
+	bpjsrepository "simpeg/backend/internal/bpjs/repository"
 	"simpeg/backend/internal/cache"
 	"simpeg/backend/internal/cloudinary"
 	"simpeg/backend/internal/config"
@@ -21,21 +23,40 @@ import (
 	"simpeg/backend/internal/directory/app"
 	"simpeg/backend/internal/directory/repository"
 	"simpeg/backend/internal/holiday"
+	honorapp "simpeg/backend/internal/honorsks/app"
+	honorrepository "simpeg/backend/internal/honorsks/repository"
 	"simpeg/backend/internal/httpserver"
 	"simpeg/backend/internal/jobs"
+	kontrakapp "simpeg/backend/internal/kontrak/app"
+	kontrakrepository "simpeg/backend/internal/kontrak/repository"
 	meapp "simpeg/backend/internal/me/app"
 	merepository "simpeg/backend/internal/me/repository"
 	"simpeg/backend/internal/observability"
 	"simpeg/backend/internal/outbox"
 	payrollapp "simpeg/backend/internal/payroll/app"
 	payrollrepository "simpeg/backend/internal/payroll/repository"
+	payscaleapp "simpeg/backend/internal/payscale/app"
+	payscalerepository "simpeg/backend/internal/payscale/repository"
+	pemberhentianapp "simpeg/backend/internal/pemberhentian/app"
+	pemberhentianrepository "simpeg/backend/internal/pemberhentian/repository"
+	pensiunapp "simpeg/backend/internal/pensiun/app"
+	pensiunrepository "simpeg/backend/internal/pensiun/repository"
+	pph21clapp "simpeg/backend/internal/pph21ter/app"
+	pph21trepository "simpeg/backend/internal/pph21ter/repository"
 	"simpeg/backend/internal/qstash"
+	rbacpkg "simpeg/backend/internal/rbac"
+	rbacapp "simpeg/backend/internal/rbac/app"
+	rbacrepository "simpeg/backend/internal/rbac/repository"
+	skapp "simpeg/backend/internal/sk/app"
+	skrepository "simpeg/backend/internal/sk/repository"
 	skpapp "simpeg/backend/internal/skp/app"
 	skprepository "simpeg/backend/internal/skp/repository"
 	"simpeg/backend/internal/slo"
 	sloapp "simpeg/backend/internal/slo/app"
 	"simpeg/backend/internal/slo/domain"
 	slorepository "simpeg/backend/internal/slo/repository"
+	thrapp "simpeg/backend/internal/thr/app"
+	thrrepository "simpeg/backend/internal/thr/repository"
 	"simpeg/backend/internal/timeutil"
 	tridharmaapp "simpeg/backend/internal/tridharma/app"
 	tridharmarepository "simpeg/backend/internal/tridharma/repository"
@@ -82,6 +103,8 @@ func main() {
 	resolver := auth.NewCombinedSessionResolver(jwtVerifier, db)
 	sessionIssuer := auth.NewGormSessionIssuer(db, cfg.SessionLifetime)
 	store := repository.GormStore{DB: db}
+	rbacStore := rbacrepository.GormStore{DB: db}
+	rbacService := rbacapp.NewService(rbacStore)
 	attendanceStore := attendance.GormStore{DB: db}
 	deviceAuth := attendance.NewGormDeviceAuthenticator(db)
 	skpStore := skprepository.GormStore{DB: db}
@@ -90,12 +113,64 @@ func main() {
 	// Role/permission grant matrix (Opsi A, disetujui 2026-11-10).
 	// Deny-by-default: role yang tidak tercantum atau izin yang tidak disebutkan
 	// ditolak. Matriks didefinisikan di cmd/server/policy.go.
-	policy := RolePermissionMatrix()
+	staticPolicy := RolePermissionMatrix()
+
+	// PolicyAdapter menggabungkan grant statis (fallback) dengan evaluator
+	// RBAC berbasis scoped assignment (DEC-087). Handler lama memakai
+	// Allows (grant statis); handler baru dapat memakai AllowsScoped untuk
+	// evaluasi scoped. Migrasi bertahap: grant statis tetap sumber kebenaran
+	// hingga data RBAC terisi.
+	policy := rbacpkg.NewPolicyAdapter(staticPolicy, rbacService)
 
 	// Payroll store harus didefinisikan sebelum directoryServices karena
 	// digunakan untuk layanan tunjangan dan potongan.
 	payrollStore := payrollrepository.GormStore{DB: db}
 	payrollService := payrollapp.NewService(payrollStore, policy, store)
+
+	// Layanan administratif presensi: pemetaan PIN mesin, penurunan Presensi
+	// dari AttendanceEvent, pengisian manual, dan laporan alpa (DEC-077).
+	attendanceAdmin := attendance.NewAdminService(attendance.NewGormAdminStore(db), policy, store)
+
+	// Layanan BPJS Kesehatan/Ketenagakerjaan (DEC-067/DEC-070).
+	bpjsStore := bpjsrepository.NewGormStore(db)
+	bpjsService := bpjsapp.NewService(bpjsStore, policy, store)
+
+	// Layanan PPh 21 skema TER (PMK 168/2023).
+	pph21Store := pph21trepository.NewGormStore(db)
+	pph21Service := pph21clapp.NewService(pph21Store, policy)
+
+	// Layanan honor mengajar per SKS (dosen LB), DEC-067/DEC-070.
+	honorStore := honorrepository.NewGormStore(db)
+	honorService := honorapp.NewService(honorStore, policy, store)
+
+	// Layanan skala gaji pokok yayasan (penggajian inti, DEC-067/DEC-068).
+	payscaleStore := payscalerepository.GormStore{DB: db}
+	payscaleService := payscaleapp.NewService(payscaleStore, policy)
+
+	// Layanan pembuatan slip otomatis (penggajian inti, DEC-067/DEC-075).
+	payrollGenerate := payrollapp.NewGenerateSlipService(payrollStore, policy)
+
+	// Layanan pemberhentian pegawai (DEC-083).
+	pemberhentianStore := pemberhentianrepository.GormStore{DB: db}
+	pemberhentianService := pemberhentianapp.NewService(pemberhentianStore, policy, store)
+
+	// Layanan THR (konfigurasi tahunan + generate slip THR).
+	thrStore := thrrepository.GormStore{DB: db}
+	thrService := thrapp.NewService(thrStore, policy)
+
+	// Layanan kontrak & perpanjangan pasca-BUP serta master pesangonAturan.
+	kontrakStore := kontrakrepository.GormStore{DB: db}
+	kontrakService := kontrakapp.NewService(kontrakStore, policy, store)
+	pesangonStore := kontrakrepository.PesangonGormStore{DB: db}
+	pesangonService := kontrakapp.NewPesangonService(pesangonStore, policy)
+
+	// Layanan pensiun (konfigurasi per kategori status + kepesertaan DPLK).
+	pensiunStore := pensiunrepository.GormStore{DB: db}
+	pensiunService := pensiunapp.NewService(pensiunStore, policy)
+
+	// Layanan baca Surat Keputusan (SK terbit dari alur kerja; baca saja).
+	skStore := skrepository.GormStore{DB: db}
+	skService := skapp.NewService(skStore, policy, store)
 
 	// Layanan profil mandiri: principal mengubah nama/nomor HP miliknya sendiri.
 	meService := meapp.NewService(merepository.GormStore{DB: db})
@@ -232,22 +307,39 @@ func main() {
 	}
 
 	mux := httpserver.NewMuxWithOptions(httpserver.MuxOptions{
-		Resolver:          resolver,
-		Policy:            policy,
-		Directory:         directoryServices,
-		Attendance:        attendanceStore,
-		AttendanceRead:    attendance.NewReadService(attendanceStore, store, policy),
-		DeviceAuth:        deviceAuth,
-		Payroll:           payrollService,
-		Holiday:           holidayService,
-		QStash:            qstashOptions,
-		SLO:               sloOptions,
-		SLODashboard:      sloDashboard,
-		SessionRevoker:    auth.GormSessionRevoker{DB: db},
-		SessionIssuer:     sessionIssuer,
-		Cloudinary:        cloudinaryService,
-		Me:                meService,
-		ReadinessCheckers: []httpserver.DependencyChecker{database.PingChecker{DB: db}},
+		Resolver:           resolver,
+		Policy:             policy,
+		Directory:          directoryServices,
+		Attendance:         attendanceStore,
+		AttendanceRead:     attendance.NewReadService(attendanceStore, store, policy),
+		AttendanceAdmin:    attendanceAdmin,
+		SlipVerification:   payrollStore,
+		DeviceAuth:         deviceAuth,
+		Payroll:            payrollService,
+		PayrollGenerate:    payrollGenerate,
+		PayrollSlipOrgName: cfg.PayrollSlipOrgName,
+		AppBaseURL:         cfg.AppBaseURL,
+		Pemberhentian:      pemberhentianService,
+		Thr:                thrService,
+		Kontrakt:           kontrakService,
+		Pesangon:           pesangonService,
+		Pensiun:            pensiunService,
+		SK:                 skService,
+		Payscale:           payscaleService,
+		HonorSks:           honorService,
+		Bpjs:               bpjsService,
+		Pph21Ter:           pph21Service,
+		Holiday:            holidayService,
+		QStash:             qstashOptions,
+		SLO:                sloOptions,
+		SLODashboard:       sloDashboard,
+		OpsOutbox:          outbox.NewGormStore(db),
+		RBAC:               rbacrepository.GormStore{DB: db},
+		SessionRevoker:     auth.GormSessionRevoker{DB: db},
+		SessionIssuer:      sessionIssuer,
+		Cloudinary:         cloudinaryService,
+		Me:                 meService,
+		ReadinessCheckers:  []httpserver.DependencyChecker{database.PingChecker{DB: db}},
 	})
 
 	rateLimiter := httpserver.NewRateLimiter(httpserver.RateLimitOptions{

@@ -28,6 +28,12 @@ github.com/mfridman/interpolate v0.2.0 h1:HM9ID8p6CUxoMJX+fECOtGQ2Mu7TW/GIMPyu48
 github.com/mfridman/interpolate v0.2.0/go.mod h1:8SfDy95IaPNnIokZh9mvIppmc3fGl8fx+Gu7uusuO9Q=
 github.com/ncruces/go-strftime v1.1.0 h1:vtPmPWMkb539RGV9WpWT9EwJGvrOCKvMNI4obWL47Hk=
 github.com/ncruces/go-strftime v1.1.0/go.mod h1:yVaq7iwCN09vHRrKBrrflXT0M9tTMG2KmZ9Fj7xeG/g=
+github.com/phpdave11/gofpdi v1.0.14-0.20211212211723-1f10f9844311/go.mod h1:vBmVV0Do6hSBHC8uKUQ71JGW+ZGQq74llk/7bXwjDoI=
+github.com/phpdave11/gofpdi v1.0.16 h1:4qi0x31yujXmS4F6L4ZJKtd1DqG/3H/bpQzEZh2dmhY=
+github.com/phpdave11/gofpdi v1.0.16/go.mod h1:vBmVV0Do6hSBHC8uKUQ71JGW+ZGQq74llk/7bXwjDoI=
+github.com/pkg/errors v0.8.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
+github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
+github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/pressly/goose/v3 v3.30.1 h1:KO28meBdbAUIdMbTP7bl9dp1FYZGXcYWb2O7miT09lE=
 github.com/pressly/goose/v3 v3.30.1/go.mod h1:CHGwuG2acDerUaXwz2i5T18VSauXpYDiL4WxzDvcOIM=
@@ -45,6 +51,10 @@ github.com/sethvargo/go-retry v0.5.0 h1:JYfFKmVJ8ER06GReN1efzc5cm52BrVsFVzmcHiKJ
 github.com/sethvargo/go-retry v0.5.0/go.mod h1:tvsjdKG6xfiCx4LSiUZ06kcv38xvdVQwv8R6/VnnVWg=
 github.com/shakinm/xlsReader v0.9.12 h1:F6GWYtCzfzQqdIuqZJ0MU3YJ7uwH1ofJtmTKyWmANQk=
 github.com/shakinm/xlsReader v0.9.12/go.mod h1:ME9pqIGf+547L4aE4YTZzwmhsij+5K9dR+k84OO6WSs=
+github.com/signintech/gopdf v0.38.4 h1:ivEw3SL20yciygH0vBeH4TUxLsPep2U+zDEagabNXUY=
+github.com/signintech/gopdf v0.38.4/go.mod h1:d23eO35GpEliSrF22eJ4bsM3wVeQJTjXTHq5x5qGKjA=
+github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e h1:MRM5ITcdelLK2j1vwZ3Je0FKVCfqOLp5zO6trqMLYs0=
+github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e/go.mod h1:XV66xRDqSt+GTGFMVlhk3ULuV0y9ZmzeVGR4mloJI3M=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UVUgZn+9EI=
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=

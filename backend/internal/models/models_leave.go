@@ -16,6 +16,7 @@ type Cuti struct {
 	DisetujuiBy           *string           `gorm:"type:uuid"`
 	Catatan               *string
 	SubJenis              *SubJenisIzinPenting
+	SubJenisBersalin      *SubJenisBersalin
 	NomorSurat            *string
 	TanggalSuratDokter    *time.Time `gorm:"type:timestamp(3)"`
 	JenisEviden           *JenisEviden

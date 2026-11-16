@@ -126,7 +126,7 @@ test.describe('beranda publik', () => {
     await page.goto('/')
 
     await expect(
-      page.getByRole('heading', { name: 'Data kepegawaian dalam satu tempat' }),
+      page.getByRole('heading', { name: 'Satu sistem untuk data kepegawaian kampus' }),
     ).toBeVisible()
     await expect(page.getByRole('link', { name: 'Masuk' }).first()).toBeVisible()
   })
@@ -231,10 +231,13 @@ test.describe('halaman masuk', () => {
     await page.getByRole('button', { name: 'Masuk', exact: true }).click()
 
     await expect(page).toHaveURL(/\/workspace$/)
-    await page.getByRole('link', { name: 'Tentang' }).click()
 
-    await expect(page).toHaveURL(/\/about$/)
-    await expect(page.getByRole('heading', { name: 'Tentang SIMPEG' })).toBeVisible()
+    // Navigasi utama kini berada di sidebar; halaman Pengaturan tidak
+    // memanggil API tambahan sehingga cocok sebagai tujuan uji.
+    await page.getByRole('link', { name: 'Pengaturan' }).click()
+
+    await expect(page).toHaveURL(/\/settings$/)
+    await expect(page.getByRole('tab', { name: 'Akun' })).toBeVisible()
   })
 })
 
@@ -248,14 +251,14 @@ test.describe('bahasa dan tema', () => {
     await expect(async () => {
       await page.getByRole('button', { name: 'English' }).click()
       await expect(
-        page.getByRole('heading', { name: 'Staff data in one place' }),
+        page.getByRole('heading', { name: 'One system for campus staff records' }),
       ).toBeVisible({ timeout: 1000 })
     }).toPass()
 
     await expect(async () => {
       await page.getByRole('button', { name: 'Bahasa Indonesia' }).click()
       await expect(
-        page.getByRole('heading', { name: 'Data kepegawaian dalam satu tempat' }),
+        page.getByRole('heading', { name: 'Satu sistem untuk data kepegawaian kampus' }),
       ).toBeVisible({ timeout: 1000 })
     }).toPass()
   })
@@ -301,6 +304,9 @@ test.describe('keyboard', () => {
 
     await page.goto('/login')
     await expect(page.getByRole('button', { name: 'Masuk', exact: true })).toBeVisible()
+
+    await page.keyboard.press('Tab')
+    await expect(page.getByRole('link', { name: 'Lompat ke konten utama' })).toBeFocused()
 
     await page.keyboard.press('Tab')
     await expect(

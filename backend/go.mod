@@ -12,6 +12,7 @@ require (
 	github.com/richardlehane/mscfb v1.0.9
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/shakinm/xlsReader v0.9.12
+	github.com/signintech/gopdf v0.38.4
 	github.com/xuri/excelize/v2 v2.11.1
 	gorm.io/driver/postgres v1.6.3
 	gorm.io/gorm v1.31.2
@@ -30,8 +31,11 @@ require (
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/metakeule/fmtdate v1.2.2 // indirect
 	github.com/mfridman/interpolate v0.2.0 // indirect
+	github.com/phpdave11/gofpdi v1.0.16 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/richardlehane/msoleps v1.0.6 // indirect
 	github.com/sethvargo/go-retry v0.5.0 // indirect
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e // indirect
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect
 	github.com/xuri/efp v0.0.3-0.20260924042702-217b81952dec // indirect
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect

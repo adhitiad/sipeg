@@ -25,8 +25,8 @@ func NewPotonganService(repo repository.PotonganRepository, policy auth.Policy, 
 
 func (s *PotonganService) List(ctx context.Context, principal auth.Principal, options listing.Options) (listing.Page[models.KomponenPotongan], error) {
 	switch {
-	case allows(s.policy, principal, "potongan:read:any"):
-	case allows(s.policy, principal, "potongan:read:homebase"):
+	case allows(ctx, s.policy, principal, "potongan:read:any"):
+	case allows(ctx, s.policy, principal, "potongan:read:homebase"):
 		scope, err := s.scope.resolve(ctx, principal)
 		if err != nil {
 			return listing.Page[models.KomponenPotongan]{}, err
@@ -35,7 +35,7 @@ func (s *PotonganService) List(ctx context.Context, principal auth.Principal, op
 			return listing.EmptyPage[models.KomponenPotongan](options.Page, options.PageSize), nil
 		}
 		options.ScopeHomebaseIDs = scope.List()
-	case allows(s.policy, principal, "potongan:read:self"):
+	case allows(ctx, s.policy, principal, "potongan:read:self"):
 		options.UserID = principal.UserID
 	default:
 		return listing.Page[models.KomponenPotongan]{}, domain.ErrForbidden
@@ -51,7 +51,7 @@ func (s *PotonganService) List(ctx context.Context, principal auth.Principal, op
 }
 
 func (s *PotonganService) Get(ctx context.Context, principal auth.Principal, id string) (models.KomponenPotongan, error) {
-	needsScope := allows(s.policy, principal, "potongan:read:homebase") && !allows(s.policy, principal, "potongan:read:any")
+	needsScope := allows(ctx, s.policy, principal, "potongan:read:homebase") && !allows(ctx, s.policy, principal, "potongan:read:any")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.KomponenPotongan{}, err
@@ -70,12 +70,12 @@ func (s *PotonganService) Create(ctx context.Context, principal auth.Principal, 
 	if err := input.Validate(); err != nil {
 		return models.KomponenPotongan{}, err
 	}
-	needsScope := allows(s.policy, principal, "potongan:create:homebase") && !allows(s.policy, principal, "potongan:create")
+	needsScope := allows(ctx, s.policy, principal, "potongan:create:homebase") && !allows(ctx, s.policy, principal, "potongan:create")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.KomponenPotongan{}, err
 	}
-	if !s.canCreate(scoped, &input.UserID) {
+	if !s.canCreate(ctx, scoped, &input.UserID) {
 		return models.KomponenPotongan{}, domain.ErrForbidden
 	}
 	item := models.KomponenPotongan{
@@ -97,7 +97,7 @@ func (s *PotonganService) Update(ctx context.Context, principal auth.Principal, 
 	if err := patch.Validate(); err != nil {
 		return models.KomponenPotongan{}, err
 	}
-	needsScope := allows(s.policy, principal, "potongan:update:homebase") && !allows(s.policy, principal, "potongan:update:any")
+	needsScope := allows(ctx, s.policy, principal, "potongan:update:homebase") && !allows(ctx, s.policy, principal, "potongan:update:any")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return models.KomponenPotongan{}, err
@@ -113,7 +113,7 @@ func (s *PotonganService) Update(ctx context.Context, principal auth.Principal, 
 }
 
 func (s *PotonganService) Archive(ctx context.Context, principal auth.Principal, id string) error {
-	needsScope := allows(s.policy, principal, "potongan:archive:homebase") && !allows(s.policy, principal, "potongan:archive")
+	needsScope := allows(ctx, s.policy, principal, "potongan:archive:homebase") && !allows(ctx, s.policy, principal, "potongan:archive")
 	scoped, err := s.scopedPrincipal(ctx, principal, needsScope)
 	if err != nil {
 		return err
@@ -148,11 +148,11 @@ func (s *PotonganService) canRead(scoped scopedPrincipal, item models.KomponenPo
 	return false
 }
 
-func (s *PotonganService) canCreate(scoped scopedPrincipal, userID *string) bool {
-	if allows(s.policy, scoped.principal, "potongan:create") {
+func (s *PotonganService) canCreate(ctx context.Context, scoped scopedPrincipal, userID *string) bool {
+	if allows(ctx, s.policy, scoped.principal, "potongan:create") {
 		return true
 	}
-	if !allows(s.policy, scoped.principal, "potongan:create:homebase") {
+	if !allows(ctx, s.policy, scoped.principal, "potongan:create:homebase") {
 		return false
 	}
 	if userID == nil || *userID == "" {

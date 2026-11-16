@@ -377,6 +377,19 @@ export const payrollSlipSchema = z
   })
   .loose()
 
+/** Jawaban verifikasi publik slip gaji: nama, periode, status — tanpa nominal. */
+export const publicSlipVerificationSchema = z
+  .object({
+    nama: z.string(),
+    periode: z.string(),
+    periodeLabel: z.string().optional(),
+    status: z.string(),
+    statusLabel: z.string().optional(),
+  })
+  .loose()
+
+export type PublicSlipVerification = z.infer<typeof publicSlipVerificationSchema>
+
 export type PayrollSlip = z.infer<typeof payrollSlipSchema>
 
 export const payrollPageSchema = z.object({
@@ -507,7 +520,7 @@ export const cutiSchema = z
     tanggalSelesai: z.string(),
     alamatCuti: z.string().nullable().optional(),
     alasan: z.string().nullable().optional(),
-    status: z.enum(['MENUNGGU', 'DISETUJUI', 'DITOLAK']),
+    status: z.enum(['MENUNGGU', 'DISETUJUI', 'DITOLAK', 'BATAL']),
     disetujuiBy: z.string().nullable().optional(),
     catatan: z.string().nullable().optional(),
     subJenis: z
@@ -520,6 +533,7 @@ export const cutiSchema = z
       ])
       .nullable()
       .optional(),
+    subJenisBersalin: z.enum(['MELAHIRKAN', 'KEGUGURAN']).nullable().optional(),
     nomorSurat: z.string().nullable().optional(),
     tanggalSuratDokter: z.string().nullable().optional(),
     jenisEviden: z.enum(['SURAT_DOKTER', 'FOTO', 'LAINNYA']).nullable().optional(),
@@ -571,6 +585,7 @@ export const cutiCreateSchema = z.object({
     ])
     .nullable()
     .optional(),
+  subJenisBersalin: z.enum(['MELAHIRKAN', 'KEGUGURAN']).nullable().optional(),
   nomorSurat: z.string().max(100).nullable().optional(),
   tanggalSuratDokter: z.string().nullable().optional(),
   jenisEviden: z.enum(['SURAT_DOKTER', 'FOTO', 'LAINNYA']).nullable().optional(),
@@ -611,6 +626,7 @@ export const cutiUpdateSchema = z
       ])
       .nullable()
       .optional(),
+    subJenisBersalin: z.enum(['MELAHIRKAN', 'KEGUGURAN']).nullable().optional(),
     nomorSurat: z.string().max(100).nullable().optional(),
     tanggalSuratDokter: z.string().nullable().optional(),
     jenisEviden: z.enum(['SURAT_DOKTER', 'FOTO', 'LAINNYA']).nullable().optional(),
@@ -632,3 +648,681 @@ export const cutiActionSchema = z.object({
 })
 
 export type CutiAction = z.infer<typeof cutiActionSchema>
+
+/** Taxonomy kategori status pegawai untuk matriks penggajian. */
+export const kategoriStatusPegawaiSchema = z
+  .object({
+    id: z.uuid(),
+    kode: z.string(),
+    nama: z.string(),
+    deskripsi: z.string().nullable().optional(),
+    gajiDariNegara: z.boolean(),
+    butuhKontrak: z.boolean(),
+    wajibBpjs: z.boolean(),
+    bupSesuaiYayasan: z.boolean(),
+    aktif: z.boolean(),
+  })
+  .loose()
+
+export const kategoriStatusPegawaiListSchema = z.array(kategoriStatusPegawaiSchema)
+export type KategoriStatusPegawai = z.infer<typeof kategoriStatusPegawaiSchema>
+
+/** Baris nominal skala gaji per tingkat × kategori. */
+export const payrollScaleDetailSchema = z
+  .object({
+    id: z.uuid(),
+    skalaGajiId: z.uuid(),
+    kategoriStatusId: z.uuid(),
+    kategoriKode: z.string(),
+    kategoriNama: z.string(),
+    tingkat: z.number().int().min(0).max(99),
+    nominal: z.number().min(0),
+  })
+  .loose()
+
+export type PayrollScaleDetail = z.infer<typeof payrollScaleDetailSchema>
+
+/** Master skala gaji pokok yayasan. */
+export const payrollScaleSchema = z
+  .object({
+    id: z.uuid(),
+    kode: z.string(),
+    nama: z.string(),
+    berlakuMulai: z.string(),
+    berlakuSelesai: z.string().nullable().optional(),
+    aktif: z.boolean(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .loose()
+
+export type PayrollScale = z.infer<typeof payrollScaleSchema>
+
+export const payrollScaleWithDetailsSchema = payrollScaleSchema.extend({
+  details: z.array(payrollScaleDetailSchema),
+})
+
+export type PayrollScaleWithDetails = z.infer<typeof payrollScaleWithDetailsSchema>
+
+export const payrollScalePageSchema = z.object({
+  items: z.array(payrollScaleSchema),
+  page: z.number(),
+  pageSize: z.number(),
+  totalItems: z.number(),
+  totalPages: z.number(),
+})
+
+export type PayrollScalePage = z.infer<typeof payrollScalePageSchema>
+
+export const payrollScaleCreateSchema = z.object({
+  kode: z.string().min(1, 'Kode skala wajib diisi').max(50),
+  nama: z.string().min(1, 'Nama skala wajib diisi').max(200),
+  berlakuMulai: z.string().min(1, 'Tanggal berlaku wajib diisi'),
+  berlakuSelesai: z.string().nullable().optional(),
+})
+
+export type PayrollScaleCreate = z.infer<typeof payrollScaleCreateSchema>
+
+export const payrollScaleUpdateSchema = payrollScaleCreateSchema
+  .extend({
+    kode: z.string().min(1).max(50).optional(),
+    nama: z.string().min(1).max(200).optional(),
+    berlakuMulai: z.string().optional(),
+    aktif: z.boolean().optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: 'Minimal satu field harus diisi',
+  })
+
+export type PayrollScaleUpdate = z.infer<typeof payrollScaleUpdateSchema>
+
+export const payrollScaleDetailCreateSchema = z.object({
+  kategoriStatusId: z.uuid('Kategori wajib dipilih'),
+  tingkat: z.number().int().min(0).max(99),
+  nominal: z.number().min(0),
+})
+
+export type PayrollScaleDetailCreate = z.infer<typeof payrollScaleDetailCreateSchema>
+
+export const payrollScaleDetailUpdateSchema = payrollScaleDetailCreateSchema
+  .partial()
+  .refine((data) => Object.keys(data).length > 0, {
+    message: 'Minimal satu field harus diisi',
+  })
+
+export type PayrollScaleDetailUpdate = z.infer<typeof payrollScaleDetailUpdateSchema>
+
+/** Tarif honor per SKS untuk dosen LB. */
+export const honorSksRateSchema = z
+  .object({
+    id: z.uuid(),
+    berlakuMulai: z.string(),
+    perSks: z.number().min(0),
+    aktif: z.boolean(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .loose()
+
+export type HonorSksRate = z.infer<typeof honorSksRateSchema>
+export const honorSksRateListSchema = z.array(honorSksRateSchema)
+export const honorSksRateCreateSchema = z.object({
+  berlakuMulai: z.string().min(1, 'Tanggal berlaku wajib diisi'),
+  perSks: z.number().min(0),
+})
+export type HonorSksRateCreate = z.infer<typeof honorSksRateCreateSchema>
+export const honorSksRateUpdateSchema = honorSksRateCreateSchema
+  .extend({
+    berlakuMulai: z.string().optional(),
+    perSks: z.number().min(0).optional(),
+    aktif: z.boolean().optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: 'Minimal satu field harus diisi',
+  })
+export type HonorSksRateUpdate = z.infer<typeof honorSksRateUpdateSchema>
+
+/** Beban mengajar dosen LB per periode akademik. */
+export const honorSksPeriodeSchema = z
+  .object({
+    id: z.uuid(),
+    userId: z.uuid(),
+    periodeAkademikId: z.uuid(),
+    sks: z.number().min(0).max(200),
+    ratePerSks: z.number().min(0),
+    totalHonor: z.number().min(0),
+    skId: z.string().nullable().optional(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .loose()
+
+export type HonorSksPeriode = z.infer<typeof honorSksPeriodeSchema>
+export const honorSksPeriodePageSchema = z.object({
+  items: z.array(honorSksPeriodeSchema),
+  page: z.number(),
+  pageSize: z.number(),
+  totalItems: z.number(),
+  totalPages: z.number(),
+})
+export type HonorSksPeriodePage = z.infer<typeof honorSksPeriodePageSchema>
+export const honorSksPeriodeCreateSchema = z.object({
+  userId: z.uuid(),
+  periodeAkademikId: z.uuid(),
+  sks: z.number().min(0).max(200),
+  ratePerSks: z.number().min(0),
+})
+export type HonorSksPeriodeCreate = z.infer<typeof honorSksPeriodeCreateSchema>
+export const honorSksPeriodeUpdateSchema = z
+  .object({
+    sks: z.number().min(0).max(200).optional(),
+    ratePerSks: z.number().min(0).optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: 'Minimal satu field harus diisi',
+  })
+export type HonorSksPeriodeUpdate = z.infer<typeof honorSksPeriodeUpdateSchema>
+
+/** Konfigurasi tarif iuran BPJS per jenis dan periode. */
+export const bpjsKonfigurasiSchema = z
+  .object({
+    id: z.uuid(),
+    jenis: z.enum(['KESEHATAN', 'KETENAGAKERJAAN']),
+    iuranPegawaiPct: z.number().min(0).max(100),
+    iuranPemberiKerjaPct: z.number().min(0).max(100),
+    dasar: z.enum(['GAJI_POKOK', 'TOTAL_GAJI']),
+    batasAtas: z.number().nullable().optional(),
+    berlakuMulai: z.string(),
+    aktif: z.boolean(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .loose()
+
+export type BpjsKonfigurasi = z.infer<typeof bpjsKonfigurasiSchema>
+/** Pratinjau kompensasi pengajuan pemberhentian (sebelum approve). */
+export const kompensasiPreviewSchema = z
+  .object({
+    honoured: z.boolean(),
+    tersedia: z.boolean(),
+    masaKerjaTahun: z.number().int().min(0),
+    pesangonBulan: z.number().min(0),
+    tambahanBulan: z.number().min(0),
+    totalBulan: z.number().min(0),
+  })
+  .loose()
+export type KompensasiPreview = z.infer<typeof kompensasiPreviewSchema>
+/** Satu pengajuan/keputusan pemberhentian. */
+export const pemberhentianSchema = z
+  .object({
+    id: z.string(),
+    userId: z.string(),
+    jenis: z.enum(['BUP', 'ATAS_PERMINTAAN_SENDIRI', 'HORMAT', 'TIDAK_HORMAT']),
+    alasan: z.string(),
+    tanggal: z.string(),
+    status: z.enum(['MENUNGGU', 'DISETUJUI', 'DITOLAK']),
+    nomorSk: z.string(),
+    hakTerakhir: z.string().nullable().optional(),
+    keterangan: z.string().nullable().optional(),
+    kompensasiBulan: z.number(),
+    createdAt: z.string(),
+  })
+  .loose()
+export type Pemberhentian = z.infer<typeof pemberhentianSchema>
+export const pemberhentianListSchema = z.object({
+  items: z.array(pemberhentianSchema),
+  total: z.number(),
+})
+export type PemberhentianList = z.infer<typeof pemberhentianListSchema>
+/** Payload pengajuan pemberhentian via POST /api/v1/pemberhentian. */
+export const pemberhentianProposeSchema = z.object({
+  userId: z.uuid(),
+  alasan: z.enum([
+    'MENINGGAL_DUNIA',
+    'SAKIT_BERKEPANJANGAN',
+    'BUP',
+    'MENGUNDUR_DIRI',
+    'PENYEDERHANAAN_ORGANISASI',
+    'KESALAHAN_BERAT',
+  ]),
+  tanggal: z.string().min(1, 'Tanggal wajib diisi'),
+  keterangan: z.string().max(1000).nullable().optional(),
+})
+export type PemberhentianPropose = z.infer<typeof pemberhentianProposeSchema>
+/** Satu kontrak kerja. */
+export const kontrakSchema = z
+  .object({
+    id: z.string(),
+    userId: z.string(),
+    jenis: z.enum(['PKWT', 'PKWTT']),
+    nomorSk: z.string(),
+    mulai: z.string(),
+    selesai: z.string().nullable().optional(),
+    status: z.string(),
+    skId: z.string().nullable().optional(),
+    createdAt: z.string(),
+  })
+  .loose()
+export type Kontrak = z.infer<typeof kontrakSchema>
+export const kontrakListSchema = z.object({
+  items: z.array(kontrakSchema),
+  total: z.number(),
+})
+/** Payload perpanjangan perjanjian kerja tahunan pasca-BUP. */
+export const perpanjanganSchema = z.object({
+  userId: z.uuid(),
+  mulai: z.string().nullable().optional(),
+  durasiBulan: z.number().int().min(1).max(60).nullable().optional(),
+  allowOverlap: z.boolean().nullable().optional(),
+})
+export type Perpanjangan = z.infer<typeof perpanjanganSchema>
+/** Satu baris tabel aturan pesangon (admin input). */
+export const pesangonAturanSchema = z
+  .object({
+    id: z.string(),
+    kategoriStatusId: z.string(),
+    masaKerjaTahun: z.number().int().min(0),
+    pesangonBulan: z.number().min(0),
+    penghargaanBulan: z.number().min(0),
+    gantiKerugianBulan: z.number().min(0),
+    sumberRegulasi: z.string(),
+  })
+  .loose()
+export type PesangonAturan = z.infer<typeof pesangonAturanSchema>
+export const pesangonAturanListSchema = z.object({
+  items: z.array(pesangonAturanSchema),
+})
+/** Payload membuat/mengganti satu baris aturan pesangon. */
+export const pesangonAturanSaveSchema = z.object({
+  kategoriStatusId: z.uuid(),
+  masaKerjaTahun: z.number().int().min(0),
+  pesangonBulan: z.number().min(0),
+  penghargaanBulan: z.number().min(0),
+  gantiKerugianBulan: z.number().min(0),
+  sumberRegulasi: z.string().nullable().optional(),
+})
+/** Satu baris aturan pesangon (admin input). */
+/** Satu konfigurasi THR per tahun. */
+export const thrKonfigurasiSchema = z
+  .object({
+    tahun: z.number().int().min(2026),
+    besaranTipe: z.enum(['SATU_GAJI_POKOK', 'GAJI_KOTOR', 'PERSEN', 'PERSEN_TAKE_HOME']),
+    persen: z.number().min(0).max(400).nullable().optional(),
+    syaratMasaKerjaBulan: z.number().int().min(0).max(60),
+    berlakuTanggal: z.string().min(1, 'Tanggal berlaku wajib diisi'),
+    updatedAt: z.string(),
+  })
+  .loose()
+export type ThrConfig = z.infer<typeof thrKonfigurasiSchema>
+export const thrConfigListSchema = z
+  .object({ items: z.array(thrKonfigurasiSchema) })
+  .loose()
+  .transform((value) => value.items)
+/** Payload membuat/mengganti konfigurasi THR. */
+export const thrKonfigurasiUpsertSchema = z.object({
+  tahun: z.number().int().min(2026),
+  besaranTipe: z.enum(['SATU_GAJI_POKOK', 'GAJI_KOTOR', 'PERSEN', 'PERSEN_TAKE_HOME']),
+  persen: z.number().min(0).max(400).nullable().optional(),
+  syaratMasaKerjaBulan: z.number().int().min(0).max(60),
+  berlakuTanggal: z.string().min(1, 'Tanggal berlaku wajib diisi'),
+})
+export type ThrKonfigurasiUpsert = z.infer<typeof thrKonfigurasiUpsertSchema>
+/** Laporan hasil generate THR tahun tertentu. */
+export const thrGenerateReportSchema = z.object({
+  tahun: z.number().int(),
+  besaranTipe: z.string(),
+  berlakuTanggal: z.string(),
+  generated: z.number().int().min(0),
+  created: z
+    .array(
+      z
+        .object({
+          userId: z.string(),
+          nama: z.string(),
+          nominal: z.number().min(0),
+          sumber: z.string(),
+        })
+        .loose(),
+    )
+    .optional(),
+  skipped: z.array(
+    z
+      .object({
+        userId: z.string(),
+        nama: z.string().optional(),
+        reason: z.string(),
+      })
+      .loose(),
+  ),
+})
+export type ThrGenerateReport = z.infer<typeof thrGenerateReportSchema>
+/** Rencana THR: kandidat dengan nominal otomatis + yang dilewati. */
+export const thrPlanSchema = z.object({
+  tahun: z.number().int(),
+  besaranTipe: z.string(),
+  berlakuTanggal: z.string(),
+  items: z.array(
+    z
+      .object({
+        userId: z.string(),
+        nama: z.string(),
+        masaKerjaTahun: z.number().int().min(0),
+        nominalOtomatis: z.number().min(0),
+        sumber: z.string(),
+      })
+      .loose(),
+  ),
+  lewat: z.array(
+    z
+      .object({
+        userId: z.string(),
+        nama: z.string().optional(),
+        reason: z.string(),
+      })
+      .loose(),
+  ),
+})
+export type ThrPlan = z.infer<typeof thrPlanSchema>
+export const bpjsKonfigurasiListSchema = z.array(bpjsKonfigurasiSchema)
+export const bpjsKonfigurasiCreateSchema = z.object({
+  jenis: z.enum(['KESEHATAN', 'KETENAGAKERJAAN']),
+  iuranPegawaiPct: z.number().min(0).max(100),
+  iuranPemberiKerjaPct: z.number().min(0).max(100),
+  dasar: z.enum(['GAJI_POKOK', 'TOTAL_GAJI']),
+  batasAtas: z.number().nullable().optional(),
+  berlakuMulai: z.string().min(1, 'Tanggal berlaku wajib diisi'),
+})
+export type BpjsKonfigurasiCreate = z.infer<typeof bpjsKonfigurasiCreateSchema>
+export const bpjsKonfigurasiUpdateSchema = bpjsKonfigurasiCreateSchema
+  .extend({
+    jenis: z.enum(['KESEHATAN', 'KETENAGAKERJAAN']).optional(),
+    iuranPegawaiPct: z.number().min(0).max(100).optional(),
+    iuranPemberiKerjaPct: z.number().min(0).max(100).optional(),
+    dasar: z.enum(['GAJI_POKOK', 'TOTAL_GAJI']).optional(),
+    berlakuMulai: z.string().optional(),
+    aktif: z.boolean().optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: 'Minimal satu field harus diisi',
+  })
+export type BpjsKonfigurasiUpdate = z.infer<typeof bpjsKonfigurasiUpdateSchema>
+
+/** Kepesertaan BPJS per pegawai. */
+export const bpjsPesertaSchema = z
+  .object({
+    id: z.uuid(),
+    userId: z.uuid(),
+    jenis: z.enum(['KESEHATAN', 'KETENAGAKERJAAN']),
+    nomorKepesertaan: z.string().nullable().optional(),
+    mulai: z.string(),
+    selesai: z.string().nullable().optional(),
+    aktif: z.boolean(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .loose()
+
+export type BpjsPeserta = z.infer<typeof bpjsPesertaSchema>
+export const bpjsPesertaPageSchema = z.object({
+  items: z.array(bpjsPesertaSchema),
+  page: z.number(),
+  pageSize: z.number(),
+  totalItems: z.number(),
+  totalPages: z.number(),
+})
+export type BpjsPesertaPage = z.infer<typeof bpjsPesertaPageSchema>
+export const bpjsPesertaCreateSchema = z.object({
+  userId: z.uuid(),
+  jenis: z.enum(['KESEHATAN', 'KETENAGAKERJAAN']),
+  mulai: z.string().min(1, 'Tanggal mulai wajib diisi'),
+  selesai: z.string().nullable().optional(),
+  nomorKepesertaan: z.string().nullable().optional(),
+})
+export type BpjsPesertaCreate = z.infer<typeof bpjsPesertaCreateSchema>
+export const bpjsPesertaUpdateSchema = z
+  .object({
+    nomorKepesertaan: z.string().nullable().optional(),
+    mulai: z.string().optional(),
+    selesai: z.string().nullable().optional(),
+    aktif: z.boolean().optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: 'Minimal satu field harus diisi',
+  })
+export type BpjsPesertaUpdate = z.infer<typeof bpjsPesertaUpdateSchema>
+
+/** Satu baris tarif efektif PPh 21 TER (PMK 168/2023). */
+export const pph21TerTarifSchema = z
+  .object({
+    id: z.uuid(),
+    kategori: z.enum(['A', 'B', 'C']),
+    lapisan: z.number().int().min(1),
+    batasBawah: z.number().min(0),
+    batasAtas: z.number().nullable().optional(),
+    tarifPct: z.number().min(0).max(100),
+    berlakuMulai: z.string(),
+  })
+  .loose()
+
+export type Pph21TerTarif = z.infer<typeof pph21TerTarifSchema>
+export const pph21TerTarifListSchema = z.array(pph21TerTarifSchema)
+export const pph21TerTarifCreateSchema = z.object({
+  kategori: z.enum(['A', 'B', 'C']),
+  lapisan: z.number().int().min(1),
+  batasBawah: z.number().min(0),
+  batasAtas: z.number().nullable().optional(),
+  tarifPct: z.number().min(0).max(100),
+  berlakuMulai: z.string().min(1, 'Tanggal berlaku wajib diisi'),
+})
+export type Pph21TerTarifCreate = z.infer<typeof pph21TerTarifCreateSchema>
+
+/** Satu pemetaan machinePin mesin absensi ke pegawai. */
+export const mesinAbsensiPinSchema = z
+  .object({
+    id: z.uuid(),
+    machinePin: z.string().min(1),
+    userId: z.uuid(),
+    nama: z.string(),
+    aktif: z.boolean(),
+    catatan: z.string().nullable().optional(),
+    createdAt: z.string(),
+  })
+  .loose()
+
+export type MesinAbsensiPin = z.infer<typeof mesinAbsensiPinSchema>
+export const mesinAbsensiPinListSchema = z.object({
+  items: z.array(mesinAbsensiPinSchema),
+})
+export type MesinAbsensiPinList = z.infer<typeof mesinAbsensiPinListSchema>
+export const mesinAbsensiPinCreateSchema = z.object({
+  machinePin: z.string().min(1, 'PIN mesin wajib diisi').max(100),
+  userId: z.uuid('UUID pegawai'),
+  catatan: z.string().max(200).nullable().optional(),
+})
+export type MesinAbsensiPinCreate = z.infer<typeof mesinAbsensiPinCreateSchema>
+export const pinImportIssueSchema = z
+  .object({
+    row: z.number().int(),
+    field: z.string(),
+    code: z.string(),
+    message: z.string(),
+  })
+  .loose()
+
+export type PinImportIssue = z.infer<typeof pinImportIssueSchema>
+export const pinImportResultSchema = z.object({
+  imported: z.number().int(),
+  issues: z.array(pinImportIssueSchema),
+})
+export type PinImportResult = z.infer<typeof pinImportResultSchema>
+export const derivePresensiRequestSchema = z.object({
+  from: z.string().min(1, 'Tanggal awal wajib diisi'),
+  to: z.string().min(1, 'Tanggal akhir wajib diisi'),
+})
+export type DerivePresensiRequest = z.infer<typeof derivePresensiRequestSchema>
+export const derivePresensiResponseSchema = z
+  .object({
+    from: z.string(),
+    to: z.string(),
+    created: z.number().int(),
+    updated: z.number().int(),
+    skippedManual: z.number().int(),
+    byStatus: z.record(z.string(), z.number().int()),
+    auditFailed: z.boolean().optional(),
+  })
+  .loose()
+
+export type DerivePresensiResponse = z.infer<typeof derivePresensiResponseSchema>
+export const alpaSuspectSchema = z
+  .object({
+    userId: z.uuid(),
+    nama: z.string(),
+    homebaseId: z.string().nullable().optional(),
+    alpa: z.record(z.string(), z.number().int()),
+    totalAlpa: z.number().int(),
+  })
+  .loose()
+
+export type AlpaSuspect = z.infer<typeof alpaSuspectSchema>
+export const alpaSuspectsResponseSchema = z.object({
+  months: z.number().int(),
+  items: z.array(alpaSuspectSchema),
+})
+export type AlpaSuspectsResponse = z.infer<typeof alpaSuspectsResponseSchema>
+export const presensiUpsertRequestSchema = z.object({
+  userId: z.uuid('UUID pegawai'),
+  tanggal: z.string().min(1, 'Tanggal wajib diisi'),
+  status: z.enum(['H', 'I', 'S', 'A', 'C', 'LD'], {
+    message: 'Status harus H/I/S/A/C/LD',
+  }),
+  keterangan: z.string().max(500).nullable().optional(),
+})
+export type PresensiUpsertRequest = z.infer<typeof presensiUpsertRequestSchema>
+export const presensiUpsertResponseSchema = z.object({
+  userId: z.uuid(),
+  tanggal: z.string(),
+  status: z.enum(['H', 'I', 'S', 'A', 'C', 'LD']),
+  keterangan: z.string().nullable().optional(),
+  created: z.boolean(),
+})
+export type PresensiUpsertResponse = z.infer<typeof presensiUpsertResponseSchema>
+
+export const rbacRoleSchema = z
+  .object({
+    id: z.number().int(),
+    code: z.string(),
+    name: z.string(),
+    tierLevel: z.number().int(),
+  })
+  .loose()
+export type RbacRole = z.infer<typeof rbacRoleSchema>
+export const rbacRoleListSchema = z.object({ items: z.array(rbacRoleSchema) })
+
+export const rbacPermissionSchema = z
+  .object({
+    id: z.number().int(),
+    module: z.string(),
+    action: z.string(),
+  })
+  .loose()
+export type RbacPermission = z.infer<typeof rbacPermissionSchema>
+export const rbacPermissionListSchema = z.object({
+  items: z.array(rbacPermissionSchema),
+})
+
+export const rbacUserRoleScopeSchema = z
+  .object({
+    id: z.number().int(),
+    userId: z.string(),
+    roleId: z.number().int(),
+    biroCode: z.string().nullable().optional(),
+    fakultasId: z.string().nullable().optional(),
+    jurusanId: z.string().nullable().optional(),
+    unitId: z.string().nullable().optional(),
+    deniedPermissions: z.unknown().optional(),
+  })
+  .loose()
+export type RbacUserRoleScope = z.infer<typeof rbacUserRoleScopeSchema>
+export const rbacUserRoleScopeListSchema = z.object({
+  items: z.array(rbacUserRoleScopeSchema),
+})
+
+export const rbacDelegasiSchema = z
+  .object({
+    id: z.number().int().optional(),
+    pemberiUserId: z.string().optional(),
+    penerimaUserId: z.string().optional(),
+    cakupan: z.string().optional(),
+    mulai: z.string().optional(),
+    selesai: z.string().optional(),
+    aktif: z.boolean().optional(),
+  })
+  .loose()
+export type RbacDelegasi = z.infer<typeof rbacDelegasiSchema>
+export const rbacDelegasiListSchema = z.object({
+  items: z.array(rbacDelegasiSchema),
+})
+
+export const pensiunKonfigurasiSchema = z
+  .object({
+    id: z.uuid(),
+    kategoriStatusId: z.uuid(),
+    bupUmur: z.number().int(),
+    dplkWajib: z.boolean(),
+    iuranPegawaiPct: z.number(),
+    iuranPemberiKerjaPct: z.number(),
+    penyediaDplk: z.string().nullable().optional(),
+    berlakuMulai: z.string(),
+    aktif: z.boolean(),
+    createdAt: z.string().optional(),
+  })
+  .loose()
+export type PensiunKonfigurasi = z.infer<typeof pensiunKonfigurasiSchema>
+export const pensiunKonfigurasiListSchema = z.object({
+  items: z.array(pensiunKonfigurasiSchema),
+})
+
+export const pensiunKepesertaanSchema = z
+  .object({
+    id: z.uuid(),
+    userId: z.uuid(),
+    nama: z.string().optional(),
+    penyediaDplk: z.string(),
+    nomorKepesertaan: z.string().nullable().optional(),
+    tanggalMulaiPensiun: z.string().nullable().optional(),
+    mulai: z.string(),
+    aktif: z.boolean(),
+    createdAt: z.string().optional(),
+  })
+  .loose()
+export type PensiunKepesertaan = z.infer<typeof pensiunKepesertaanSchema>
+export const pensiunKepesertaanListSchema = z.object({
+  items: z.array(pensiunKepesertaanSchema),
+})
+
+export const skSchema = z
+  .object({
+    id: z.uuid(),
+    nomorSk: z.string(),
+    jenis: z.string(),
+    penerbit: z.string(),
+    userId: z.string().optional(),
+    nama: z.string().optional(),
+    homebaseId: z.string().nullable().optional(),
+    tanggalSk: z.string(),
+    mulaiBerlaku: z.string().nullable().optional(),
+    selesaiBerlaku: z.string().nullable().optional(),
+    fileUrl: z.string().nullable().optional(),
+    metadata: z.string().optional(),
+    createdAt: z.string().optional(),
+  })
+  .loose()
+export type Sk = z.infer<typeof skSchema>
+export const skListSchema = z.object({
+  items: z.array(skSchema),
+  page: z.number().optional(),
+  pageSize: z.number().optional(),
+  totalItems: z.number().optional(),
+  totalPages: z.number().optional(),
+})
+export type SkList = z.infer<typeof skListSchema>

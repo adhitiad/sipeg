@@ -4,22 +4,24 @@ import { ShieldAlert, Plus, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useMessages } from '@/i18n/locale-context'
 import {
+  CUTI_SORT_FIELDS,
   useCutisPage,
   type CutiListParams,
   type CutiSortField,
-  type CutiSortOrder,
 } from '@/lib/cuti'
 import type { Cuti } from '@/validations/schemas'
 import { useSession } from '@/lib/session'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import CutiTable from '@/components/CutiTable'
+import CutiTable, { type CutiPageSize } from '@/components/CutiTable'
 import {
   CreateCutiDialog,
   EditCutiDialog,
   ApproveCutiDialog,
   RejectCutiDialog,
+  CancelCutiDialog,
 } from '@/components/CutiDialogs'
+import { useTableControls, visibleRange } from '@/lib/table-state'
 
 const SEARCH_DEBOUNCE_MS = 300
 
@@ -27,6 +29,11 @@ export const Route = createFileRoute('/_app/cuti')({
   component: CutiPage,
 })
 
+/**
+ * Halaman pengajuan cuti. Daftar yang tampil sudah dipersempit server sesuai
+ * peran pemohon; penyaringan dan pengurutan di sini hanya mempersempit hasil
+ * lebih lanjut, bukan menambah akses.
+ */
 function CutiPage() {
   const t = useMessages()
   const session = useSession()
@@ -42,6 +49,7 @@ function CutiPage() {
     permissions.includes('cuti:approve:any') ||
     permissions.includes('cuti:approve:homebase')
   const canReject = canApprove
+  const canCancelSelf = permissions.includes('cuti:cancel:self')
 
   const canRead = canReadAny || canReadHomebase || canReadSelf
 
@@ -49,22 +57,26 @@ function CutiPage() {
   const [search, setSearch] = useState('')
   const [jenis, setJenis] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
-  const [sort, setSort] = useState<CutiSortField>('tanggalMulai')
-  const [order, setOrder] = useState<CutiSortOrder>('asc')
-  const [page, setPage] = useState(1)
-  const pageSize = 25
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [editingCuti, setEditingCuti] = useState<Cuti | null>(null)
   const [approvingCuti, setApprovingCuti] = useState<Cuti | null>(null)
   const [rejectingCuti, setRejectingCuti] = useState<Cuti | null>(null)
+  const [cancelingCuti, setCancelingCuti] = useState<Cuti | null>(null)
+  const controls = useTableControls<CutiSortField>({
+    sortFields: CUTI_SORT_FIELDS,
+    initialSort: 'tanggalMulai',
+    initialOrder: 'asc',
+    initialPageSize: 25,
+  })
+  const { sort, order, page, pageSize, resetPage } = controls
 
   useEffect(() => {
     const timer = setTimeout(() => {
       setSearch(searchInput.trim())
-      setPage(1)
+      resetPage()
     }, SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(timer)
-  }, [searchInput])
+  }, [searchInput, resetPage])
 
   const params: CutiListParams = useMemo(
     () => ({ page, pageSize, search, jenis, status, sort, order }),
@@ -94,8 +106,7 @@ function CutiPage() {
 
   const data = query.data
   const totalItems = data?.totalItems ?? 0
-  const from = totalItems === 0 ? 0 : (page - 1) * pageSize + 1
-  const to = Math.min(page * pageSize, totalItems)
+  const [from, to] = visibleRange(page, pageSize, totalItems)
 
   const labels = {
     caption: t('cuti.tableCaption'),
@@ -105,46 +116,43 @@ function CutiPage() {
     tanggalSelesai: t('cuti.colTanggalSelesai'),
     status: t('cuti.colStatus'),
     createdAt: t('cuti.colCreatedAt'),
+    action: t('cuti.colAction'),
+    emptyTitle: t('cuti.emptyTitle'),
+    emptyDescription: t('cuti.emptyDescription'),
     resultLabel: t('cuti.resultCount', {
       from: String(from),
       to: String(to),
       total: String(totalItems),
     }),
     refreshingLabel: t('audit.refreshing'),
-    prevPage: t('audit.prevPage'),
-    nextPage: t('audit.nextPage'),
-    pageInfo: t('audit.pageInfo', {
-      page: String(page),
-      total: String(Math.max(data?.totalPages ?? 1, 1)),
-    }),
+    prevPage: t('common.prevPage'),
+    nextPage: t('common.nextPage'),
+    pageInfo: t('common.pageInfo'),
     searchLabel: t('cuti.searchLabel'),
     searchPlaceholder: t('cuti.searchPlaceholder'),
     jenisLabel: t('cuti.jenisLabel'),
-    jenisAll: t('jabatan.typeAll'),
+    jenisAll: t('cuti.jenisAll'),
     statusLabel: t('cuti.colStatus'),
-    statusAll: t('jabatan.typeAll'),
-    userIdLabel: t('cuti.userIdLabel'),
-    pageSizeLabel: t('organizations.pageSize'),
-    itemsPerPage: t('cuti.itemsPerPage', {
-      from: String(from),
-      to: String(to),
-      total: String(totalItems),
-    }),
+    statusAll: t('cuti.statusAll'),
+    pageSizeLabel: t('common.pageSize'),
+    itemsPerPage: t('common.itemsPerPage'),
+    sortBy: t('common.sortBy'),
     approve: t('cuti.approveButton'),
     reject: t('cuti.rejectButton'),
+    cancel: t('cuti.cancelButton'),
     statusMenunggu: t('cuti.statusMenunggu'),
     statusDisetujui: t('cuti.statusDisetujui'),
     statusDitolak: t('cuti.statusDitolak'),
-  }
-
-  function handleSortChange(field: CutiSortField) {
-    if (field === sort) {
-      setOrder((current) => (current === 'asc' ? 'desc' : 'asc'))
-      return
-    }
-    setSort(field)
-    setOrder('asc')
-    setPage(1)
+    statusBatal: t('cuti.statusBatal'),
+    jenisLabels: {
+      TAHUNAN: t('cuti.jenisTahunan'),
+      PANJANG: t('cuti.jenisPanjang'),
+      BERSALIN: t('cuti.jenisBersalin'),
+      SAKIT: t('cuti.jenisSakit'),
+      SAKIT_BERKEPANJANGAN: t('cuti.jenisSakitBerkepanjangan'),
+      IZIN_PENTING: t('cuti.jenisIzinPenting'),
+      POLITIK: t('cuti.jenisPolitik'),
+    },
   }
 
   function handleCreateSuccess() {
@@ -169,6 +177,12 @@ function CutiPage() {
     setRejectingCuti(null)
     queryClient.invalidateQueries({ queryKey: ['cutis'] })
     toast.success(t('cuti.rejectSuccess'))
+  }
+
+  function handleCancelSuccess() {
+    setCancelingCuti(null)
+    queryClient.invalidateQueries({ queryKey: ['cutis'] })
+    toast.success(t('cuti.cancelSuccess'))
   }
 
   return (
@@ -212,36 +226,37 @@ function CutiPage() {
             {t('common.retry')}
           </Button>
         </div>
-      ) : data.items.length === 0 ? (
-        <div className="island-shell max-w-2xl rounded-2xl p-6">
-          <h2 className="mb-2 text-lg font-semibold text-[var(--sea-ink)]">
-            {t('cuti.emptyTitle')}
-          </h2>
-          <p className="m-0 text-sm leading-relaxed text-[var(--sea-ink-soft)]">
-            {t('cuti.emptyDescription')}
-          </p>
-        </div>
       ) : (
         <CutiTable
           cutis={data.items}
           page={page}
-          pageSize={pageSize}
+          pageSize={pageSize as CutiPageSize}
           totalPages={data.totalPages}
           totalItems={data.totalItems}
+          isFetching={query.isFetching}
           search={searchInput}
           jenis={jenis}
           status={status}
           sort={sort}
           order={order}
-          onPageChange={setPage}
+          onPageChange={controls.setPage}
+          onPageSizeChange={(size) => controls.setPageSize(size)}
           onSearchChange={setSearchInput}
-          onSortChange={handleSortChange}
-          onJenisChange={setJenis}
-          onStatusChange={setStatus}
+          onSortChange={(field, next) => controls.applySort(field, next)}
+          onJenisChange={(value) => {
+            setJenis(value)
+            resetPage()
+          }}
+          onStatusChange={(value) => {
+            setStatus(value)
+            resetPage()
+          }}
           onApprove={(cuti) => setApprovingCuti(cuti)}
           onReject={(cuti) => setRejectingCuti(cuti)}
+          onCancel={(cuti) => setCancelingCuti(cuti)}
           canApprove={canApprove}
           canReject={canReject}
+          canCancelSelf={canCancelSelf}
           labels={labels}
         />
       )}
@@ -273,6 +288,14 @@ function CutiPage() {
           cuti={rejectingCuti}
           onClose={() => setRejectingCuti(null)}
           onSuccess={handleRejectSuccess}
+        />
+      ) : null}
+
+      {cancelingCuti ? (
+        <CancelCutiDialog
+          cuti={cancelingCuti}
+          onClose={() => setCancelingCuti(null)}
+          onSuccess={handleCancelSuccess}
         />
       ) : null}
     </div>

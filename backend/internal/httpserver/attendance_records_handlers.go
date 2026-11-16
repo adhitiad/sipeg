@@ -3,12 +3,14 @@ package httpserver
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"simpeg/backend/internal/apierror"
 	"simpeg/backend/internal/attendance"
 	"simpeg/backend/internal/auth"
 	"simpeg/backend/internal/crypto"
+	"simpeg/backend/internal/listing"
 	"simpeg/backend/internal/models"
 	"simpeg/backend/internal/timeutil"
 )
@@ -56,7 +58,7 @@ func RegisterAttendanceReadRoutes(mux *http.ServeMux, resolver auth.SessionResol
 func (api attendanceReadAPI) myRecords(w http.ResponseWriter, r *http.Request) {
 	filter, err := attendanceRecordFilter(r)
 	if err != nil {
-		writeValidationError(w)
+		writeAttendanceFilterError(w, err)
 		return
 	}
 	principal, _ := auth.PrincipalFromContext(r.Context())
@@ -104,7 +106,7 @@ func (api attendanceReadAPI) unitRecords(w http.ResponseWriter, r *http.Request)
 func (api attendanceReadAPI) unitSummary(w http.ResponseWriter, r *http.Request) {
 	filter, err := attendanceRecordFilter(r)
 	if err != nil {
-		writeValidationError(w)
+		writeAttendanceFilterError(w, err)
 		return
 	}
 	principal, _ := auth.PrincipalFromContext(r.Context())
@@ -116,6 +118,10 @@ func (api attendanceReadAPI) unitSummary(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, summary)
 }
 
+// attendanceRecordFilter menyusun parameter daftar rekam presensi. Sort hanya
+// diterima bila berada dalam allowlist attendance.RekamSortFields; kolom SQL
+// ditentukan di sisi repository. Urutan bawaan tetap tanggal terbaru lebih
+// dulu supaya klien lama tidak berubah perilakunya.
 func attendanceRecordFilter(r *http.Request) (attendance.RecordFilter, error) {
 	from, err := time.Parse("2006-01-02", r.URL.Query().Get("from"))
 	if err != nil {
@@ -130,11 +136,61 @@ func attendanceRecordFilter(r *http.Request) (attendance.RecordFilter, error) {
 	if to.Before(from) || to.Sub(from) > 365*24*time.Hour {
 		return attendance.RecordFilter{}, errors.New("attendance date range is invalid")
 	}
-	page, pageSize, err := pagination(r)
+	query, err := parseListQuery(r, listing.SortKeys(attendance.RekamSortFields), "tanggal")
 	if err != nil {
 		return attendance.RecordFilter{}, err
 	}
-	return attendance.RecordFilter{From: from, Until: to.AddDate(0, 0, 1), Page: page, PageSize: pageSize}, nil
+	order := query.Order
+	if strings.TrimSpace(r.URL.Query().Get("order")) == "" {
+		order = "desc"
+	}
+	status := strings.TrimSpace(r.URL.Query().Get("status"))
+	if status != "" && !validAttendanceStatus(status) {
+		return attendance.RecordFilter{}, errInvalidAttendanceStatus
+	}
+	search := strings.TrimSpace(r.URL.Query().Get("search"))
+	if len(search) > listing.MaxSearchLength {
+		return attendance.RecordFilter{}, errInvalidAttendanceSearch
+	}
+	return attendance.RecordFilter{
+		From:     from,
+		Until:    to.AddDate(0, 0, 1),
+		Page:     query.Page,
+		PageSize: query.PageSize,
+		Sort:     query.Sort,
+		Order:    order,
+		Status:   status,
+		Search:   search,
+	}, nil
+}
+
+// validAttendanceStatus memeriksa status presensi yang dikenal backend.
+func validAttendanceStatus(value string) bool {
+	switch models.StatusPresensi(value) {
+	case models.StatusPresensiHadir, models.StatusPresensiIzin, models.StatusPresensiSakit,
+		models.StatusPresensiAlpa, models.StatusPresensiCuti, models.StatusPresensiLibur:
+		return true
+	default:
+		return false
+	}
+}
+
+// errInvalidAttendanceStatus dan errInvalidAttendanceSearch menandai filter
+// yang tidak dikenal.
+var (
+	errInvalidAttendanceStatus = &listParamError{param: "status"}
+	errInvalidAttendanceSearch = &listParamError{param: "search"}
+)
+
+// writeAttendanceFilterError memisahkan parameter daftar yang tidak dikenal
+// (400 invalid_query) dari kesalahan nilai lain (422 validation_error).
+func writeAttendanceFilterError(w http.ResponseWriter, err error) {
+	var paramErr *listParamError
+	if errors.As(err, &paramErr) {
+		writeErrorResponse(w, http.StatusBadRequest, apierror.CodeInvalidQuery)
+		return
+	}
+	writeValidationError(w)
 }
 
 func writeAttendanceReadError(w http.ResponseWriter, err error) {

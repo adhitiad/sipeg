@@ -1,5 +1,8 @@
-import { ChevronLeft, ChevronRight, Pencil, Archive } from 'lucide-react'
-import SortIcon from '@/components/SortIcon'
+import { useMemo } from 'react'
+import type { ColumnDef } from '@tanstack/react-table'
+import { Archive, Pencil, Search } from 'lucide-react'
+import { DataTable } from '@/components/DataTable'
+import type { DataTableLabels } from '@/components/DataTable'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -8,20 +11,35 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import { ORGANIZATION_KINDS } from '@/lib/organizations'
+import { ORGANIZATION_KINDS, ORGANIZATION_SORT_FIELDS } from '@/lib/organizations'
+import type { OrganizationSortField, OrganizationSortOrder } from '@/lib/organizations'
 import type { Organization } from '@/validations/schemas'
 
 const PAGE_SIZES = [10, 20, 25, 50, 100] as const
 export type OrganizationPageSize = (typeof PAGE_SIZES)[number]
+
+type OrganizationTableLabels = DataTableLabels & {
+  name: string
+  type: string
+  parent: string
+  status: string
+  active: string
+  inactive: string
+  noParent: string
+  searchLabel: string
+  searchPlaceholder: string
+  kindLabel: string
+  kindAll: string
+  edit: string
+  archive: string
+  actions: string
+  typeUnit: string
+  typeFakultas: string
+  typeJurusan: string
+  typeBiro: string
+  typeBagian: string
+  emptyHint: string
+}
 
 type OrganizationTableProps = {
   organizations: Organization[]
@@ -29,50 +47,24 @@ type OrganizationTableProps = {
   pageSize: OrganizationPageSize
   totalPages: number
   totalItems: number
+  isLoading: boolean
   isFetching: boolean
   search: string
-  sort: 'name' | 'jenis' | 'createdAt' | 'updatedAt'
-  order: 'asc' | 'desc'
+  sort: OrganizationSortField
+  order: OrganizationSortOrder
   kind: string | null
   onPageChange: (page: number) => void
   onPageSizeChange: (size: OrganizationPageSize) => void
   onSearchChange: (value: string) => void
-  onSortChange: (field: 'name' | 'jenis' | 'createdAt' | 'updatedAt') => void
+  onSortChange: (field: OrganizationSortField, order: OrganizationSortOrder) => void
   onKindChange: (value: string | null) => void
   onEdit: (organization: Organization) => void
   onArchive: (organization: Organization) => void
   canManage: boolean
-  labels: {
-    caption: string
-    name: string
-    type: string
-    parent: string
-    status: string
-    active: string
-    inactive: string
-    noParent: string
-    resultLabel: string
-    refreshingLabel: string
-    prevPage: string
-    nextPage: string
-    pageInfo: string
-    searchLabel: string
-    searchPlaceholder: string
-    kindLabel: string
-    kindAll: string
-    pageSizeLabel: string
-    itemsPerPage: string
-    edit: string
-    archive: string
-    typeUnit: string
-    typeFakultas: string
-    typeJurusan: string
-    typeBiro: string
-    typeBagian: string
-  }
+  labels: OrganizationTableLabels
 }
 
-function kindLabel(kind: string, labels: OrganizationTableProps['labels']): string {
+function kindLabel(kind: string, labels: OrganizationTableLabels): string {
   switch (kind) {
     case 'UNIT':
       return labels.typeUnit
@@ -89,21 +81,19 @@ function kindLabel(kind: string, labels: OrganizationTableProps['labels']): stri
   }
 }
 
-function pageRange(totalItems: number, page: number, pageSize: number): [number, number] {
-  if (totalItems === 0) {
-    return [0, 0]
-  }
-  const from = (page - 1) * pageSize + 1
-  const to = Math.min(page * pageSize, totalItems)
-  return [from, to]
-}
-
+/**
+ * Tabel daftar unit organisasi.
+ *
+ * Backend memegang pagination, sorting, dan filtering, jadi tabel ini hanya
+ * meneruskan pilihan pengguna.
+ */
 export default function OrganizationTable({
   organizations,
   page,
   pageSize,
   totalPages,
   totalItems,
+  isLoading,
   isFetching,
   search,
   sort,
@@ -119,30 +109,116 @@ export default function OrganizationTable({
   canManage,
   labels,
 }: OrganizationTableProps) {
-  const [from, to] = pageRange(totalItems, page, pageSize)
+  const columns = useMemo<ColumnDef<Organization, unknown>[]>(() => {
+    const base: ColumnDef<Organization, unknown>[] = [
+      {
+        id: 'name',
+        accessorFn: (row) => row.name ?? '',
+        header: labels.name,
+        cell: ({ row }) => (
+          <span className="font-medium break-words text-[var(--sea-ink)]">
+            {row.original.name ?? row.original.id}
+          </span>
+        ),
+      },
+      {
+        id: 'jenis',
+        accessorFn: (row) => row.jenis,
+        header: labels.type,
+        cell: ({ row }) => (
+          <span className="text-[var(--sea-ink-soft)]">
+            {kindLabel(row.original.jenis, labels)}
+          </span>
+        ),
+      },
+      {
+        id: 'parentId',
+        accessorFn: (row) => row.parentId ?? '',
+        header: labels.parent,
+        cell: ({ row }) => (
+          <span className="break-words text-[var(--sea-ink-soft)]">
+            {row.original.parentId ?? labels.noParent}
+          </span>
+        ),
+      },
+      {
+        id: 'aktif',
+        accessorFn: (row) => (row.aktif ? '1' : '0'),
+        header: labels.status,
+        cell: ({ row }) => (
+          <span
+            className={`text-xs font-medium ${
+              row.original.aktif ? 'text-[var(--sea-ink)]' : 'text-destructive'
+            }`}
+          >
+            {row.original.aktif ? labels.active : labels.inactive}
+          </span>
+        ),
+      },
+    ]
+
+    if (!canManage) {
+      return base
+    }
+
+    return [
+      ...base,
+      {
+        id: 'aksi',
+        enableSorting: false,
+        header: () => <span className="sr-only">{labels.actions}</span>,
+        cell: ({ row }) => (
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => onEdit(row.original)}
+              className="inline-flex items-center gap-1 rounded-full border border-[var(--chip-line)] bg-[var(--chip-bg)] px-3 py-1 text-xs font-semibold text-[var(--sea-ink)] transition-colors hover:bg-[var(--surface-strong)]"
+            >
+              <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+              {labels.edit}
+            </button>
+            <button
+              type="button"
+              onClick={() => onArchive(row.original)}
+              className="inline-flex items-center gap-1 rounded-full border border-[var(--chip-line)] bg-[var(--chip-bg)] px-3 py-1 text-xs font-semibold text-destructive transition-colors hover:bg-[var(--surface-strong)]"
+            >
+              <Archive className="h-3.5 w-3.5" aria-hidden="true" />
+              {labels.archive}
+            </button>
+          </div>
+        ),
+      },
+    ]
+  }, [labels, canManage, onEdit, onArchive])
 
   return (
-    <div className="island-shell overflow-hidden rounded-2xl">
-      <div className="border-b border-[var(--line)] px-4 py-3 sm:flex sm:items-center sm:justify-between gap-3">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-center">
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
           <label
             htmlFor="organization-search"
-            className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--kicker)]"
+            className="text-xs font-semibold tracking-[0.16em] text-[var(--kicker)] uppercase"
           >
             {labels.searchLabel}
           </label>
-          <Input
-            id="organization-search"
-            type="search"
-            value={search}
-            onChange={(event) => onSearchChange(event.target.value)}
-            placeholder={labels.searchPlaceholder}
-            className="h-11 w-full sm:w-64"
-          />
+          <div className="relative">
+            <Search
+              className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-[var(--sea-ink-soft)]"
+              aria-hidden="true"
+            />
+            <Input
+              id="organization-search"
+              type="search"
+              value={search}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder={labels.searchPlaceholder}
+              className="h-11 w-full pl-9 sm:w-64"
+            />
+          </div>
         </div>
 
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-center">
-          <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--kicker)]">
+        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+          <span className="text-xs font-semibold tracking-[0.16em] text-[var(--kicker)] uppercase">
             {labels.kindLabel}
           </span>
           <Select
@@ -162,175 +238,30 @@ export default function OrganizationTable({
             </SelectContent>
           </Select>
         </div>
-
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-center">
-          <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--kicker)]">
-            {labels.pageSizeLabel}
-          </span>
-          <Select
-            value={String(pageSize)}
-            onValueChange={(value) =>
-              onPageSizeChange(value as unknown as OrganizationPageSize)
-            }
-          >
-            <SelectTrigger className="h-11 w-20" aria-label={labels.pageSizeLabel}>
-              <SelectValue placeholder={String(pageSize)} />
-            </SelectTrigger>
-            <SelectContent>
-              {PAGE_SIZES.map((size) => (
-                <SelectItem key={size} value={String(size)}>
-                  {size}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
       </div>
 
-      <Table className="min-w-[40rem]">
-        <TableCaption className="sr-only">{labels.caption}</TableCaption>
-        <TableHeader>
-          <TableRow className="border-[var(--line)] hover:bg-transparent">
-            <TableHead scope="col" className="px-4 py-3">
-              <button
-                type="button"
-                onClick={() => onSortChange('name')}
-                aria-label={labels.name}
-                className="island-kicker inline-flex items-center gap-1"
-              >
-                {labels.name}
-                <SortIcon active={sort === 'name'} order={order} />
-              </button>
-            </TableHead>
-            <TableHead scope="col" className="px-4 py-3">
-              <button
-                type="button"
-                onClick={() => onSortChange('jenis')}
-                aria-label={labels.type}
-                className="island-kicker inline-flex items-center gap-1"
-              >
-                {labels.type}
-                <SortIcon active={sort === 'jenis'} order={order} />
-              </button>
-            </TableHead>
-            <TableHead scope="col" className="px-4 py-3">
-              {labels.parent}
-            </TableHead>
-            <TableHead scope="col" className="px-4 py-3">
-              {labels.status}
-            </TableHead>
-            {canManage ? (
-              <TableHead scope="col" className="px-4 py-3 text-right">
-                <span className="sr-only">Aksi</span>
-              </TableHead>
-            ) : null}
-          </TableRow>
-        </TableHeader>
-        <TableBody aria-busy={isFetching}>
-          {organizations.map((organization) => (
-            <TableRow
-              key={organization.id}
-              className="border-[var(--line)] last:border-0 hover:bg-transparent"
-            >
-              <TableCell className="px-4 py-3 font-medium text-[var(--sea-ink)] break-words">
-                {organization.name ?? organization.id}
-              </TableCell>
-              <TableCell className="px-4 py-3 text-[var(--sea-ink-soft)]">
-                {kindLabel(organization.jenis, labels)}
-              </TableCell>
-              <TableCell className="px-4 py-3 text-[var(--sea-ink-soft)] break-words">
-                {organization.parentId ?? labels.noParent}
-              </TableCell>
-              <TableCell className="px-4 py-3">
-                <span
-                  className={`font-medium text-xs ${
-                    organization.aktif ? 'text-[var(--sea-ink)]' : 'text-destructive'
-                  }`}
-                >
-                  {organization.aktif ? labels.active : labels.inactive}
-                </span>
-              </TableCell>
-              {canManage ? (
-                <TableCell className="px-4 py-3 text-right">
-                  <div className="flex items-center justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onEdit(organization)}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-[var(--chip-line)] bg-[var(--chip-bg)] px-3 py-1 text-xs font-semibold text-[var(--sea-ink)] transition hover:bg-[var(--link-bg-hover)]"
-                    >
-                      <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-                      {labels.edit}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onArchive(organization)}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-[var(--chip-line)] bg-[var(--chip-bg)] px-3 py-1 text-xs font-semibold text-destructive transition hover:bg-[var(--link-bg-hover)]"
-                    >
-                      <Archive className="h-3.5 w-3.5" aria-hidden="true" />
-                      {labels.archive}
-                    </button>
-                  </div>
-                </TableCell>
-              ) : null}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-
-      <div className="flex flex-col gap-3 border-t border-[var(--line)] px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-        <p className="m-0 text-[var(--sea-ink-soft)]">
-          {labels.itemsPerPage
-            .replace('{from}', String(from))
-            .replace('{to}', String(to))
-            .replace('{total}', String(totalItems))}
-          {isFetching ? ` · ${labels.refreshingLabel}` : ''}
-        </p>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => onPageChange(page - 1)}
-            disabled={page <= 1}
-            aria-label={labels.prevPage}
-            className="h-11 rounded-full border border-[var(--chip-line)] bg-[var(--chip-bg)] px-4 text-xs font-semibold text-[var(--sea-ink)] disabled:cursor-not-allowed disabled:opacity-50 sm:h-9"
-          >
-            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-          </button>
-          {[...Array(Math.max(totalPages, 1))].map((_, index) => {
-            const n = index + 1
-            const active = n === page
-            return (
-              <button
-                key={n}
-                type="button"
-                onClick={() => onPageChange(n)}
-                aria-label={n === page ? 'Halaman ' + String(n) : undefined}
-                aria-current={active ? 'page' : undefined}
-                className={
-                  active
-                    ? 'h-10 w-10 rounded-full bg-[var(--lagoon)] text-white shadow-[0_0_0_1px_var(--lagoon)_inset] text-xs font-semibold'
-                    : 'h-10 w-10 rounded-full border border-[var(--line)] bg-[var(--chip-bg)] text-[var(--sea-ink)] text-xs font-semibold hover:bg-[var(--surface-strong)] disabled:opacity-50'
-                }
-              >
-                {String(n)}
-              </button>
-            )
-          })}
-          <button
-            type="button"
-            onClick={() => onPageChange(page + 1)}
-            disabled={page >= totalPages}
-            aria-label={labels.nextPage}
-            className="h-11 rounded-full border border-[var(--chip-line)] bg-[var(--chip-bg)] px-4 text-xs font-semibold text-[var(--sea-ink)] disabled:cursor-not-allowed disabled:opacity-50 sm:h-9"
-          >
-            <ChevronRight className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </div>
-        <span className="text-xs text-[var(--sea-ink-soft)]">
-          {labels.pageInfo
-            .replace('{page}', String(page))
-            .replace('{total}', String(Math.max(totalPages, 1)))}
-        </span>
-      </div>
+      <DataTable
+        columns={columns}
+        data={organizations}
+        getRowId={(row) => row.id}
+        sortFields={ORGANIZATION_SORT_FIELDS}
+        sort={sort}
+        order={order}
+        onSortChange={onSortChange}
+        page={page}
+        pageSize={pageSize}
+        totalItems={totalItems}
+        totalPages={totalPages}
+        onPageChange={onPageChange}
+        onPageSizeChange={(size) => onPageSizeChange(size as OrganizationPageSize)}
+        pageSizeOptions={PAGE_SIZES}
+        isLoading={isLoading}
+        isFetching={isFetching}
+        emptyState={
+          <p className="m-0 text-sm text-[var(--sea-ink-soft)]">{labels.emptyHint}</p>
+        }
+        labels={labels}
+      />
     </div>
   )
 }

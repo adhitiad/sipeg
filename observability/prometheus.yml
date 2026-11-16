@@ -1,0 +1,54 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["prometheus:9090"]
+
+  - job_name: node-exporter
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  - job_name: blackbox
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          # Backend SIMPEG pada jaringan simpeg-broker (docker-compose.yml root, service: backend).
+          - http://backend:8080/health
+          - http://backend:8080/ready
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # RabbitMQ self-hosted (stack rabbitmq/). Aktifkan plugin rabbitmq_prometheus pada broker
+  # (image rabbitmq:*-management biasanya sudah menyertakannya; verifikasi: rabbitmq-plugins list).
+  # Port Prometheus bawaan: 15692. Pastikan stack observability bergabung ke jaringan simpeg-broker.
+  - job_name: rabbitmq
+    static_configs:
+      - targets: ["rabbitmq:15692"]
+
+  # Endpoint admin aplikasi (/api/v1/admin/ops/status, /api/v1/admin/slo/metrics) butuh bearer token
+  # + permission (ops:read/slo:read). Untuk scraping otomatis gunakan exporter/proxy internal yang
+  # menyuntikkan token dari secret host; JANGAN menaruh token/kredensial di repo. Alternatif $0:
+  # polling terjadwal (cron) yang menyimpan hasil ke file/Pushgateway internal, atau dasbor Grafana
+  # yang membaca via datasource aman. Supabase (tier Free): gunakan metrik yang tersedia di dashboard/project.

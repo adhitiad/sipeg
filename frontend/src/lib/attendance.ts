@@ -15,14 +15,22 @@ export const ATTENDANCE_PAGE_SIZE = 20
 /** Jumlah baris per halaman pada daftar kehadiran tim. */
 export const TEAM_ATTENDANCE_PAGE_SIZE = 20
 
+/**
+ * Kolom urut yang diizinkan backend untuk rekam presensi. Nilai di luar
+ * daftar ini ditolak dengan 400 invalid_query.
+ */
+export const ATTENDANCE_SORT_FIELDS = ['tanggal', 'status'] as const
+export type AttendanceSortField = (typeof ATTENDANCE_SORT_FIELDS)[number]
+export type AttendanceSortOrder = 'asc' | 'desc'
+
 export type AttendanceListParams = {
   page: number
   pageSize: number
   from: string
   to: string
-  search: string
-  sort: 'date'
-  order: 'asc' | 'desc'
+  search?: string
+  sort: AttendanceSortField
+  order: AttendanceSortOrder
   status: string | null
 }
 

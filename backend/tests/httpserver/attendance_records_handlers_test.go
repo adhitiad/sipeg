@@ -21,10 +21,12 @@ type fakeAttendanceReader struct {
 	records     []models.Presensi
 	counts      []attendance.StatusCount
 	dayRows     []attendance.UnitDayRow
+	filter      attendance.RecordFilter
 }
 
-func (r *fakeAttendanceReader) ListMyRecords(_ context.Context, userID string, _ attendance.RecordFilter) ([]models.Presensi, int64, error) {
+func (r *fakeAttendanceReader) ListMyRecords(_ context.Context, userID string, filter attendance.RecordFilter) ([]models.Presensi, int64, error) {
 	r.userID = userID
+	r.filter = filter
 	return r.records, int64(len(r.records)), nil
 }
 

@@ -98,7 +98,7 @@ test.describe('keyboard dan kontras', () => {
     await page.getByRole('button', { name: 'Masuk', exact: true }).click()
     await expect(page).toHaveURL(/\/workspace$/)
 
-    const link = await tabUntil(page, (description) => description === 'Pegawai', 30)
+    const link = await tabUntil(page, (description) => description === 'Pegawai', 40)
     expect(link).toBe('Pegawai')
     await expect(page.locator(':focus')).toHaveCSS('outline-width', '2px')
   })

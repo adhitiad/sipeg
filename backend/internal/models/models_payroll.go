@@ -74,8 +74,8 @@ type HariLibur struct {
 
 // JadwalGaji adalah tanggal gajian tetap tiap bulan untuk satu unit
 // organisasi. Nilai 1-28 menghindari pergeseran bulan pendek. Pemberitahuan
-// slip gaji dikirim H+1 pada hari kalender berikutnya tanpa penyesuaian hari
-// libur (keputusan 11 November 2026).
+// slip gaji dikirim H-1 pada hari kalender sebelumnya tanpa penyesuaian
+// hari libur (keputusan pemilik 2026-11-14; supersede keputusan 11 November 2026).
 type JadwalGaji struct {
 	BaseModel
 	UnitId string `gorm:"type:uuid;uniqueIndex"`
@@ -95,6 +95,109 @@ type SasaranKinerja struct {
 	Realisasi   float64
 	Bobot       float64
 	DinilaiOleh *string `gorm:"type:uuid"`
+}
+
+// SkalaGaji adalah tabel skala gaji pokok yayasan (effective-dated).
+type SkalaGaji struct {
+	BaseModel
+	Kode           string `gorm:"uniqueIndex"`
+	Nama           string
+	BerlakuMulai   time.Time  `gorm:"type:date"`
+	BerlakuSelesai *time.Time `gorm:"type:date"`
+	Aktif          bool
+}
+
+// SkalaGajiDetail adalah baris nominal per kategori status dan tingkat.
+type SkalaGajiDetail struct {
+	BaseModel
+	// SkalaGajiId menunjuk skalaGaji tempat baris nominal ini berada.
+	SkalaGajiId      string `gorm:"column:skalaGajiId;type:uuid;uniqueIndex:skala_gaji_detail_kunci"`
+	KategoriStatusId string `gorm:"column:kategoriStatusId;type:uuid;uniqueIndex:skala_gaji_detail_kunci;index:skala_gaji_detail_kategori_idx"`
+	Tingkat          int    `gorm:"uniqueIndex:skala_gaji_detail_kunci"`
+	Nominal          float64
+}
+
+// KategoriStatusPegawai adalah taxonomy kategori status pegawai.
+type KategoriStatusPegawai struct {
+	BaseModel
+	Kode             string `gorm:"uniqueIndex"`
+	Nama             string
+	Deskripsi        *string
+	GajiDariNegara   bool
+	ButuhKontrak     bool
+	WajibBpjs        bool
+	BupSesuaiYayasan bool
+	Aktif            bool
+}
+
+// ThrKonfigurasi adalah konfigurasi THR per tahun (`DEC-070`/`DEC-083`;
+// `thrKonfigurasi` pada `000025_payroll_core.sql`). `berlakuTanggal` adalah
+// tanggal pembayaran; ` syaratMasaKerjaBulan` adalah syarat masa kerja
+// pegawai. `besaranTipe`: `SATU_GAJI_POKOK` | `GAJI_KOTOR` (memakai slip
+// TERBIT terakhir) | `PERSEN` (dikalikan `persen` dari gaji pokok slip
+// TERBIT terakhir).
+type ThrKonfigurasi struct {
+	BaseModel
+	Tahun                int       `gorm:"uniqueIndex"`
+	BesaranTipe          string    `gorm:"type:text"`
+	Persen               *float64  `gorm:"type:double precision"`
+	SyaratMasaKerjaBulan int       `gorm:"default:3"`
+	BerlakuTanggal       time.Time `gorm:"type:date"`
+}
+
+// HonorSksRate adalah tarif honor per SKS per periode berlaku (dosen LB).
+type HonorSksRate struct {
+	BaseModel
+	BerlakuMulai time.Time `gorm:"type:date;uniqueIndex"`
+	PerSks       float64
+	Aktif        bool
+}
+
+// HonorSksPeriode adalah beban mengajar dan total honor per dosen LB per
+// periode akademik. Nominal disimpan sebagai bilangan bulat rupiah penuh.
+type HonorSksPeriode struct {
+	BaseModel
+	UserId            string  `gorm:"type:uuid;uniqueIndex:honor_sks_periode_kunci;index:honor_sks_periode_user_idx"`
+	PeriodeAkademikId string  `gorm:"type:uuid;uniqueIndex:honor_sks_periode_kunci"`
+	Sks               float64 `gorm:"type:numeric(6,2)"`
+	RatePerSks        float64
+	TotalHonor        float64
+	SkId              *string `gorm:"type:uuid"`
+}
+
+// BpjsKonfigurasi adalah tarif iuran BPJS per jenis dan periode berlaku.
+type BpjsKonfigurasi struct {
+	BaseModel
+	Jenis                JenisBPJS `gorm:"type:JenisBPJS;uniqueIndex:bpjs_konfigurasi_kunci"`
+	IuranPegawaiPct      float64   `gorm:"type:numeric(7,4)"`
+	IuranPemberiKerjaPct float64   `gorm:"type:numeric(7,4)"`
+	Dasar                string    `gorm:"type:text;default:GAJI_POKOK"`
+	BatasAtas            *float64
+	BerlakuMulai         time.Time `gorm:"type:date;uniqueIndex:bpjs_konfigurasi_kunci"`
+	Aktif                bool
+}
+
+// BpjsPeserta adalah kepesertaan BPJS per pegawai dan jenis.
+type BpjsPeserta struct {
+	BaseModel
+	UserId           string    `gorm:"type:uuid;uniqueIndex:bpjs_peserta_kunci;index:bpjs_peserta_user_idx"`
+	Jenis            JenisBPJS `gorm:"type:JenisBPJS;uniqueIndex:bpjs_peserta_kunci"`
+	NomorKepesertaan *string
+	Mulai            time.Time  `gorm:"type:date"`
+	Selesai          *time.Time `gorm:"type:date"`
+	Aktif            bool
+}
+
+// Pph21TerTarif adalah tabel tarif efektif bulanan PPh 21 skema TER
+// (PMK 168/2023). Pemetaan PTKP → kategori TER dilakukan di lapisan aplikasi.
+type Pph21TerTarif struct {
+	BaseModel
+	Kategori     PtkpKategoriTER `gorm:"type:PtkpKategoriTER;uniqueIndex:pph21_ter_kunci"`
+	Lapisan      int             `gorm:"uniqueIndex:pph21_ter_kunci"`
+	BatasBawah   float64
+	BatasAtas    *float64
+	TarifPct     float64
+	BerlakuMulai time.Time `gorm:"type:date;uniqueIndex:pph21_ter_kunci"`
 }
 
 type Pesangon struct {

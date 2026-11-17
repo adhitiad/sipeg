@@ -1,0 +1,63 @@
+name: Observability Config CI
+
+on:
+  push:
+    paths:
+      - "observability/**"
+      - "rabbitmq/**"
+      - ".github/workflows/observability.yml"
+  pull_request:
+    paths:
+      - "observability/**"
+      - "rabbitmq/**"
+      - ".github/workflows/observability.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate-observability:
+    name: Validate observability and RabbitMQ configuration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Compose manifests
+        run: |
+          docker compose -f rabbitmq/docker-compose.yml config --quiet
+          docker compose --env-file observability/.env.example -f observability/docker-compose.yml config --quiet
+
+      - name: Validate Grafana Alloy configuration
+        run: |
+          docker run --rm \
+            --volume "$PWD/observability:/etc/alloy:ro" \
+            --entrypoint alloy \
+            grafana/alloy:v1.21.3 \
+            validate --stability.level=generally-available /etc/alloy/alloy-config.alloy
+          docker run --rm \
+            --volume "$PWD/observability:/etc/alloy:ro" \
+            --entrypoint alloy \
+            grafana/alloy:v1.21.3 \
+            fmt --test /etc/alloy/alloy-config.alloy
+
+      - name: Validate Prometheus configuration and alert rules
+        run: |
+          docker run --rm \
+            --volume "$PWD/observability:/etc/prometheus:ro" \
+            --entrypoint promtool \
+            prom/prometheus:v3.16.0 \
+            check config /etc/prometheus/prometheus.yml
+
+      - name: Validate Alertmanager configuration
+        run: |
+          docker run --rm \
+            --volume "$PWD/observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro" \
+            --entrypoint amtool \
+            prom/alertmanager:v0.35.0 \
+            check-config /etc/alertmanager/alertmanager.yml
+
+      - name: Validate Grafana dashboard JSON
+        run: python -m json.tool observability/grafana/dashboards/simpeg-infrastructure.json > /dev/null
+
+      - name: Ensure retired Promtail config is absent
+        run: test ! -e observability/promtail-config.yml

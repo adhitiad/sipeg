@@ -37,6 +37,15 @@ groups:
           summary: "CPU host tinggi"
           description: "Penggunaan CPU >85% selama 5 menit pada {{ $labels.instance }}."
 
+      - alert: HighHostMemory
+        expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) < 0.10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Memori host hampir habis"
+          description: "Memori available host di bawah 10% selama 5 menit pada {{ $labels.instance }}."
+
       - alert: RabbitMQTargetDown
         expr: up{job="rabbitmq"} == 0
         for: 2m

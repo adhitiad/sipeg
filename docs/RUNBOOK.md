@@ -628,6 +628,7 @@ Checklist penutupan produksi:
 
 **Kebijakan (DEC-065, pemilik: adhitiad/admin):**
 - **Sumber:** stdout JSON container; dikumpulkan oleh Grafana Alloy ke Loki. Promtail telah diganti karena EOL.
+- **Buffer lokal Docker:** driver json-file dengan max-size 20m dan max-file 5 per container (sekitar 100 MB spool/container). Ini mencegah file log tumbuh tanpa batas; bukan retensi 30 hari. Jika Alloy/Loki tidak tersedia lebih lama dari buffer, ada risiko gap log.
 - **Retensi Loki:** awal 720 jam / 30 hari melalui compactor. Retensi aktual harus diperiksa pada Loki config dan volume/storage host.
 - **Retensi Prometheus:** 15 hari pada konfigurasi template; ini retensi metrik, bukan log.
 - **Retensi database:** audit log AUDIT_RETENTION_DAYS (bawaan 90 hari) dan SLO_RETENTION_DAYS (bawaan 30 hari) tetap terpisah dari Loki.

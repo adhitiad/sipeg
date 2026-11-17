@@ -45,7 +45,7 @@ func expectSession(mock sqlmock.Sqlmock, token string, userID string, expiresAt 
 }
 
 func expectUser(mock sqlmock.Sqlmock, userID, roleID string, aktif bool) {
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "user" WHERE id = $1`)).
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT "id","email","aktif","roleId","homebaseId" FROM "user" WHERE id = $1`)).
 		WithArgs(userID, sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "nama", "roleId", "homebaseId", "aktif"}).
 			AddRow(userID, "person@example.test", "Pegawai Uji", roleID, "unit-a", aktif))
@@ -164,7 +164,7 @@ func TestResolverDeniesRoleWithoutRoleRecord(t *testing.T) {
 	// Pengguna tanpa role: principal tetap terbentuk tetapi tanpa RoleName,
 	// sehingga policy menolak semua permission.
 	expectSession(mock, "valid-session", "user-1", time.Now().Add(time.Hour))
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "user" WHERE id = $1`)).
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT "id","email","aktif","roleId","homebaseId" FROM "user" WHERE id = $1`)).
 		WithArgs("user-1", sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "nama", "roleId", "homebaseId", "aktif"}).
 			AddRow("user-1", "person@example.test", "Pegawai Uji", nil, "unit-a", true))
@@ -188,7 +188,7 @@ func TestResolverRejectsSessionWithoutUser(t *testing.T) {
 	db, mock := newResolverDB(t)
 
 	expectSession(mock, "orphan-session", "user-1", time.Now().Add(time.Hour))
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "user" WHERE id = $1`)).
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT "id","email","aktif","roleId","homebaseId" FROM "user" WHERE id = $1`)).
 		WithArgs("user-1", sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "nama"}))
 

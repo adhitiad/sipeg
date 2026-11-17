@@ -169,7 +169,7 @@ func startProductionServer(dsn string) error {
 
 	serverCmd = exec.Command(binary)
 	serverCmd.Dir = backendRoot
-	serverCmd.Env = append(os.Environ(),
+	serverCmd.Env = overrideEnv(os.Environ(),
 		"APP_ENV=development",
 		"PORT="+strconv.Itoa(port),
 		"DATABASE_URL="+dsn,
@@ -231,13 +231,32 @@ func stopProductionServer() {
 	if serverDone != nil {
 		select {
 		case <-serverDone:
-		case <-5 * time.After(time.Second):
+		case <-time.After(5 * time.Second):
 			_ = serverCmd.Process.Kill()
 			<-serverDone
 		}
 	}
 	_ = os.Remove(serverCmd.Path)
 	serverCmd, serverDone = nil, nil
+}
+
+func overrideEnv(base []string, overrides ...string) []string {
+	overrideKeys := make(map[string]bool, len(overrides))
+	for _, item := range overrides {
+		key, _, ok := strings.Cut(item, "=")
+		if ok {
+			overrideKeys[key] = true
+		}
+	}
+	result := make([]string, 0, len(base)+len(overrides))
+	for _, item := range base {
+		key, _, ok := strings.Cut(item, "=")
+		if !ok || overrideKeys[key] {
+			continue
+		}
+		result = append(result, item)
+	}
+	return append(result, overrides...)
 }
 
 func seedFixture(ctx context.Context, db *gorm.DB) (fixture, error) {

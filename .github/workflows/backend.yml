@@ -44,9 +44,11 @@ jobs:
           go run golang.org/x/vuln/cmd/govulncheck@latest ./...
       - name: Check that no secret is committed
         run: |
-          if grep -rInE '(postgres|postgresql)://[^[:space:]]+:[^@[:space:]]+@' \
-            --include='*.go' --include='*.yaml' --include='*.yml' --include='*.md' \
-            --exclude-dir=.git .. | grep -v '\.env\.example'; then
+          matches="$(grep -rInE '(postgres|postgresql)://[^[:space:]]+:[^@[:space:]]+@' \\
+            --include='*.go' --include='*.yaml' --include='*.yml' --include='*.md' \\
+            --exclude-dir=.git .. | grep -v '\.env\.example' | grep -vE '://<[^>]+>:[^>]+>@' || true)"
+          if [ -n "$matches" ]; then
+            echo "$matches"
             echo "A database connection string with a password was found in the repository."
             exit 1
           fi

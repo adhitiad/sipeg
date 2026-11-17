@@ -13,25 +13,25 @@ import (
 
 // RateLimitOptions mengatur batas permintaan per klien.
 type RateLimitOptions struct {
-	// Limit adalah jumlah permintaan maksimum dalam satu window.
+	// Limit adalah jumlah permintaan maksimum per klien dalam satu window.
 	Limit int
-	// Window adalah panjang periode hitungan.
+	// Window adalah panjang periode hitungan umum.
 	Window time.Duration
-	// StrictPaths menerima batas lebih ketat untuk path sensitif.
+	// StrictPaths menerima batas tambahan yang lebih ketat untuk path sensitif.
 	StrictPaths []string
-	// StrictLimit dan StrictWindow berlaku untuk StrictPaths.
+	// StrictLimit dan StrictWindow berlaku sebagai kuota tambahan untuk StrictPaths.
 	StrictLimit  int
 	StrictWindow time.Duration
 	// Now dapat diganti pada pengujian.
 	Now func() time.Time
 }
 
-// RateLimiter membatasi permintaan per klien dengan hitungan window geser.
+// RateLimiter membatasi permintaan per klien menggunakan kuota umum dan,
+// bila cocok, kuota tambahan untuk path sensitif.
 //
 // Implementasi ini memakai memori per instance. Pada deployment lebih dari satu
-// instance, batas efektif menjadi jumlah instance dikalikan batas per instance.
-// Batas terdistribusi membutuhkan Redis, yang belum menjadi use case yang
-// disetujui.
+// instance, batas efektif tetap terpisah per instance; gunakan limiter terdistribusi
+// di edge/gateway sebelum melakukan horizontal scaling.
 type RateLimiter struct {
 	mu      sync.Mutex
 	buckets map[string]*rateBucket
@@ -54,30 +54,38 @@ func NewRateLimiter(options RateLimitOptions) *RateLimiter {
 	if options.Window <= 0 {
 		options.Window = time.Minute
 	}
+	if options.StrictLimit > 0 && options.StrictWindow <= 0 {
+		options.StrictWindow = options.Window
+	}
 	return &RateLimiter{buckets: map[string]*rateBucket{}, options: options}
 }
 
 // Middleware membungkus handler dengan pembatasan laju.
 func (l *RateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		limit, window := l.limitFor(r.URL.Path)
-		key := clientKey(r) + "|" + r.URL.Path
 		now := l.options.Now()
+		client := clientKey(r)
 
 		l.mu.Lock()
-		bucket, exists := l.buckets[key]
-		if !exists || now.After(bucket.reset) {
-			bucket = &rateBucket{reset: now.Add(window)}
-			l.buckets[key] = bucket
+		general := l.consumeLocked(client+"|general", now, l.options.Window)
+		blocked := general.count > l.options.Limit
+		reset := general.reset
+
+		if strictPath, ok := l.strictPath(r.URL.Path); ok && l.options.StrictLimit > 0 {
+			strict := l.consumeLocked(client+"|strict:"+strictPath, now, l.options.StrictWindow)
+			if strict.count > l.options.StrictLimit {
+				blocked = true
+				if strict.reset.After(reset) {
+					reset = strict.reset
+				}
+			}
 		}
-		bucket.count++
-		count := bucket.count
-		reset := bucket.reset
 		l.evictLocked(now)
 		l.mu.Unlock()
 
-		if count > limit {
-			retryAfter := int(time.Until(reset).Seconds())
+		if blocked {
+			remaining := reset.Sub(now)
+			retryAfter := int((remaining + time.Second - 1) / time.Second)
 			if retryAfter < 1 {
 				retryAfter = 1
 			}
@@ -92,16 +100,33 @@ func (l *RateLimiter) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// limitFor mengembalikan batas dan window yang berlaku untuk sebuah path.
-func (l *RateLimiter) limitFor(path string) (int, time.Duration) {
+// consumeLocked menaikkan bucket yang hanya dapat diakses saat l.mu terkunci.
+func (l *RateLimiter) consumeLocked(key string, now time.Time, window time.Duration) *rateBucket {
+	bucket, exists := l.buckets[key]
+	if !exists || !now.Before(bucket.reset) {
+		bucket = &rateBucket{reset: now.Add(window)}
+		l.buckets[key] = bucket
+	}
+	bucket.count++
+	return bucket
+}
+
+// strictPath mengembalikan prefix konfigurasi terpanjang yang cocok pada
+// batas segmen path, agar prefix seperti /auth tidak cocok dengan /authentication.
+func (l *RateLimiter) strictPath(path string) (string, bool) {
+	matched := ""
 	for _, strict := range l.options.StrictPaths {
-		if strings.HasPrefix(path, strict) {
-			if l.options.StrictLimit > 0 {
-				return l.options.StrictLimit, l.options.StrictWindow
+		prefix := strings.TrimRight(strict, "/")
+		if prefix == "" {
+			continue
+		}
+		if path == prefix || strings.HasPrefix(path, prefix+"/") {
+			if len(prefix) > len(matched) {
+				matched = prefix
 			}
 		}
 	}
-	return l.options.Limit, l.options.Window
+	return matched, matched != ""
 }
 
 // evictLocked membuang bucket yang sudah kedaluwarsa agar memori tidak tumbuh
@@ -111,7 +136,7 @@ func (l *RateLimiter) evictLocked(now time.Time) {
 		return
 	}
 	for key, bucket := range l.buckets {
-		if now.After(bucket.reset) {
+		if !now.Before(bucket.reset) {
 			delete(l.buckets, key)
 		}
 	}

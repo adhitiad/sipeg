@@ -1,279 +1,339 @@
-# SIMPEG
+<!-- SIMPEG root documentation -->
 
-**Sistem Informasi Kepegawaian (SIMPEG)** adalah platform pengelolaan data dan proses kepegawaian yang dikembangkan untuk kebutuhan institusi (target: Universitas Subang). Proyek ini memisahkan **backend API** (Go) dan **frontend web** (TanStack Start) dengan kontrak HTTP/JSON berversi.
+<p align="center">
+  <strong>SIMPEG</strong><br />
+  <sub>Sistem Informasi Kepegawaian</sub>
+</p>
 
-> **Status proyek:** dalam pengembangan aktif. Repositori ini berisi fondasi, modul inti, dan integrasi pendukung; sebagian alur belum end-to-end siap produksi. Detail kebijakan, batas implementasi, dan keputusan terbuka terdokumentasi di `docs/`.
+<p align="center">
+  Platform pengelolaan data dan proses kepegawaian yang terstruktur,
+  terlacak, dan dapat diaudit.
+</p>
+
+<p align="center">
+  <a href="https://github.com/adhitiad/sipeg/actions/workflows/backend.yml">
+    <img src="https://github.com/adhitiad/sipeg/actions/workflows/backend.yml/badge.svg?branch=master" alt="Backend CI" />
+  </a>
+  <a href="https://github.com/adhitiad/sipeg/actions/workflows/frontend.yml">
+    <img src="https://github.com/adhitiad/sipeg/actions/workflows/frontend.yml/badge.svg?branch=master" alt="Frontend CI" />
+  </a>
+  <img src="https://img.shields.io/badge/Backend-Go-00ADD8?logo=go&logoColor=white" alt="Go" />
+  <img src="https://img.shields.io/badge/Frontend-TanStack_Start-FF4154?logo=react&logoColor=white" alt="TanStack Start" />
+  <img src="https://img.shields.io/badge/Database-PostgreSQL-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL" />
+  <img src="https://img.shields.io/badge/Runtime-Bun-FBF0DF?logo=bun&logoColor=black" alt="Bun" />
+</p>
+
+<p align="center">
+  <a href="#tentang">Tentang</a> ·
+  <a href="#modul">Modul</a> ·
+  <a href="#arsitektur">Arsitektur</a> ·
+  <a href="#mulai-mengembangkan">Mulai</a> ·
+  <a href="#dokumentasi">Dokumentasi</a>
+</p>
 
 ---
 
-## Ringkasan
+> **Status: dalam pengembangan aktif — belum dinyatakan siap produksi.**
+> Repository ini berisi fondasi aplikasi, API, modul bisnis, dan integrasi pendukung.
+> Keberadaan kode atau halaman UI tidak otomatis berarti seluruh alur telah tervalidasi
+> end-to-end. Gunakan [Checklist Staging & Produksi](docs/STAGING-RELEASE-CHECKLIST.md)
+> sebagai gerbang rilis.
 
-| Aspek       | Keterangan                                                                                                    |
-| ----------- | ------------------------------------------------------------------------------------------------------------- |
-| Backend     | Go + GORM, API HTTP/JSON di bawah `/api/v1`, migrasi SQL Goose                                                |
-| Database    | PostgreSQL (Supabase), skema dikelola lewat migrasi berversi (bukan `AutoMigrate`)                            |
-| Frontend    | TanStack Start (React), Bun, shadcn/ui, TanStack Query/Store/Table                                            |
-| Autentikasi | Better Auth tertanam di server frontend (`/api/auth/*`), sesi bearer ke API (`Authorization: Bearer <token>`) |
-| Kontrak API | OpenAPI 3.1 (`docs/openapi.yaml`), 135 path / 231 operasi, sinkron dengan router backend per 16 November 2026 |
+## Tentang
 
-### Cakupan yang sudah tersedia (ringkas)
+**SIMPEG (Sistem Informasi Kepegawaian)** adalah aplikasi web untuk membantu institusi
+mengelola data, administrasi, dan siklus proses kepegawaian dalam satu sistem.
+Fokus pengembangan saat ini adalah kebutuhan lingkungan perguruan tinggi, dengan
+Universitas Subang sebagai konteks produk.
 
-- **Direktori & organisasi:** data pegawai, unit/homebase, kategori, master jabatan, impor pegawai, arsip dokumen (metadata), serta struktur organisasi.
-- **Akses & audit:** otorisasi deny-by-default berbasis permission/role, cakupan data per unit/self/any, jejak audit append-only dengan retensi terjadwal, ekspor audit (CSV).
-- **Presensi:** ingestion event mesin, pembacaan record/ringkasan sesuai cakupan (status harian diturunkan dari record yang ada; fondasi/pemetaan perangkat masih terbatas).
-- **Penggajian:** slip gaji (PDF A5 bermerek + QR verifikasi publik), konfirmasi pembayaran manual (transaksional, notifikasi tanpa nominal), jadwal gajian per unit, kalender hari libur, dan mekanisme notifikasi berbasis outbox. Modul penggajian inti yang **sudah terimplementasi**: master skala gaji yayasan, komponen tunjangan & potongan, honor per SKS, BPJS, PPh 21 TER, THR (termasuk `PERSEN_TAKE_HOME`), kontrak PKWT/PKWTT + perpanjangan pasca-BUP, aturan pesangon, alur pemberhentian (SK PHK otomatis), dan master pensiun (konfigurasi per kategori status + kepesertaan DPLK). Aturan bisnisnya disetujui pada `DEC-067`/`DEC-070`; asumsi yang masih menunggu konfirmasi pemilik tercatat di `DEC-071` (penyedia & iuran DPLK, pelaporan LLDikti, potongan koperasi/pinjaman).
-- **Akses berbasis peran (RBAC scoped, `DEC-087`–`DEC-089`):** matriks grant statis (deny-by-default) tetap sumber kebijakan, dan lapisan RBAC berbasis _scoped assignment_ mulai menegakkan keputusan secara otoritatif bagi pengguna yang sudah punya assignment. Modul admin RBAC (`/api/v1/admin/rbac/*`) mengelola role, permission, matriks role-permission, assignment per pengguna beserta cakupan unit, dan delegasi; UI `/admin/rbac`. Perkakas `backend/cmd/rbacseed` memetakan grant statis ke data RBAC untuk pengguna yang sudah ada (dry-run bawaan, `--apply` idempoten).
-- **Administrasi:** arsip dokumen, master Surat Keputusan (baca-saja — SK terbit dari alur kerja seperti persetujuan pemberhentian yang menerbitkan SK-PHK; penerbitan manual belum diputuskan), serta modul RBAC admin.
-- **Operasional:** health/readiness terpisah, logging terstruktur dengan correlation ID, rate limit & security headers, metrik SLO admin (agregat), status operasional antrean keluar (agregat outbox), dukungan pekerjaan terjadwal via RabbitMQ self-hosted (**QStash tidak dipakai**, `DEC-102`), SMTP untuk notifikasi (kredensial dari `.env`, `DEC-102`).
-- **Observabilitas & pemulihan (templat $0, self-hosted):** stack Prometheus/Alertmanager/Grafana/Loki + exporter host/container/blackbox/RabbitMQ di `observability/`, formulir & helper uji backup/restore di `docs/backup-restore-drill.md` dan `scripts/backup-restore-drill.ps1`. Pemasangan di target produksi belum terbukti — lihat `docs/IMPLEMENTATION-PLAN.md` §7.
+Prinsip arsitekturnya sederhana: frontend mengelola pengalaman pengguna, backend
+menjadi otoritas aturan bisnis dan akses data, sementara database serta pekerjaan
+latar dikelola melalui komponen yang terpisah.
 
-> Batas penting: tidak semua keputusan kebijakan di `docs/PRD.md` berarti sudah terimplementasi penuh. Selalu verifikasi perilaku aktual pada konfigurasi, middleware, handler, dan database target.
+## Ringkasan teknologi
 
----
+| Area | Teknologi |
+|---|---|
+| Frontend | React, TanStack Start, TanStack Router |
+| UI & data client | shadcn/ui, TanStack Query, Table, Store |
+| Bahasa frontend | TypeScript |
+| Runtime / package manager | Bun |
+| Backend | Go, GORM |
+| API | HTTP/JSON, OpenAPI 3.1 |
+| Database | PostgreSQL |
+| Migrasi database | Goose |
+| Autentikasi | Better Auth |
+| Background jobs | RabbitMQ |
+| Cache opsional | Upstash Redis — cache data referensi non-sensitif |
+| File dokumen | Cloudinary, sesuai konfigurasi |
+| Container | Docker Compose / Podman Compose |
 
-## Struktur repositori
+## Modul
 
-```text
-.
-├─ backend/                 # API Go/GORM, migrasi, worker/penjadwal, perkakas operator
-│  ├─ cmd/                  # server, migrate, jobsched, perfbench
-│  ├─ internal/             # domain/app/repository/httpserver dan integrasi pendukung
-│  └─ migrations/           # sumber skema SQL Goose
-├─ frontend/                # Aplikasi web TanStack Start (Bun)
-├─ docs/                    # PRD, OpenAPI, keputusan, runbook, threat model, baseline, dsb.
-├─ observability/           # Templat stack monitoring/alerting/log self-hosted ($0, Docker)
-├─ rabbitmq/                # Stack broker RabbitMQ mandiri + jaringan simpeg-broker
-├─ scripts/                 # Perkakas operator (mis. helper uji backup/restore)
-├─ docker-compose.yml       # Stack backend: migrations, jobsched, backend
-├─ agents/rules/            # Aturan proyek, backend, frontend, arsitektur
-└─ AGENTS.md                # Instruksi agen & konvensi repo
+Modul dan kemampuan berikut memiliki implementasi di repository pada tingkat yang
+berbeda. Integrasi, aturan bisnis tertentu, dan validasi pada database target tetap
+harus diperiksa melalui dokumentasi status dan checklist rilis.
+
+| Area | Cakupan |
+|---|---|
+| **Data pegawai** | Direktori, detail, impor pegawai, kategori, dan metadata arsip dokumen |
+| **Organisasi** | Unit kerja, homebase, struktur organisasi, dan master jabatan |
+| **Presensi** | Ingestion event mesin dan pembacaan data presensi; pemetaan perangkat/vendor masih terbatas |
+| **Penggajian** | Komponen gaji, honor, tunjangan/potongan, slip PDF, QR verifikasi, dan konfirmasi pembayaran |
+| **Cuti** | Pengajuan, eviden, persetujuan, pembatalan, dan perhitungan saldo sesuai aturan yang dikonfigurasi |
+| **Status kepegawaian** | Fondasi kontrak PKWT/PKWTT, pemberhentian, dan pensiun |
+| **Akses & audit** | Role/permission, cakupan akses, delegasi, dan jejak audit |
+| **Operasional** | Health/readiness, logging terstruktur, rate limit, metrik SLO, dan notifikasi antrean |
+
+> PRD menggambarkan kebutuhan dan arah produk, bukan bukti bahwa semua kebutuhan
+> sudah selesai. Lihat [Rencana Implementasi](docs/IMPLEMENTATION-PLAN.md) dan
+> [Log Keputusan](docs/DECISIONS.md) untuk status, batasan, serta keputusan yang
+> masih menunggu pemilik produk.
+
+## Arsitektur
+
+```mermaid
+flowchart TB
+    USER[Pengguna] --> WEB[Frontend<br/>TanStack Start]
+    WEB --> AUTH[Better Auth<br/>Session]
+    WEB --> API[Go HTTP API<br/>/api/v1]
+    AUTH --> DB[(PostgreSQL)]
+    API --> DB
+    API --> CACHE[Upstash Redis<br/>Cache opsional]
+    API <--> MQ[RabbitMQ]
+    MQ --> JOB[Job Scheduler & Worker]
+    WEB -. unggah dokumen .-> FILE[Cloudinary]
+    API -. metadata dokumen .-> DB
 ```
 
----
+### Batas tanggung jawab
 
-## Prasyarat
+- **Frontend** menangani antarmuka dan sesi. Operasi bisnis dilakukan melalui Go API.
+- **Go API** menjadi otoritas validasi, permission, dan cakupan akses.
+- **PostgreSQL** menggunakan migrasi Goose sebagai sumber skema. `GORM AutoMigrate`
+  tidak digunakan untuk deployment produksi.
+- **Better Auth** berjalan pada runtime frontend di `/api/auth/*`. Sesi diteruskan
+  ke API sebagai bearer token.
+- **RabbitMQ** menangani pekerjaan terjadwal dan proses latar. QStash tidak digunakan.
+- **Redis** hanya untuk cache referensi non-sensitif; bukan penyimpanan transaksi atau
+  sumber kebenaran.
 
-- **Go** sesuai `backend/go.mod` (saat ini Go 1.27.4)
-- **Bun** (untuk frontend)
-- **PostgreSQL** (Supabase atau kompatibel) untuk menjalankan backend secara nyata
-- **Docker/Podman** (opsional, untuk deployment/stack tercontainer)
+## Keamanan dan data
 
----
+SIMPEG memproses informasi kepegawaian yang dapat memuat data pribadi. Keamanan
+harus diterapkan pada konfigurasi, kode, dan proses operasional.
 
-## Menjalankan secara lokal
+- **Otorisasi server-side:** permission dan cakupan data ditegakkan di backend
+  dengan prinsip deny-by-default.
+- **Enkripsi PII:** kolom identitas tertentu dienkripsi di level aplikasi
+  menggunakan AES-256-GCM, dengan blind index HMAC-SHA256 untuk pencarian kesetaraan.
+- **Sesi:** token sesi frontend disimpan di memori tab; keputusan akses tetap
+  dilakukan oleh backend.
+- **Audit:** aktivitas penting dicatat dalam jejak audit.
+- **Secrets:** kredensial dan kunci enkripsi hanya berasal dari environment atau
+  secret manager, bukan source code.
+- **Data pengujian:** gunakan data sintetis. Jangan commit data pegawai nyata,
+  token, password, atau dokumen sensitif.
 
-### Backend
+Variabel produksi penting: `DATABASE_URL`, `BETTER_AUTH_SECRET`,
+`PII_ENCRYPTION_KEY`, dan `TRUSTED_ORIGINS`. Simpan salinan aman
+`PII_ENCRYPTION_KEY`; kehilangan kunci dapat membuat data PII terenkripsi tidak
+dapat dibaca.
 
-Backend membaca konfigurasi dari environment (tidak auto-load `.env`). Variabel utama: `DATABASE_URL`; untuk verifikasi JWT Better Auth set `BETTER_AUTH_SECRET`. Lihat `backend/README.md` dan `.env.example`.
+Rincian: [Threat Model](docs/THREAT-MODEL.md) ·
+[Security Test](docs/SECURITY-TEST-OWASP-2025.md).
 
-```powershell
-Set-Location backend
-gofmt -w .
-go mod download
-go mod verify
-go vet ./...
-go test ./...
-go build ./...
+## Mulai mengembangkan
+
+### Prasyarat
+
+- Go **1.27.4** sesuai `backend/go.mod`
+- Bun **1.4+**
+- Node.js **20+** untuk worker pengujian frontend tertentu
+- PostgreSQL yang dapat diakses backend dan runtime Better Auth
+- Docker Compose v2 atau Podman Compose untuk broker dan stack backend
+
+### 1. Clone repository dan siapkan konfigurasi
+
+```bash
+git clone https://github.com/adhitiad/sipeg.git
+cd sipeg
+cp .env.example .env
 ```
 
-Menjalankan server (pastikan `DATABASE_URL` dan variabel terkait sudah terisi di environment):
+Isi konfigurasi database, secret autentikasi, kunci enkripsi PII, origin tepercaya,
+dan kredensial RabbitMQ. Lihat komentar di `.env.example` untuk format dan aturan
+tiap variabel.
 
-```powershell
-# contoh (PowerShell)
-$env:DATABASE_URL = "postgres://..."
-$env:BETTER_AUTH_SECRET = "..."
-go run ./cmd/server
+**Gunakan database disposable untuk pengembangan.** Stack backend menjalankan
+migrasi yang terdaftar di repository. Jangan arahkan perintah ini ke staging atau
+produksi tanpa mengikuti prosedur persetujuan migrasi.
+
+### 2. Jalankan RabbitMQ dan backend
+
+Jalankan dari direktori root:
+
+```bash
+# Broker dijalankan terlebih dahulu
+docker compose -f rabbitmq/docker-compose.yml up -d
+
+# Migrasi, scheduler, dan API
+docker compose up -d --build
+
+# Periksa readiness API
+curl http://localhost:8080/ready
 ```
 
-Endpoint operasional: `GET /health` (liveness), `GET /ready` (readiness). Endpoint data berada di bawah `/api/v1/...`.
+Endpoint operasional:
+- `GET /health` — liveness.
+- `GET /ready` — readiness.
+- `/api/v1/*` — endpoint data dan proses bisnis.
 
-### Frontend
+UI manajemen RabbitMQ untuk pengembangan tersedia di
+`http://localhost:15672`. Kredensial default wajib diganti sebelum layanan
+digunakan di luar komputer lokal; jangan mengekspos port manajemen ke internet.
 
-Frontend bersifat mandiri secara build, namun bergantung pada API backend untuk data bisnis persisten. Detail aturan: `agents/rules/frontend.md`.
+### 3. Jalankan frontend
+
+Buka terminal baru:
 
 ```bash
 cd frontend
+cp .env.example .env
 bun install
 bun --bun run dev
 ```
 
-Perintah kualitas yang tersedia (`frontend/package.json`): `format`, `lint`, `typecheck`, `test`, `build`, `e2e`. Gunakan `bun --bun run <script>` sesuai konvensi repo.
+Frontend berjalan di `http://localhost:3000`. Untuk menggunakan proksi
+development same-origin, atur di `frontend/.env`:
 
-### Pengembangan dengan RabbitMQ (opsional)
-
-Untuk menjalankan broker saja dan backend native:
-
-```bash
-cd rabbitmq
-docker compose up -d
-# lalu jalankan backend/jobsched native dengan RABBITMQ_URL=amqp://simpeg:simpeg@localhost:5672/
+```dotenv
+VITE_API_BASE_URL=/api/v1
+VITE_API_PROXY_TARGET=http://localhost:8080
 ```
 
-Lihat `rabbitmq/README.md` untuk topologi, verifikasi manual, dan catatan keamanan.
+Runtime Better Auth memerlukan `DATABASE_URL` dan `BETTER_AUTH_SECRET`
+server-side di `frontend/.env`. Salin nilainya dari konfigurasi lokal root.
+Jangan menaruh secret pada variabel berawalan `VITE_`.
 
----
+### 4. Backend native (opsional)
 
-## Deployment (Docker/Podman)
+Untuk menjalankan backend tanpa container, siapkan environment dan database
+terlebih dahulu. Backend tidak memuat file `.env` secara otomatis.
 
-Stack broker RabbitMQ berdiri sendiri di `rabbitmq/docker-compose.yml`, sedangkan stack backend (`migrations`, `jobsched`, `backend`) ada di `docker-compose.yml` root. Keduanya terhubung lewat jaringan bersama `simpeg-broker`.
-
-```bash
-# Siapkan .env terlebih dahulu (DATABASE_URL, TRUSTED_ORIGINS, BETTER_AUTH_SECRET, dll.)
-docker compose -f rabbitmq/docker-compose.yml up -d   # broker lebih dulu
-docker compose up -d --build                          # atau: podman-compose up -d --build
-curl http://localhost:8080/ready
-```
-
-**Catatan penting**
-
-- `APP_ENV=production` menolak start bila konfigurasi rahasia/origin tidak memenuhi syarat (lihat `backend/README.md`).
-- Migrasi dijalankan oleh layanan `migrations` (`/bin/migrate`) sebelum backend bergantung padanya.
-- Migrasi `000025_payroll_core.sql` (skema penggajian inti) dan `000026`–`000032` (presensi, cuti, kategori, slip BATAL, RBAC scoped) sudah disetujui/terdaftar di repo tetapi **belum diterapkan pada staging/produksi**. Karena sudah terdaftar, `migrate up` akan menerapkannya otomatis, jadi jalankan hanya lewat workflow pada staging lebih dulu, lalu verifikasi `perfbench schema`/`goose_db_version`, baru produksi dengan persetujuan pemilik (`DEC-068`, `DEC-087`).
-- Seed RBAC (`go run ./cmd/rbacseed --apply`) dijalankan **setelah** migrasi diterapkan di target, mengikuti urutan pada `docs/RUNBOOK.md` §RBAC dan `docs/STAGING-RELEASE-CHECKLIST.md`.
-- **QStash tidak dipakai.** Pekerjaan terjadwal hanya melalui RabbitMQ self-hosted; backend melewati pendaftaran jadwal QStash bila `RABBITMQ_URL` diisi. Variabel `QSTASH_*` dipertahankan kosong di `.env.example` namun tidak dipakai pada deployment mana pun (lihat `DEC-042`, `DEC-102`).
-
-### Monitoring, alerting, dan log (stack opsional, $0)
-
-Stack observability self-hosted terpisah ada di `observability/` (Prometheus, Alertmanager, Grafana, Loki + Promtail, node-exporter, cAdvisor, blackbox-exporter, metrik RabbitMQ). Templat ini bergabung ke jaringan eksternal `simpeg-broker`, mem-probe `backend:8080/health` dan `/ready`, serta melakukan scrape metrik RabbitMQ pada `rabbitmq:15692`.
+Jalankan dari `backend/`:
 
 ```bash
-cd observability
-cp .env.example .env        # ganti kata sandi Grafana; jangan commit .env
-# isi penerima alert nyata di alertmanager.yml (wajib), lalu:
-docker compose up -d
+go mod download
+go test ./...
+go vet ./...
+go build ./...
+go run ./cmd/server
 ```
 
-> Status: **templat siap-disesuaikan, belum terpasang di target produksi**. Wiring, penerima alert, dan uji tembak wajib dibuktikan di infrastruktur; lihat `observability/README.md`, `docs/RUNBOOK.md` §9/§9A, dan `docs/IMPLEMENTATION-PLAN.md` §7.
+Pastikan variabel environment yang dibutuhkan tersedia pada proses tersebut.
 
-### Uji backup/restore ($0)
+## Perintah pemeriksaan
 
-Formulir dan checklist drill ada di `docs/backup-restore-drill.md`; helper PowerShell `scripts/backup-restore-drill.ps1` menjalankan dump/restore/verifikasi ke target **disposable** (kredensial hanya dari env `SOURCE_DATABASE_URL`/`TARGET_DATABASE_URL`). Kemampuan PITR/backup mengikuti tier Supabase target (tier Free umumnya tidak setara PITR penuh) dan harus diverifikasi per project sebelum diklaim.
+Jalankan backend dari `backend/`:
 
-### Masuk ke container
+```bash
+go test ./...
+go test -race ./...
+go vet ./...
+go build ./...
+go mod verify
+```
 
-Perintah di bawah memakai Docker Compose v2 (`docker compose`); pada Podman gunakan `podman compose`/`podman-compose` dan `podman exec`.
+Jalankan frontend dari `frontend/`:
 
-1. **Lihat container yang berjalan**
+```bash
+bun --bun run format:check
+bun --bun run lint
+bun --bun run typecheck
+bun run test
+bun --bun run e2e
+bun --bun run build
+```
 
-   ```bash
-   docker ps
-   docker compose ps
-   docker compose -f rabbitmq/docker-compose.yml ps
-   ```
+Sebagian tes E2E membutuhkan backend dan dataset disposable. Tes yang dilewati
+karena dependensi belum tersedia tidak boleh dianggap lulus.
 
-2. **Masuk ke shell container (jika image menyediakan shell)**
+## Struktur repository
 
-   - RabbitMQ (dari folder `rabbitmq/`):
-
-     ```bash
-     cd rabbitmq
-     docker compose exec rabbitmq sh
-     # atau: docker exec -it <nama-container-rabbitmq> sh
-     ```
-
-     Contoh: `rabbitmqctl list_queues name messages`. UI manajemen: `http://localhost:15672` (kredensial bawaan `simpeg`/`simpeg` bila belum diubah; jangan terekspos di production).
-
-   - Layanan backend (`backend`, `jobsched`, `migrations`): image berbasis `distroless/static` **tanpa shell**, sehingga `exec ... sh` tidak tersedia.
-
-3. **Memeriksa/menjalankan layanan backend tanpa shell**
-
-   ```bash
-   docker compose logs -f backend
-   docker compose logs -f jobsched
-   docker compose logs migrations
-
-   docker compose ps
-   docker inspect <nama-container>
-
-   # perintah sekali jalan (contoh)
-   docker compose run --rm jobsched publish audit.cleanup
-   ```
-
-   Layanan `migrations` berjalan sekali lalu berhenti (`restart: "no"`). Jalankan ulang bila perlu: `docker compose run --rm migrations`.
-
-4. **Perintah broker dari root repo**
-
-   ```bash
-   docker compose -f rabbitmq/docker-compose.yml exec rabbitmq rabbitmqctl list_queues name messages
-   ```
-
----
-
-## Variabel lingkungan
-
-Simpan nilai lokal di `.env` (diabaikan Git) atau secret manager. **Jangan** memasukkan kredensial, token, atau data pribadi ke source, dokumentasi, log, maupun bundle frontend. Rujukan lengkap dan perilaku default ada di `backend/README.md` dan `.env.example`.
-
-| Variabel                                             | Kegunaan (ringkas)                                                             |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `DATABASE_URL`                                       | Koneksi PostgreSQL (wajib untuk backend)                                       |
-| `BETTER_AUTH_SECRET`                                 | Verifikasi/kontrak sesi Better Auth (wajib & kuat pada production)             |
-| `TRUSTED_ORIGINS`                                    | Origin CORS yang diizinkan (wajib pada production, tanpa wildcard)             |
-| `APP_ENV`, `PORT`                                    | Lingkungan dan porta server                                                    |
-| `PII_ENCRYPTION_KEY`                                 | Enkripsi kolom PII di level aplikasi (wajib pada production)                   |
-| `RABBITMQ_URL`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD` | Broker RabbitMQ untuk pekerjaan terjadwal self-hosted                          |
-| `QSTASH_*` (DEPRECATED, TIDAK DIPAKAI)                | QStash tidak dipakai; RabbitMQ self-hosted adalah pengangkut pekerjaan terjadwal (`DEC-042`, `DEC-102`)      |
-| `SMTP_*`                                             | Pengiriman email dari backend; kredensial dibaca dari `.env` (tanpa default)                                 |
-| `UPSTASH_REDIS_REST_*`                               | Cache Redis (data referensi non-sensitif, cache-only)                          |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`           | OAuth Google (bila dikonfigurasi/digunakan)                                    |
-| `ALLOWED_EMAIL_DOMAINS`, `INVITE_ONLY`               | Kebijakan akses akun (sesuai keputusan yang berlaku)                           |
-| `SESSION_LIFETIME`                                   | Masa berlaku sesi (bila relevan dengan runtime yang dipakai)                   |
-| `SLO_*`, `HOLIDAY_API_*`, `CLOUDINARY_*`            | Fitur/observabilitas/integrasi spesifik (aktif sesuai konfigurasi & keputusan) |
-| `AWS_*` (TIDAK DIPAKAI)                              | S3/S3-compatible storage tidak dipakai & tidak didukung (`DEC-016`)            |
-
-> Tercantum di sini tidak berarti integrasi sudah aktif end-to-end. Lihat `docs/IMPLEMENTATION-PLAN.md`, `docs/DECISIONS.md`, dan `backend/README.md`.
-
----
-
-## Kualitas & verifikasi
-
-- **Backend:** `gofmt`, `go vet`, `staticcheck`, `go test -race`, `go build`, `go mod verify`, `govulncheck`, serta pemeriksaan CI (`.github/workflows/backend.yml`).
-- **Frontend:** format, lint, typecheck, unit test, build, dan E2E sesuai workflow (`.github/workflows/frontend.yml`).
-- **Database/migrasi:** perubahan skema harus selaras antara model GORM dan migrasi Goose; verifikasi keselarasan terhadap database target dilakukan secara eksplisit (bukan disimpulkan dari kode).
-- **Verifikasi dinamis:** fitur yang menyentuh database diverifikasi pada **database disposable** (migrasi baru → seed sintetis → permintaan nyata lewat HTTP, lalu database dihapus). Prinsipnya: jangan pernah menyentuh staging/produksi tanpa persetujuan pemilik; menyatakan "terimplementasi" tanpa bukti runtime tidak sah. Contoh skenario dan batasan tiap modul ada di `docs/DYNAMIC-ROUTE-VERIFICATION.md` dan `docs/DECISIONS.md`.
-- **E2E hibrida:** sebagian spec Playwright memakai backend uji sungguhan (auth disimulasikan) dan **dilewati** bila backend atau dataset disposable belum siap — bukan dihitung lulus. Daftar spec hibrida: `hybrid-pemberhentian`, `hybrid-pensiun`, `hybrid-rbac`.
-
----
+```text
+.
+├── backend/             # Go API, domain, repository, migrasi, dan worker
+├── frontend/            # TanStack Start, UI, sesi, dan API client
+├── docs/                # PRD, OpenAPI, keputusan, runbook, dan checklist
+├── rabbitmq/            # Broker dan konfigurasi RabbitMQ
+├── observability/       # Template monitoring, alerting, dan log
+├── scripts/             # Helper operator dan backup/restore drill
+├── agents/rules/        # Aturan kontribusi dan panduan agen
+├── docker-compose.yml   # Migrasi, scheduler, dan backend
+├── .env.example         # Template environment root
+├── AGENTS.md            # Instruksi kerja repository
+└── README.md
+```
 
 ## Dokumentasi
 
-- `docs/PRD.md` — kebutuhan produk, ruang lingkup, dan catatan keputusan kebijakan
-- `docs/openapi.yaml` — kontrak HTTP API (OpenAPI 3.1)
-- `docs/DECISIONS.md` — log keputusan (pemilik, tanggal, status)
-- `docs/IMPLEMENTATION-PLAN.md` — checklist/status pekerjaan
-- `docs/RUNBOOK.md` — panduan operasional & penanganan insiden
-- `docs/THREAT-MODEL.md` — model ancaman
-- `docs/PERFORMANCE-BASELINE.md` — hasil & batasan pengukuran performa
-- `docs/SECURITY-TEST-OWASP-2025.md` — hasil uji keamanan dinamis (ZAP) dan keterbatasannya
-- `docs/DYNAMIC-ROUTE-VERIFICATION.md` — verifikasi dinamis seluruh rute, matriks peran, dan skenario IDOR
-- `docs/STAGING-RELEASE-CHECKLIST.md` — checklist kesiapan staging & gerbang rilis
-- `docs/UI-LOAD-TEST.md` — hasil uji beban UI lokal dan keterbatasannya
-- `docs/backup-restore-drill.md` — formulir/checklist uji backup/restore (Supabase Free)
-- `docs/USULAN-ALUR-SURAT-KEPUTUSAN.md` — usulan alur penerbitan SK (menunggu keputusan pemilik; modul baca sudah ada)
-- `docs/USULAN-POTONGAN-KOPERASI-PINJAMAN.md` — usulan cicilan/sisa/tagihan bulanan potongan (menunggu keputusan)
-- `docs/USULAN-SP1-ALPA-PRESENSI.md` — usulan alur SP1 dari presensi (menunggu keputusan)
-- `backend/README.md` — detail runtime, arsitektur lapisan, integrasi, dan endpoint
-- `observability/README.md` — templat stack monitoring/alerting/log self-hosted
-- `rabbitmq/README.md` — operasi broker dan topologi
+| Dokumen | Kegunaan |
+|---|---|
+| [PRD](docs/PRD.md) | Kebutuhan, ruang lingkup, dan aturan produk |
+| [OpenAPI](docs/openapi.yaml) | Kontrak endpoint HTTP/JSON |
+| [Log Keputusan](docs/DECISIONS.md) | Keputusan produk/teknis dan statusnya |
+| [Rencana Implementasi](docs/IMPLEMENTATION-PLAN.md) | Progres, bukti verifikasi, dan pekerjaan terbuka |
+| [Runbook](docs/RUNBOOK.md) | Operasional dan penanganan insiden |
+| [Threat Model](docs/THREAT-MODEL.md) | Aset, ancaman, dan kontrol keamanan |
+| [Checklist Rilis](docs/STAGING-RELEASE-CHECKLIST.md) | Gerbang staging dan produksi |
+| [Backup & Restore Drill](docs/backup-restore-drill.md) | Prosedur serta bukti uji pemulihan |
+| [Performance Baseline](docs/PERFORMANCE-BASELINE.md) | Metode dan hasil pengukuran performa |
+| [Dynamic Route Verification](docs/DYNAMIC-ROUTE-VERIFICATION.md) | Verifikasi rute, role, cakupan, dan IDOR |
+| [Backend Guide](backend/README.md) | Runtime, arsitektur lapisan, dan endpoint |
+| [Frontend Guide](frontend/README.md) | Konfigurasi, skrip, dan struktur UI |
+| [RabbitMQ Guide](rabbitmq/README.md) | Topologi broker dan operasi antrean |
+| [Observability Guide](observability/README.md) | Template monitoring dan alerting |
+
+## Deployment dan kesiapan produksi
+
+Deployment backend menggunakan dua Compose stack:
+
+1. `rabbitmq/docker-compose.yml` menjalankan broker dan membuat jaringan
+   `simpeg-broker`.
+2. `docker-compose.yml` di root menjalankan migrasi Goose, scheduler, dan Go API.
+
+Frontend dibangun dan dijalankan sebagai aplikasi terpisah. Template observabilitas
+di `observability/` bersifat opsional; pemasangan, konfigurasi penerima alert,
+dan uji alert tetap harus dibuktikan pada infrastruktur target.
+
+Sebelum go-live, pastikan:
+
+- Migrasi dijalankan pada staging lebih dahulu dan skema diverifikasi.
+- Backup database serta dokumen tersimpan di lokasi terpisah dan restore telah diuji.
+- Secret produksi berbeda dari development; kunci enkripsi disimpan aman.
+- TLS, DNS, trusted origins, firewall, dan header keamanan telah diverifikasi.
+- Smoke test, uji beban, pemeriksaan keamanan, dan rencana rollback selesai.
+- Keputusan bisnis yang masih terbuka telah disetujui pemilik produk.
+
+SIMPEG belum dinyatakan production-ready hanya berdasarkan build atau status CI.
+Ikuti [Checklist Staging & Produksi](docs/STAGING-RELEASE-CHECKLIST.md) dan
+[Runbook](docs/RUNBOOK.md) sebelum rilis. Tindakan prioritas dan status migrasi
+terbaru dicatat pada [Rencana Implementasi](docs/IMPLEMENTATION-PLAN.md).
+
+## Konvensi pengembangan
+
+- Baca `AGENTS.md` dan panduan pada `agents/rules/` sebelum mengubah kode.
+- Teks UI dan dokumentasi menggunakan Bahasa Indonesia; identifier kode menggunakan
+  Bahasa Inggris.
+- Migrasi Goose adalah sumber skema database; jangan gunakan `AutoMigrate` untuk produksi.
+- Endpoint bisnis baru harus didokumentasikan di `docs/openapi.yaml`.
+- Jangan commit secret, kredensial, data pribadi, atau file ekspor dari lingkungan nyata.
+- Gunakan database disposable dan data sintetis untuk pengujian yang menyentuh data.
 
 ---
 
-## Aturan pengembangan
-
-- Baca `AGENTS.md` serta `agents/rules/project.md`, `agents/rules/backend.md`, `agents/rules/frontend.md`, dan `agents/rules/architecture.md` sebelum mengubah kode.
-- Sumber skema produksi adalah migrasi Goose; jangan gunakan GORM `AutoMigrate` untuk production.
-- Teks yang menghadap pengguna dan dokumentasi ditulis dalam Bahasa Indonesia; identifier kode dalam bahasa Inggris.
-- Jangan commit kredensial, token, atau data pribadi nyata. Gunakan data sintetis untuk pengembangan dan pengujian.
-- Batas ukuran source file yang ditulis tangan mengikuti aturan proyek (lihat `AGENTS.md`).
-
----
-
-## Tindakan prioritas (prioritas aksi)
-
-Berikut adalah tindakan yang perlu dilakukan untuk mendekatkan proyek ke kesiapan produksi. Tindakan ditandai berdasarkan prioritas dan berlaku pada umumnya untuk seluruh tim pengembangan dan operasi.
-
-| Prioritas | Tindakan | Penanggung Jawab |
-|-----------|----------|------------------|
-| P0 | Konfigurasikan `PII_ENCRYPTION_KEY` di production environment | Admin / Ops |
-| P0 | Terapkan migrasi `000024`–`000033` ke staging, verifikasi `perfbench schema`, lalu produksi dengan persetujuan pemilik | Admin / Pemilik produk |
-
-> Detail rencana kerja dan gerbang rilis lengkap ada di `docs/IMPLEMENTATION-PLAN.md` dan `docs/STAGING-RELEASE-CHECKLIST.md`. Jangan pernah menerapkan migrasi atau seed RBAC pada produksi tanpa persetujuan pemilik dan verifikasi `perfbench schema`/`goose_db_version` pada staging terlebih dahulu.
+<p align="center">
+  <strong>SIMPEG</strong> · Sistem Informasi Kepegawaian<br />
+  <sub>Dibangun dengan fokus pada keamanan, keterlacakan, dan administrasi yang tertata.</sub>
+</p>

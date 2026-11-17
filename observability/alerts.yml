@@ -46,6 +46,60 @@ groups:
           summary: "Metrik RabbitMQ tidak tersedia"
           description: "Scrape RabbitMQ gagal; verifikasi plugin rabbitmq_prometheus (port 15692) dan jaringan simpeg-broker."
 
+      - alert: OutboxFailedMessages
+        expr: simpeg_outbox_messages{status="failed"} > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pesan antrean keluar gagal permanen"
+          description: "Ada pesan outbox berstatus FAILED (dead-letter). Periksa /admin/ops/status dan log worker."
+
+      - alert: SmtpFailedMessages
+        expr: simpeg_smtp_failed_total > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kegagalan pengiriman email permanen"
+          description: "Ada pesan email yang gagal permanen. Periksa SMTP dan antrean keluar."
+
+      - alert: OutboxBacklogOld
+        expr: simpeg_outbox_oldest_pending_age_seconds > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Antrean keluar menumpuk"
+          description: "Pesan pending tertua lebih lama dari 5 menit; periksa worker outbox."
+
+      - alert: DependencyDown
+        expr: simpeg_dependency_up == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Dependency eksternal tidak sehat"
+          description: "Redis atau SMTP tidak dapat dijangkau; periksa konfigurasi dan status penyedia."
+
+      - alert: RabbitMQDeadLetter
+        expr: rabbitmq_queue_messages{queue=~".*dead.*"} > 0 or rabbitmq_queue_messages_unacknowledged{queue=~".*dead.*"} > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pesan dead-letter RabbitMQ"
+          description: "Ada pesan pada antrean dead-letter RabbitMQ; periksa log mq_job_failed."
+
+      - alert: RabbitMQBacklog
+        expr: rabbitmq_queue_messages{queue="simpeg.jobs"} > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Backlog antrean RabbitMQ"
+          description: "Antrean simpeg.jobs menumpuk; periksa konsumen backend."
+
   # Tambahan (aktifkan bila metrik tersedia di target, $0/self-hosted):
   # - outbox FAILED/backlog & usia pesan tertua: dari polling aman ke /api/v1/admin/ops/status (ops:read)
   #   atau query PostgreSQL terjadwal ke tabel outboxMessage.

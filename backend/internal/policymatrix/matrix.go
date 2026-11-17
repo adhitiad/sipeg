@@ -100,6 +100,8 @@ func Matrix() map[string]map[string]bool {
 			"pemberhentian:propose:any": true,
 			"pemberhentian:read:any":    true,
 			"pemberhentian:approve":     true,
+			"peringatan:sp1:manage":     true,
+			"peringatan:read:any":       true,
 			"perpanjangan:manage":       true,
 			"kontrak:read:any":          true,
 			"pesangon:manage":           true,
@@ -188,6 +190,7 @@ func Matrix() map[string]map[string]bool {
 			// Pemberhentian - operator (cakupan unit; pengajuan & bacaan)
 			"pemberhentian:propose:homebase": true,
 			"pemberhentian:read:homebase":    true,
+			"peringatan:read:homebase":       true,
 			"kontrak:read:homebase":          true,
 			"pensiun:read:homebase":          true,
 			"sk:read:homebase":               true,
@@ -226,6 +229,7 @@ func Matrix() map[string]map[string]bool {
 			"cuti:approve:homebase": true,
 			// Pemberhentian - atasan (cakupan unit, baca)
 			"pemberhentian:read:homebase": true,
+			"peringatan:read:homebase":    true,
 			"kontrak:read:homebase":       true,
 			"pensiun:read:homebase":       true,
 			"sk:read:homebase":            true,

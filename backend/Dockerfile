@@ -20,11 +20,15 @@ RUN go mod download
 COPY . .
 RUN go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server \
     && go build -trimpath -ldflags="-s -w" -o /out/jobsched ./cmd/jobsched \
-    && go build -trimpath -ldflags="-s -w" -o /out/migrate ./cmd/migrate
+    && go build -trimpath -ldflags="-s -w" -o /out/migrate ./cmd/migrate \
+    && go build -trimpath -ldflags="-s -w" -o /out/metricsexport ./cmd/metricsexport \
+    && go build -trimpath -ldflags="-s -w" -o /out/depcheck ./cmd/depcheck
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/server /bin/server
 COPY --from=build /out/jobsched /bin/jobsched
 COPY --from=build /out/migrate /bin/migrate
+COPY --from=build /out/metricsexport /bin/metricsexport
+COPY --from=build /out/depcheck /bin/depcheck
 USER nonroot:nonroot
 ENTRYPOINT ["/bin/server"]

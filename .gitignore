@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 !.env.*.example
+# Alertmanager config may contain SMTP credentials (filled per host, not committed)
+observability/alertmanager.yml
+!observability/alertmanager.yml.example
 
 # Go build and test outputs
 /backend/bin/

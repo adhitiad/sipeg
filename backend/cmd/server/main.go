@@ -41,6 +41,8 @@ import (
 	pemberhentianrepository "simpeg/backend/internal/pemberhentian/repository"
 	pensiunapp "simpeg/backend/internal/pensiun/app"
 	pensiunrepository "simpeg/backend/internal/pensiun/repository"
+	peringatanapp "simpeg/backend/internal/peringatan/app"
+	peringatanrepository "simpeg/backend/internal/peringatan/repository"
 	pph21clapp "simpeg/backend/internal/pph21ter/app"
 	pph21trepository "simpeg/backend/internal/pph21ter/repository"
 	"simpeg/backend/internal/qstash"
@@ -153,6 +155,11 @@ func main() {
 	// Layanan pemberhentian pegawai (DEC-083).
 	pemberhentianStore := pemberhentianrepository.GormStore{DB: db}
 	pemberhentianService := pemberhentianapp.NewService(pemberhentianStore, policy, store)
+
+	// Layanan peringatan (SP1) pegawai (DEC-077). Hanya pencatatan peringatan,
+	// tidak memengaruhi slip gaji.
+	peringatanStore := peringatanrepository.GormStore{DB: db}
+	peringatanService := peringatanapp.NewService(peringatanStore, policy, store)
 
 	// Layanan THR (konfigurasi tahunan + generate slip THR).
 	thrStore := thrrepository.GormStore{DB: db}
@@ -320,6 +327,7 @@ func main() {
 		PayrollSlipOrgName: cfg.PayrollSlipOrgName,
 		AppBaseURL:         cfg.AppBaseURL,
 		Pemberhentian:      pemberhentianService,
+		Peringatan:         peringatanService,
 		Thr:                thrService,
 		Kontrakt:           kontrakService,
 		Pesangon:           pesangonService,

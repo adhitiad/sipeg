@@ -40,6 +40,11 @@ scrape_configs:
       - target_label: __address__
         replacement: blackbox-exporter:9115
 
+  # Exporter aman SIMPEG: agregat outbox/SLO/SMTP dari PostgreSQL (cmd/metricsexport).
+  - job_name: simpeg-exporter
+    static_configs:
+      - targets: ["metricsexport:9101"]
+
   # RabbitMQ self-hosted (stack rabbitmq/). Aktifkan plugin rabbitmq_prometheus pada broker
   # (image rabbitmq:*-management biasanya sudah menyertakannya; verifikasi: rabbitmq-plugins list).
   # Port Prometheus bawaan: 15692. Pastikan stack observability bergabung ke jaringan simpeg-broker.
@@ -52,3 +57,5 @@ scrape_configs:
   # menyuntikkan token dari secret host; JANGAN menaruh token/kredensial di repo. Alternatif $0:
   # polling terjadwal (cron) yang menyimpan hasil ke file/Pushgateway internal, atau dasbor Grafana
   # yang membaca via datasource aman. Supabase (tier Free): gunakan metrik yang tersedia di dashboard/project.
+
+

@@ -20,6 +20,7 @@ import (
 	payscaleapp "simpeg/backend/internal/payscale/app"
 	pemberhentianapp "simpeg/backend/internal/pemberhentian/app"
 	pensiunapp "simpeg/backend/internal/pensiun/app"
+	peringatanapp "simpeg/backend/internal/peringatan/app"
 	pph21clapp "simpeg/backend/internal/pph21ter/app"
 	"simpeg/backend/internal/qstash"
 	skapp "simpeg/backend/internal/sk/app"
@@ -39,6 +40,9 @@ type MuxOptions struct {
 	AttendanceAdmin *attendance.AdminService
 	// Pemberhentian menjalankan use case pemberhentian pegawai.
 	Pemberhentian *pemberhentianapp.Service
+	// Peringatan menjalankan use case penerbitan SP1 (peringatan). Bila nil,
+	// endpoint peringatan tidak didaftarkan.
+	Peringatan *peringatanapp.Service
 	// Externalize perpanjangan & kontrak — dijamin tidak nil bila nil
 	// (endpoint tidak didaftarkan).
 	Kontrakt *kontrakapp.Service
@@ -183,6 +187,9 @@ func NewMuxWithOptions(options MuxOptions) *http.ServeMux {
 	}
 	if options.Pemberhentian != nil {
 		RegisterPemberhentianRoutes(mux, options.Resolver, options.Policy, options.Pemberhentian)
+	}
+	if options.Peringatan != nil {
+		RegisterPeringatanRoutes(mux, options.Resolver, options.Policy, options.Peringatan)
 	}
 	if options.Kontrakt != nil || options.Pesangon != nil {
 		RegisterKontrakRoutes(mux, options.Resolver, options.Policy, options.Kontrakt, options.Pesangon)

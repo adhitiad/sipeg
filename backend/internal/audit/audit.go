@@ -147,6 +147,11 @@ const (
 	// dibuat (DEC-083).
 	ActionPerpanjanganCreated = "perpanjangan.created"
 
+	// ActionPeringatanCreated menandai penerbitan SP1 (peringatan tertulis)
+	// dari alpa berulang (DEC-077). Hanya pencatatan peringatan, tidak
+	// memengaruhi slip gaji.
+	ActionPeringatanCreated = "peringatan.sp1.created"
+
 	// ActionThrConfigUpdated menandai perubahan konfigurasi THR per tahun
 	// (besaran, persentase, tanggal berlaku) oleh admin atau operator.
 	ActionThrConfigUpdated = "payroll.thr.config.updated"

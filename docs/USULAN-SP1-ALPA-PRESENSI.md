@@ -1,6 +1,6 @@
 # Usulan Alur SP1 dari Presensi (peringatan otomatis) — menunggu keputusan pemilik
 
-- **Status:** usulan alur (belum diputuskan, **belum diimplementasikan**).
+- **Status:** diimplementasikan (keputusan pemilik 2026-11-17: ambang 14 hari alpa/2 bulan; penerbit rektor/WR1/WR2/ka biro; pencatatan peringatan saja, tidak memengaruhi slip). Modul `internal/peringatan` (domain/app/repository) + handler `GET/POST /api/v1/peringatan`, permission `peringatan:sp1:manage` (admin) dan `peringatan:read:any|homebase`.
 - **Rujukan:** `DEC-077` (pipeline presensi; SP1 sengaja tidak terbit otomatis), `docs/PRD.md` §5.9 dan §3B, `backend/internal/models/models_lifecycle.go` (model `Peringatan`).
 
 ## 1. Kondisi sekarang

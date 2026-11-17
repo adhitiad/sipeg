@@ -81,11 +81,12 @@ services:
   node-exporter:
     image: prom/node-exporter:v1.8.2
     command:
-      - --path.rootfs=/host
-      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
     pid: host
     volumes:
-      - /:/host:ro,rslave
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
     restart: unless-stopped
     networks:
       - default
@@ -108,6 +109,20 @@ services:
     ports:
       - "127.0.0.1:${BLACKBOX_PORT:-9115}:9115"
     restart: unless-stopped
+    networks:
+      - default
+      - simpeg
+
+  metricsexport:
+    build: ../backend
+    image: simpeg-backend
+    entrypoint: ["/bin/metricsexport"]
+    restart: unless-stopped
+    env_file: ../.env
+    environment:
+      EXPORTER_PORT: "9101"
+    ports:
+      - "127.0.0.1:${EXPORTER_PORT:-9101}:9101"
     networks:
       - default
       - simpeg

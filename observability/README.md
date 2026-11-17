@@ -24,6 +24,7 @@ Stack observability untuk target: **Docker** (backend service `backend:8080`), *
 - **RabbitMQ:** scrape `rabbitmq:15692` (plugin `rabbitmq_prometheus`; verifikasi plugin aktif pada broker/port terjangkau).
 - **Log:** Promtail membaca Docker stdout JSON; field `request_id`, `level`, `msg`, `path`, `status` diparse (lihat `promtail-config.yml`). Retensi agregasi awal **30 hari** (`loki-config.yml`).
 - **Sinyal admin aplikasi (butuh auth):** `GET /api/v1/admin/slo/metrics` (`slo:read`, butuh `SLO_ENABLED=true` untuk data) dan `GET /api/v1/admin/ops/status` (`ops:read`) — agregat outbox/backlog & kegagalan notifikasi. Untuk otomasi $0 gunakan proxy/exporter internal yang menyuntikkan token dari secret host, atau polling terjadwal aman; **jangan** menaruh token di repo.
+- **Exporter aman (tanpa token):** service `metricsexport` (port 9101) membaca agregat outbox/SLO/SMTP/dependency eksternal langsung dari PostgreSQL dan mengeksposnya sebagai metrik Prometheus. Scrape job `simpeg-exporter`. Kredensial dibaca dari env (DATABASE_URL, UPSTASH_*, SMTP_*), tidak ada di repo. Verifikasi dependensi terautentikasi memakai `go run ./cmd/depcheck`.
 - **Supabase (Free):** gunakan metrik yang tersedia di dashboard/project; PITR umumnya tidak tersedia — verifikasi kemampuan tier/project.
 
 ## Cara pakai ($0)

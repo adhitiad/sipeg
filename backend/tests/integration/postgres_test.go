@@ -5,10 +5,8 @@
 package integration
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -24,10 +22,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/golang-jwt/jwt/v5"
 	_ "github.com/jackc/pgx/v5/stdlib"
-
-	"simpeg/backend/internal/auth"
 	"github.com/pressly/goose/v3"
 	"gorm.io/gorm"
 

@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: SIMPEG
+    orgId: 1
+    folder: SIMPEG
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards

@@ -41,11 +41,11 @@ type actor struct {
 }
 
 type fixture struct {
-	Actors                    map[string]actor
-	RootUnitID, ChildUnitID   string
-	RemoteUnitID              string
+	Actors                      map[string]actor
+	RootUnitID, ChildUnitID     string
+	RemoteUnitID                string
 	RootEmployee, ChildEmployee string
-	RemoteEmployee            string
+	RemoteEmployee              string
 }
 
 var (
@@ -328,7 +328,9 @@ func seedFixture(ctx context.Context, db *gorm.DB) (fixture, error) {
 		f.Actors[role] = item
 	}
 	rootEmployee, err := createUser("pegawai", "Employee Root", f.RootUnitID, false)
-	if err != nil { return f, err }
+	if err != nil {
+		return f, err
+	}
 	childEmployee, err := createUser("pegawai", "Employee Child", f.ChildUnitID, false)
 	if err != nil { return f, err }
 	remoteEmployee, err := createUser("pegawai", "Employee Remote", f.RemoteUnitID, false)

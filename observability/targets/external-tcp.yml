@@ -1,0 +1,13 @@
+# Add only real dependencies used by the deployment.
+# Do not put credentials or URL query tokens here.
+# Examples:
+# - targets: ["smtp.example.net:587"]
+#   labels:
+#     dependency: smtp
+# - targets: ["db.<project-ref>.supabase.co:5432"]
+#   labels:
+#     dependency: supabase-postgres
+# - targets: ["<upstash-host>:443"]
+#   labels:
+#     dependency: upstash-redis-tls
+[]

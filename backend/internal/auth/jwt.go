@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -73,10 +72,21 @@ func (v *JWTVerifier) VerifyToken(tokenString string) (BetterAuthClaims, error) 
 	return claims, nil
 }
 
-// JWTAuthenticate adalah middleware HTTP yang mengekstrak Bearer JWT, memverifikasinya,
-// dan menyimpan principal ke context. Digunakan sebagai alternatif atau pelengkap
-// GormSessionResolver untuk integrasi Better Auth.
+// JWTPrincipalResolver memuat principal otoritatif dari PostgreSQL setelah
+// signature JWT valid. Klaim role/homebase/email di token tidak dipercaya.
+type JWTPrincipalResolver interface {
+	ResolveUserPrincipal(context.Context, string) (Principal, error)
+}
+
+// JWTAuthenticate adalah wrapper legacy yang fail-closed. Pemanggil yang
+// menggunakan JWT secara langsung wajib beralih ke JWTAuthenticateWithResolver.
 func JWTAuthenticate(verifier *JWTVerifier, next http.Handler) http.Handler {
+	return JWTAuthenticateWithResolver(verifier, nil, next)
+}
+
+// JWTAuthenticateWithResolver memvalidasi signature/expiry JWT lalu memuat
+// ulang status akun dan role dari resolver database sebelum meneruskan request.
+func JWTAuthenticateWithResolver(verifier *JWTVerifier, resolver JWTPrincipalResolver, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := bearerToken(r.Header.Get("Authorization"))
 		if token == "" {
@@ -88,8 +98,21 @@ func JWTAuthenticate(verifier *JWTVerifier, next http.Handler) http.Handler {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
+		if resolver == nil {
+			writeError(w, http.StatusServiceUnavailable, "service_unavailable")
+			return
+		}
+		principal, err := resolver.ResolveUserPrincipal(r.Context(), claims.UserID)
+		if errors.Is(err, ErrInvalidSession) {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "service_unavailable")
+			return
+		}
 		ctx := contextWithJWTClaims(r.Context(), claims)
-		next.ServeHTTP(w, r.WithContext(WithPrincipal(ctx, JWTPrincipalFromClaims(claims))))
+		next.ServeHTTP(w, r.WithContext(WithPrincipal(ctx, principal)))
 	})
 }
 
@@ -124,7 +147,7 @@ func NewCombinedSessionResolver(jwtVerifier *JWTVerifier, db *gorm.DB) CombinedS
 func (r CombinedSessionResolver) ResolvePrincipal(ctx context.Context, token string) (Principal, error) {
 	// Token berformat JWT tidak boleh turun kelas menjadi sesi opaque ketika
 	// signature/expiry tidak valid. Ini mencegah authentication downgrade.
-	if strings.Count(token, ".") == 2 {
+	if strings.Contains(token, ".") {
 		if r.jwtVerifier == nil {
 			return Principal{}, ErrInvalidSession
 		}

@@ -233,30 +233,36 @@ Per 10 November 2026, rilis resmi terbaru adalah [OWASP Top 10:2025](https://top
 ## 7. Health check, observability, dan pemulihan
 
 - [x] Liveness/readiness terpisah; readiness memeriksa dependency wajib dengan timeout.
-- [x] Structured logging JSON + correlation ID (`X-Request-ID`), redaksi kredensial/body/query, pencatatan security event dan kegagalan terpilih.
-- [x] Dasbor admin SLO (`/admin/slo`, `GET /api/v1/admin/slo/metrics`) untuk agregat permintaan/error/latensi per rute (bergantung `SLO_ENABLED`).
-- [x] Status operasional admin read-only untuk antrean keluar (`GET /api/v1/admin/ops/status`, permission `ops:read`): agregat pending/processing/done/failed, usia pesan tertua, dan kegagalan per jenis (sinyal backlog/kegagalan notifikasi & pengiriman asinkron) — `DEC-065`.
-- [x] Drill backup/restore pada database disposable lokal; target awal `RPO_HOURS`/`RTO_HOURS`/`SLO_TARGET` diratifikasi (`DEC-050`).
-- [x] Runbook insiden tersedia (`docs/RUNBOOK.md`).
+- [x] Structured logging JSON + correlation ID (X-Request-ID), redaksi kredensial/body/query, pencatatan security event dan kegagalan terpilih.
+- [x] Dasbor admin SLO (/admin/slo, GET /api/v1/admin/slo/metrics) untuk agregat permintaan/error/latensi per rute (bergantung SLO_ENABLED).
+- [x] Status operasional admin read-only untuk antrean keluar (GET /api/v1/admin/ops/status, permission ops:read): agregat pending/processing/done/failed, usia pesan tertua, dan kegagalan per jenis (sinyal backlog/kegagalan notifikasi & pengiriman asinkron) — DEC-065.
+- [x] Drill backup/restore pada database disposable lokal; target awal RPO_HOURS/RTO_HOURS/SLO_TARGET diratifikasi (DEC-050).
+- [x] Runbook insiden tersedia (docs/RUNBOOK.md).
+
 - [ ] Pekerjaan tersisa:
-  - [ ] Monitoring menyeluruh: saturasi, health dependency eksternal, keterlambatan antrean, kegagalan notifikasi, metrik RabbitMQ (antrean, backlog, konsumen, dead-letter) — bila relevan metrik Redis/SMTP/storage.
-    - [x] Kepemilikan (adhitiad, admin, 2026-11-14), matriks sinyal, dan stack observability self-hosted $0 yang dipilih untuk Docker + RabbitMQ self-hosted + stdout JSON + Supabase Free (Prometheus/Alertmanager/Grafana/Loki + exporter host/container/blackbox/RabbitMQ, retensi log 30 hari, probe backend:8080, jaringan `simpeg-broker`) ditetapkan sebagai templat siap-disesuaikan (`DEC-065`, `observability/`).
-    - [x] Sinyal aplikasi awal tersedia: agregat SLO dan agregat outbox (`/admin/ops/status`) + log JSON terstruktur.
-    - [ ] Pengumpulan metrik/log dan dasbor end-to-end terpasang pada infrastruktur target; cakupan saturasi, health dependency eksternal, metrik RabbitMQ (antrean, backlog, konsumen, dead-letter) dan backlog broker terverifikasi. **Templat `observability/` diverifikasi lokal (2026-11-16):** Docker daemon aktif, stack `rabbitmq/` + `observability/` berjalan, Prometheus targets semua `UP` (blackbox, cadvisor, node-exporter, prometheus, rabbitmq); probe backend `/health` & `/ready` = 0 (backend stack tidak dijalankan — target produksi). **Diperbarui 2026-11-16 (siang):** backend Docker di-recreate dengan image terbaru (`simpeg-backend:2026-11-16`), probe backend `/health` & `/ready` kembali `UP`; **uji tembak alert kritis `BackendProbeFailed` terbukti** (backend dimatikan sementara → Alertmanager mengirim `firing` pada 08:22:36Z, `resolved` pada 08:27:36Z ke webhook sink uji `host.docker.internal:9999/alerts-critical`). Pemasangan pada infrastruktur target (dan penerima alert sesungguhnya) tetap wajib dibuktikan.
-  - [ ] Alerting terkonfigurasi pada infrastruktur (bukan hanya ambang di runbook).
-    - [x] Ambang awal dan kebijakan penerima/eskalasi ditetapkan sebagai draf (`DEC-065`, `docs/RUNBOOK.md` §9); templat aturan Alertmanager disediakan (`observability/`).
-    - [ ] Aturan alert aktif di platform monitoring target dan uji tembak (penerima/eskalasi) terbukti.
-  - [ ] Uji backup/restore/PITR pada database target produksi dan prosedur pemulihan operasional.
-    - [x] Prosedur uji backup/restore (termasuk verifikasi kemampuan PITR/restore sesuai tier Supabase, pengukuran RPO/RTO, dan verifikasi pascapulih) ditetapkan (`DEC-065`, `docs/RUNBOOK.md` §8E/§7), dengan formulir/checklist siap-isi `docs/backup-restore-drill.md` dan helper `scripts/backup-restore-drill.ps1` ($0, target disposable).
-    - [ ] Uji restore/PITR pada database target produksi Supabase (tier Free, region/project aktual) dilakukan dan hasil (durasi, titik data, RPO/RTO aktual) dicatat.
-  - [ ] Penetapan retensi/operasi log produksi sesuai kebijakan deployment.
-    - [x] Kebijakan retensi/operasi log produksi ditetapkan (agregasi log stdout JSON, retensi awal 30 hari pada log agregasi, akses terbatas, penelusuran `request_id`; retensi audit DB `AUDIT_RETENTION_DAYS` dan metrik SLO `SLO_RETENTION_DAYS` tetap terpisah) — `DEC-065`.
-    - [ ] Konfigurasi agregasi/retensi/akses log aktif pada deployment target dan diverifikasi.
+  - [ ] **Monitoring menyeluruh:** saturasi, health dependency eksternal, keterlambatan antrean, kegagalan notifikasi, RabbitMQ queues/backlog/consumers/dead-letter; bila relevan Redis/SMTP/storage.
+    - [x] Kepemilikan dan matriks sinyal ditetapkan; template self-hosted $0 (Docker + RabbitMQ + stdout JSON + Supabase Free) disediakan di observability/ (DEC-065).
+    - [x] Sinyal aplikasi awal tersedia: agregat SLO, outbox (/admin/ops/status), log JSON terstruktur.
+    - [x] Template mencakup host/container exporter, HTTP backend probes, optional external TCP probes, RabbitMQ plugin + queue detail scrape untuk simpeg.jobs dan simpeg.jobs.dead, dashboard Grafana, alert backlog/consumer-zero/dead-letter/queue age/host disk, Alloy → Loki, Loki retention 30 hari, Docker json-file rotation 20MB × 5 per container.
+    - [x] Konfigurasi template dan dashboard divalidasi oleh CI (.github/workflows/observability.yml): Docker Compose, Alloy validate/fmt, Prometheus config/rules, Alertmanager config, Grafana JSON, dan Promtail removal.
+    - [ ] Pengumpulan metrik/log, queue series dan dashboard end-to-end pada **infrastruktur target** diverifikasi. Catatan lokal 2026-11-16 tetap bukti uji lokal saja: stack RabbitMQ/observability berjalan; backend probe sempat down kemudian pulih setelah backend di-recreate; alert BackendProbeFailed firing/resolved ke webhook sink uji host.docker.internal:9999. CI validasi file tidak membuktikan target production UP, RabbitMQ queues berisi metrics, log retention atau koneksi dependency di host produksi.
+    - [ ] Sinyal app outbox/SLO dan kegagalan SMTP diekspor oleh exporter internal aman (service identity, secret file, timeout, allowlist); endpoint admin sekarang protected by RBAC dan belum discrape Prometheus. Jangan menanam token admin dalam config.
+  - [ ] **Alerting aktif pada platform target** (bukan hanya threshold/rules di repo).
+    - [x] Ambang awal dan kebijakan penerima/eskalasi draf tersedia (DEC-065, docs/RUNBOOK.md §9); aturan Prometheus dan routing Alertmanager templated.
+    - [ ] Receiver Alertmanager diganti ke penerima produksi, firing/resolved dan eskalasi diuji pada host target. host.docker.internal:9999 adalah sink uji lokal, bukan receiver production.
+  - [ ] **Uji backup/restore pada database target Supabase dan pemulihan operasional.**
+    - [x] Prosedur dan checklist restore disposable tersedia (docs/backup-restore-drill.md, docs/RUNBOOK.md §8E); helper generic disposable scripts/backup-restore-drill.ps1 tersedia.
+    - [x] Helper ekspor Supabase Free scripts/supabase-free-backup.ps1 mengekspor schema/data/custom roles terpisah dan memverifikasi SHA-256 manifest; helper tidak menjadwalkan/enkripsi/mengunggah off-site.
+    - [x] Batas tier diluruskan: Supabase Free tidak menyediakan automatic daily DB backups atau PITR; ekspor terjadwal + encrypted off-site diperlukan jika RPO 24 jam ditargetkan. Backup DB tidak mencakup objek Cloudinary/Storage API.
+    - [ ] Jadwal ekspor, enkripsi, off-site, monitoring kegagalan, dan restore ke project/database disposable Supabase aktual diverifikasi. Catat project ref/tier/region, timestamp, durasi, titik data, dan RPO/RTO aktual. Jangan mencatat PITR sebagai tersedia pada Free.
+  - [ ] **Retensi/operasi log produksi sesuai kebijakan deployment.**
+    - [x] Retensi Loki awal 720 jam / 30 hari; akses terbatas; query request_id; audit DB AUDIT_RETENTION_DAYS dan metrik SLO SLO_RETENTION_DAYS tetap terpisah (DEC-065).
+    - [x] Docker json-file spool lokal dibatasi max-size 20m dan max-file 5 per container; ini buffer lokal (sekitar 100MB/container), bukan retensi 30 hari.
+    - [ ] Konfigurasi Alloy/Loki, compactor, volume, access control, dan penelusuran request_id aktif serta diverifikasi pada deployment target; tunggu 30 hari untuk membuktikan retensi efektif. Pastikan redaksi/rotation host sudah aktif.
 
-**Gerbang selesai bila:** operator dapat mendeteksi, memahami dampak, dan memulihkan kegagalan utama.
-
+**Gerbang selesai bila:** operator dapat mendeteksi, memahami dampak, dan memulihkan kegagalan utama pada **infrastruktur target**. Template/CI bukan pengganti uji produksi.
+ 
 ---
-
 ## 8. Uji performa dan kapasitas
 
 - [x] Workload awal, baseline, dan target SLO awal (p95/laju galat) didokumentasikan (`docs/PERFORMANCE-BASELINE.md`).

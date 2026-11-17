@@ -67,7 +67,7 @@ services:
       APP_ENV: ${APP_ENV:-production}
       # Menimpa RABBITMQ_URL dari .env (yang memakai localhost untuk
       # pengembangan native) dengan alamat broker pada jaringan bersama.
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-simpeg}:${RABBITMQ_PASSWORD:-simpeg}@rabbitmq:5672/
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:?Set RABBITMQ_USER in .env}:${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in .env}@rabbitmq:5672/
     depends_on:
       migrations:
         condition: service_completed_successfully

@@ -135,10 +135,10 @@ const maxDeriveWindowDays = 93
 // scopeIDs mengembalikan daftar unit cakupan principal: nil = lintas organisasi
 // (admin), slice kosong = tanpa cakupan, atau daftar unit + turunannya.
 func (s *AdminService) scopeIDs(ctx context.Context, principal auth.Principal) ([]string, error) {
-	if s.policy == nil || !s.policy.Allows(principal.RoleName, "attendance:presensi:manage") {
+	if !allowsAttendance(ctx, s.policy, principal, "attendance:presensi:manage") {
 		return nil, ErrPresensiForbidden
 	}
-	if s.policy.Allows(principal.RoleName, "attendance:read:any") {
+	if allowsAttendance(ctx, s.policy, principal, "attendance:read:any") {
 		return nil, nil
 	}
 	if principal.HomebaseID == "" || s.scope == nil {

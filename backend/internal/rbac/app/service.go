@@ -39,7 +39,7 @@ func NewService(repo repository.Store) *Service {
 func (s *Service) CanAccess(ctx context.Context, principal auth.Principal, module, action string, scope string) (domain.Decision, error) {
 	scopePerm := domain.ScopePermission(strings.ToLower(strings.TrimSpace(scope)))
 	if scopePerm != domain.ScopeAny && scopePerm != domain.ScopeHomebase && scopePerm != domain.ScopeSelf {
-		scopePerm = domain.ScopeAny
+		return domain.Deny("scope permission tidak dikenal"), nil
 	}
 	base := strings.ToLower(strings.TrimSpace(module)) + ":" + strings.ToLower(strings.TrimSpace(action))
 	key := base + ":" + string(scopePerm)

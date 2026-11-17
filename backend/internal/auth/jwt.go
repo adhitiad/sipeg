@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/golang-jwt/jwt/v5"
 	"gorm.io/gorm"
 )
@@ -44,20 +46,29 @@ func NewJWTVerifier(secret string) *JWTVerifier {
 // VerifyToken memverifikasi dan mengurai JWT. Mengembalikan error jika token tidak valid.
 func (v *JWTVerifier) VerifyToken(tokenString string) (BetterAuthClaims, error) {
 	claims := BetterAuthClaims{}
-	token, err := jwt.ParseWithClaims(tokenString, &claims, func(token *jwt.Token) (any, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-		}
-		return v.secret, nil
-	})
+	if v == nil || len(v.secret) == 0 {
+		return claims, errors.New("JWT secret is not configured")
+	}
+	token, err := jwt.ParseWithClaims(
+		tokenString,
+		&claims,
+		func(token *jwt.Token) (any, error) {
+			if token.Method != jwt.SigningMethodHS256 {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+			return v.secret, nil
+		},
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+		jwt.WithExpirationRequired(),
+	)
 	if err != nil {
 		return claims, err
 	}
 	if !token.Valid {
 		return claims, errors.New("invalid token")
 	}
-	if claims.ExpiresAt != nil && claims.ExpiresAt.Before(time.Now()) {
-		return claims, errors.New("token expired")
+	if _, err := uuid.Parse(strings.TrimSpace(claims.UserID)); err != nil {
+		return claims, errors.New("JWT userId is missing or invalid")
 	}
 	return claims, nil
 }
@@ -111,13 +122,19 @@ func NewCombinedSessionResolver(jwtVerifier *JWTVerifier, db *gorm.DB) CombinedS
 }
 
 func (r CombinedSessionResolver) ResolvePrincipal(ctx context.Context, token string) (Principal, error) {
-	// Coba JWT terlebih dahulu (format: header.payload.signature)
-	parts := strings.Split(token, ".")
-	if len(parts) == 3 {
-		if claims, err := r.jwtVerifier.VerifyToken(token); err == nil {
-			return JWTPrincipalFromClaims(claims), nil
+	// Token berformat JWT tidak boleh turun kelas menjadi sesi opaque ketika
+	// signature/expiry tidak valid. Ini mencegah authentication downgrade.
+	if strings.Count(token, ".") == 2 {
+		if r.jwtVerifier == nil {
+			return Principal{}, ErrInvalidSession
 		}
+		claims, err := r.jwtVerifier.VerifyToken(token)
+		if err != nil {
+			return Principal{}, ErrInvalidSession
+		}
+		// Role, email, status aktif, dan homebase selalu dimuat ulang dari DB;
+		// klaim JWT lama tidak dapat mempertahankan hak akses yang telah dicabut.
+		return r.gormResolver.ResolveUserPrincipal(ctx, claims.UserID)
 	}
-	// Fallback ke resolusi sesi GORM (token opaque)
 	return r.gormResolver.ResolvePrincipal(ctx, token)
 }

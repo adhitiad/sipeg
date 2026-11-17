@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"simpeg/backend/internal/apierror"
 	"simpeg/backend/internal/observability"
@@ -212,7 +213,16 @@ func (s UnitScope) List() []string { return s.list }
 // Permission global ("...:any") mengizinkan seluruh organisasi; permission
 // homebase hanya mengizinkan record pada unit yang berada dalam cakupan.
 func CanAccessUserInScope(principal Principal, targetUserID, targetHomebaseID string, permission Permission, policy Policy, scope UnitScope) bool {
-	if policy == nil || !policy.Allows(principal.RoleName, permission) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	return CanAccessUserInScopeContext(ctx, principal, targetUserID, targetHomebaseID, permission, policy, scope)
+}
+
+// CanAccessUserInScopeContext mengevaluasi izin RBAC dan cakupan record dalam
+// konteks request. Helper lama tetap tersedia sebagai wrapper dengan timeout
+// terbatas; use case baru sebaiknya meneruskan context request secara langsung.
+func CanAccessUserInScopeContext(ctx context.Context, principal Principal, targetUserID, targetHomebaseID string, permission Permission, policy Policy, scope UnitScope) bool {
+	if !allowsPermission(ctx, policy, principal, permission) {
 		return false
 	}
 	if principal.UserID != "" && principal.UserID == targetUserID {
@@ -227,6 +237,16 @@ func CanAccessUserInScope(principal Principal, targetUserID, targetHomebaseID st
 	default:
 		return false
 	}
+}
+
+func allowsPermission(ctx context.Context, policy Policy, principal Principal, permission Permission) bool {
+	if policy == nil {
+		return false
+	}
+	if scoped, ok := policy.(ScopedPolicy); ok {
+		return scoped.AllowsScoped(ctx, principal, permission)
+	}
+	return policy.Allows(principal.RoleName, permission)
 }
 
 func bearerToken(header string) string {

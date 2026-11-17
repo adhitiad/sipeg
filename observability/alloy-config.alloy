@@ -2,47 +2,47 @@
 // Read-only Docker JSON log files; no Docker socket is mounted.
 // For Docker data-root overrides, change the glob and matching Compose mount.
 local.file_match "docker_container_logs" {
-  path_targets = [{
-    __path__ = "/var/lib/docker/containers/*/*-json.log",
-    job      = "docker",
-  }]
-  sync_period = "5s"
+	path_targets = [{
+		__path__ = "/var/lib/docker/containers/*/*-json.log",
+		job      = "docker",
+	}]
+	sync_period = "5s"
 }
 
 loki.source.file "docker_container_logs" {
-  targets       = local.file_match.docker_container_logs.targets
-  forward_to    = [loki.process.docker_container_logs.receiver]
-  tail_from_end = true
+	targets       = local.file_match.docker_container_logs.targets
+	forward_to    = [loki.process.docker_container_logs.receiver]
+	tail_from_end = true
 }
 
 loki.process "docker_container_logs" {
-  // Decode Docker's {"log":"...","stream":"...","time":"..."} envelope.
-  stage.docker {}
+	// Decode Docker's {"log":"...","stream":"...","time":"..."} envelope.
+	stage.docker { }
 
-  // Parse application JSON but keep request_id as an extracted field, not a
-  // Loki label. High-cardinality request IDs and free-form messages must not
-  // become index labels.
-  stage.json {
-    expressions = {
-      level      = "level",
-      request_id = "request_id",
-      msg        = "msg",
-      path       = "path",
-      status     = "status",
-    }
-  }
+	// Parse application JSON but keep request_id as an extracted field, not a
+	// Loki label. High-cardinality request IDs and free-form messages must not
+	// become index labels.
+	stage.json {
+		expressions = {
+			level      = "level",
+			request_id = "request_id",
+			msg        = "msg",
+			path       = "path",
+			status     = "status",
+		}
+	}
 
-  stage.labels {
-    values = {
-      level = "level",
-    }
-  }
+	stage.labels {
+		values = {
+			level = "level",
+		}
+	}
 
-  forward_to = [loki.write.local.receiver]
+	forward_to = [loki.write.local.receiver]
 }
 
 loki.write "local" {
-  endpoint {
-    url = "http://loki:3100/loki/api/v1/push"
-  }
+	endpoint {
+		url = "http://loki:3100/loki/api/v1/push"
+	}
 }

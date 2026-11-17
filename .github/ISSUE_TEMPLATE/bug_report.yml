@@ -1,0 +1,62 @@
+name: Laporan Bug
+description: Laporkan kesalahan pada SIMPEG
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Terima kasih telah melaporkan. Mohon isi detail di bawah.
+  - type: textarea
+    id: description
+    attributes:
+      label: Deskripsi singkat
+      description: Apa yang terjadi?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Langkah reproduksi
+      description: Langkah-langkah untuk mereproduksi masalah.
+      placeholder: |
+        1. Buka ...
+        2. Klik ...
+        3. Lihat error ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Perilaku yang diharapkan
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Perilaku aktual
+    validations:
+      required: true
+  - type: input
+    id: request_id
+    attributes:
+      label: X-Request-ID (jika ada)
+      description: Dari log/headers respons, untuk penelusuran.
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Tingkat keparahan
+      options:
+        - Rendah
+        - Sedang
+        - Tinggi
+        - Kritis
+    validations:
+      required: true
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: Saya sudah mencari issue serupa.
+          required: true

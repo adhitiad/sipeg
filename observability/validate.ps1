@@ -29,7 +29,7 @@ try {
   }
 
   Invoke-Checked -Label "RabbitMQ Docker Compose config" -Command {
-    docker compose -f ../rabbitmq/docker-compose.yml config --quiet
+    docker compose --env-file ../.env.example -f ../rabbitmq/docker-compose.yml config --quiet
   }
 
   $mountDir = (Resolve-Path $observabilityDir).Path

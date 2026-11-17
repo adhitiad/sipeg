@@ -38,7 +38,8 @@ jobs:
             --volume "$PWD/observability:/etc/alloy:ro" \
             --entrypoint alloy \
             grafana/alloy:v1.21.3 \
-            fmt --test /etc/alloy/alloy-config.alloy
+            fmt /etc/alloy/alloy-config.alloy > /tmp/alloy-formatted.alloy
+          diff -u observability/alloy-config.alloy /tmp/alloy-formatted.alloy
 
       - name: Validate Prometheus configuration and alert rules
         run: |

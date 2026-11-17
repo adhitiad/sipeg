@@ -190,6 +190,72 @@
           "expr": "{job=\"docker\"}"
         }
       ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "RabbitMQ total queue depth (ready + unacked)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rabbitmq_detailed_queue_messages{queue=~\"simpeg\\\\.jobs(\\\\.dead)?\"}",
+          "legendFormat": "{{queue}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "RabbitMQ unacknowledged messages",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 28,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rabbitmq_detailed_queue_messages_unacked{queue=~\"simpeg\\\\.jobs(\\\\.dead)?\"}",
+          "legendFormat": "{{queue}}"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Age of oldest job message (seconds)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 35,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time() - rabbitmq_detailed_queue_head_message_timestamp{queue=\"simpeg.jobs\"}",
+          "legendFormat": "oldest job message"
+        }
+      ]
     }
   ]
 }

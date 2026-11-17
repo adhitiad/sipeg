@@ -56,7 +56,7 @@ RabbitMQ plugin `rabbitmq_prometheus` diaktifkan eksplisit dari `rabbitmq/enable
 ## Alert awal
 
 - Backend `/health` atau `/ready` gagal 2 menit: critical.
-- Host CPU >85% selama 5 menit, container memory >85%, filesystem free <15% selama 5 menit: warning.
+- Host CPU >85% selama 5 menit, host memory available <10% selama 5 menit, container memory >85%, filesystem free <15% selama 5 menit: warning.
 - RabbitMQ jobs ready >100 selama 5 menit: warning; umur pesan tertua >300 detik selama 5 menit: warning.
 - Dead-letter `simpeg.jobs.dead` berisi pesan selama 1 menit: critical.
 - Queue jobs memiliki backlog tetapi consumer count 0 selama 2 menit: critical.

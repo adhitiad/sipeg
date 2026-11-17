@@ -17,12 +17,19 @@
 
 name: simpeg
 
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 services:
   migrations:
     build: ./backend
     image: simpeg-backend
     entrypoint: ["/bin/migrate"]
     restart: "no"
+    logging: *default-logging
     environment:
       DATABASE_URL: ${DATABASE_URL}
 
@@ -31,10 +38,11 @@ services:
     image: simpeg-backend
     entrypoint: ["/bin/jobsched"]
     restart: unless-stopped
+    logging: *default-logging
     environment:
       # Hostname rabbitmq adalah alias layanan pada jaringan simpeg-broker
       # yang dimiliki stack broker (rabbitmq/docker-compose.yml).
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-simpeg}:${RABBITMQ_PASSWORD:-simpeg}@rabbitmq:5672/
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:?Set RABBITMQ_USER in .env}:${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in .env}@rabbitmq:5672/
       # Sama dengan SLO_ENABLED backend: tanpa pengoleki metrik, pesan
       # pemeriksaan SLO tidak perlu diterbitkan.
       SLO_EVALUATE_ENABLED: ${SLO_ENABLED:-false}
@@ -45,6 +53,7 @@ services:
     build: ./backend
     image: simpeg-backend
     restart: unless-stopped
+    logging: *default-logging
     env_file: .env
     ports:
       - "${PORT:-8080}:8080"

@@ -12,7 +12,7 @@ import (
 var ErrForbidden = errors.New("attendance access is not permitted")
 
 func (s *ReadService) MyRecords(ctx context.Context, principal auth.Principal, filter RecordFilter) (RecordPage, error) {
-	if s.policy == nil || !s.policy.Allows(principal.RoleName, "attendance:read:self") || principal.UserID == "" {
+	if !allowsAttendance(ctx, s.policy, principal, "attendance:read:self") || principal.UserID == "" {
 		return RecordPage{}, ErrForbidden
 	}
 	items, total, err := s.reader.ListMyRecords(ctx, principal.UserID, filter)
@@ -24,9 +24,9 @@ func (s *ReadService) MyRecords(ctx context.Context, principal auth.Principal, f
 
 func (s *ReadService) unitScope(ctx context.Context, principal auth.Principal) ([]string, error) {
 	switch {
-	case s.policy != nil && s.policy.Allows(principal.RoleName, "attendance:read:any"):
+	case allowsAttendance(ctx, s.policy, principal, "attendance:read:any"):
 		return nil, nil // nil menandakan lintas organisasi
-	case s.policy != nil && s.policy.Allows(principal.RoleName, "attendance:read:homebase"):
+	case allowsAttendance(ctx, s.policy, principal, "attendance:read:homebase"):
 		if principal.HomebaseID == "" || s.scope == nil {
 			return []string{}, nil
 		}

@@ -28,6 +28,7 @@ services:
     ports:
       - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
     restart: unless-stopped
+    logging: *default-logging
     networks:
       - default
       - simpeg
@@ -43,6 +44,7 @@ services:
     ports:
       - "127.0.0.1:${ALERTMANAGER_PORT:-9093}:9093"
     restart: unless-stopped
+    logging: *default-logging
     networks:
       - default
 
@@ -61,6 +63,7 @@ services:
     ports:
       - "127.0.0.1:${GRAFANA_PORT:-3001}:3000"
     restart: unless-stopped
+    logging: *default-logging
     networks:
       - default
 
@@ -73,6 +76,7 @@ services:
     ports:
       - "127.0.0.1:${LOKI_PORT:-3100}:3100"
     restart: unless-stopped
+    logging: *default-logging
     networks:
       - default
 
@@ -89,6 +93,7 @@ services:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - alloy_data:/var/lib/alloy/data
     restart: unless-stopped
+    logging: *default-logging
     networks:
       - default
 
@@ -101,6 +106,7 @@ services:
     volumes:
       - /:/host:ro,rslave
     restart: unless-stopped
+    logging: *default-logging
     networks:
       - default
 
@@ -114,6 +120,7 @@ services:
       - /var/lib/docker/:/var/lib/docker:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     restart: unless-stopped
+    logging: *default-logging
     networks:
       - default
 
@@ -126,6 +133,7 @@ services:
     ports:
       - "127.0.0.1:${BLACKBOX_PORT:-9115}:9115"
     restart: unless-stopped
+    logging: *default-logging
     networks:
       - default
       - simpeg

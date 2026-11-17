@@ -94,7 +94,9 @@ func TestPayrollPublicationAndPaymentAreRoleGuardedAndTransactional(t *testing.T
 		`INSERT INTO "gaji" ("id", "userId", "nomorSlip", "periode", "tanggalGaji", "gajiPokok", "totalGaji", "status")
 		 VALUES (?, ?, ?, ?, ?, ?, ?, 'DRAF')`,
 		slipID, payrollUser.ID, "IT-SLIP-"+strings.ReplaceAll(slipID, "-", ""), period, period, float64(salaryAmount), float64(salaryAmount),
-	).Error; err != nil { t.Fatalf("seed payroll draft: %v", err) }
+	).Error; err != nil {
+		t.Fatalf("seed payroll draft: %v", err)
+	}
 
 	status, body := apiRequest(t, operator, http.MethodPost, "/api/v1/payroll/slips/"+slipID+"/terbit", nil)
 	if status != http.StatusForbidden {
@@ -215,4 +217,3 @@ func assertAuditAction(t *testing.T, action string) {
 		t.Fatalf("audit action %q was not persisted", action)
 	}
 }
-

@@ -554,86 +554,89 @@ Referensi resmi:
 
 ## 9. Dashboard, monitoring, dan alert
 
-**Gejala:** operator tidak mengetahui layanan mana yang gagal, dampak ke
-pengguna, atau langkah pemulihannya.
+**Gejala:** operator tidak mengetahui layanan mana yang gagal, dampak ke pengguna, backlog antrean, atau langkah pemulihannya.
 
-**Sumber sinyal yang tersedia di aplikasi (sudah ada):**
+### Sumber sinyal aplikasi yang tersedia
 
-- **Health:** `/health` (liveness) dan `/ready` (readiness dependency wajib,
-  saat ini PostgreSQL).
-- **Log terstruktur:** JSON satu baris ke stdout dengan `X-Request-ID`; redaksi
-  kredensial/body/query (`internal/observability`). Peristiwa keamanan
-  (`auth_failed`, `access_denied`, `rate_limited`, `webhook_signature_rejected`)
-  dan pekerjaan (`mq_job_*`, `outbox_*`, `slo_*`) tercatat sebagai event.
-- **Metrik SLO (agregat):** `sloMetric` di PostgreSQL, halaman admin `/admin/slo`
-  dan `GET /api/v1/admin/slo/metrics` (`slo:read`, admin). Mencakup error rate
-  dan latensi (rata-rata/p95/p99/maks) per rute pada jendela 24 jam/7 hari.
-  Bergantung `SLO_ENABLED=true`.
-- **Status operasional antrean keluar:** `GET /api/v1/admin/ops/status`
-  (`ops:read`, admin) memuat agregat outbox per status, usia pesan tertua yang
-  belum selesai, dan kegagalan per jenis — sinyal keterlambatan antrean dan
-  kegagalan notifikasi/pengiriman asinkron (`DEC-065`).
+- **Health:** /health untuk liveness dan /ready untuk readiness dependency wajib (saat ini PostgreSQL).
+- **Log JSON:** satu baris per event ke stdout dengan request_id, level, msg, path, status, dan redaksi kredensial/body/query. Event security, outbox, SMTP, dan pekerjaan RabbitMQ dicatat oleh logger aplikasi.
+- **SLO aplikasi:** data agregat tersimpan di PostgreSQL, dibaca melalui GET /api/v1/admin/slo/metrics (slo:read; SLO_ENABLED=true).
+- **Outbox aplikasi:** GET /api/v1/admin/ops/status (ops:read) mengembalikan jumlah PENDING/PROCESSING/DONE/FAILED, usia pesan pending tertua, dan FAILED per kind. Payload, dedupe key, dan penerima tidak diekspos.
 
-Dasbor internal adalah titik awal, bukan platform monitoring penuh; cakupan
-saturasi, health dependency eksternal, metrik Redis/SMTP/storage (bukan QStash/S3 — keduanya tidak dipakai), dan backlog broker RabbitMQ memerlukan
-pengumpulan di infrastruktur.
+**Penting:** endpoint ops/SLO dilindungi RBAC. Template Prometheus saat ini **belum** mengekspor data endpoint tersebut. Jangan menaruh bearer token admin statis di prometheus.yml. Untuk alert outbox/SMTP dan SLO, implementasikan exporter internal dengan identitas service khusus, secret file, timeout, dan allowlist metric; sampai itu tersedia, pantau dari dashboard admin dan lakukan rekonsiliasi operasional.
 
-**Stack monitoring/alerting yang dipilih (`DEC-065`, target: Docker + RabbitMQ
-self-hosted + stdout JSON + Supabase):** observability self-hosted berbasis
-Docker (templat awal di `observability/`): Prometheus + Alertmanager + Grafana,
-Loki + Promtail/Grafana Alloy untuk log stdout JSON, node-exporter & cAdvisor
-untuk saturasi host/container, blackbox-exporter untuk probe `/health`/`/ready`
-dan endpoint kritis, serta metrik RabbitMQ via plugin/endpoint Prometheus
-management. Aturan alert dipasang di Alertmanager/Prometheus; penerima dan
-eskalasi ditetapkan pemilik (adhitiad/admin). **Pemasangan, wiring ke target,
-dan uji tembak alert masih harus dibuktikan di infrastruktur.**
+### Stack observability yang dipilih (DEC-065)
 
-Panduan pemasangan, konfigurasi, dan uji tembak alert ada di
-`observability/README.md`. Sumber sinyal aplikasi yang dipakai stack itu:
-`GET /api/v1/admin/slo/metrics` (`slo:read`) untuk agregat error/latensi,
-`GET /api/v1/admin/ops/status` (`ops:read`) untuk agregat antrean keluar, dan
-log JSON terstruktur ke stdout. Status operasional antrean keluar yang dibaca
-`/admin/ops/status` bersifat agregat per status, usia pesan tertua, dan
-kegagalan per jenis; payload, dedupe key, dan penerima tidak pernah diekspos.
+Template self-hosted Docker ada di observability/:
+- Prometheus: host, container, backend probes, aggregate RabbitMQ dan filtered queue metrics.
+- Alertmanager: routing critical/warning; receiver pada template masih webhook sink lokal untuk pengujian, bukan penerima produksi.
+- Grafana: datasource Prometheus/Loki dan dashboard Infrastructure & Queue diprovisikan dari file.
+- Loki: agregasi log dengan retensi konfigurasi 720 jam / 30 hari.
+- Grafana Alloy: koleksi Docker JSON logs dari file log read-only. Promtail tidak dipakai karena sudah EOL per 2 Maret 2026.
+- node-exporter/cAdvisor: CPU, RAM, filesystem host dan resource container.
+- blackbox-exporter: HTTP health/readiness backend serta TCP probe untuk dependency eksternal yang dipilih.
+- RabbitMQ rabbitmq_prometheus plugin: endpoint agregat 15692/metrics dan endpoint /metrics/detailed dengan family queue_coarse_metrics dan queue_consumer_count hanya untuk antrean SIMPEG.
 
-**Ambang alert awal (titik awal, wajib disesuaikan dengan baseline produksi):**
+RabbitMQ detailed queue scrape difilter ke simpeg.jobs dan simpeg.jobs.dead. Dengan filter tersebut panel dan alert dapat melihat pesan ready, total queue depth/ unacked (jika diekspose family-nya), serta jumlah consumer per queue tanpa men-scrape seluruh object broker. Metrik penting yang digunakan:
+- rabbitmq_detailed_queue_messages_ready — pesan siap untuk consumer;
+- rabbitmq_detailed_queue_messages_unacked — pesan yang sudah dikirim tetapi belum di-ack;
+- rabbitmq_detailed_queue_messages — total ready + unacked;
+- rabbitmq_detailed_queue_consumers — jumlah consumer aktif.
 
-| Metrik                      | Sumber                                                             | Ambang alert awal                                             |
-| --------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------- |
-| Error rate API              | `sloMetric.errorCount / requestCount` atau metrik HTTP teragregasi | > 1% dalam 5 menit (kritikal > 5%)                            |
-| Latency p95                 | histogram bucket `sloMetric` / evaluasi `slo.evaluate`             | > 800 ms dalam 5 menit                                        |
-| Saturasi host/container     | node-exporter/cAdvisor (CPU, memori, disk)                         | CPU/memori tinggi berkelanjutan (mis. > 85% selama 5 menit)   |
-| Pool/koneksi PostgreSQL     | metrik pool aplikasi/DB Supabase                                   | > 80% batas (kritikal > 90%)                                  |
-| Antrean keluar (outbox)     | `GET /api/v1/admin/ops/status` atau query `outboxMessage`          | `FAILED` > 0 (kritikal > 10); `PENDING`/usia tertua meningkat |
-| Antrean broker              | metrik RabbitMQ (`simpeg.jobs`, `simpeg.jobs.dead`)                | pesan di dead-letter > 0; backlog bertumbuh                   |
-| Kegagalan notifikasi/SMTP   | `FAILED` outbox per kind `email.*`, log `smtp`                    | > 0 pesan permanen                             |
-| Health dependency           | probe `/ready`, blackbox/health Redis/RabbitMQ/Supabase            | tidak sehat/timeout berulang                                  |
+Uji broker harus memverifikasi plugin aktif, port 15692 dapat diakses melalui jaringan simpeg-broker, Prometheus job rabbitmq dan rabbitmq-queues UP, serta series untuk kedua queue benar-benar muncul. Job scrape UP saja belum cukup sebagai bukti metrik per-queue.
 
-Log keamanan (`auth_failed`, `access_denied`, `rate_limited`, `webhook_signature_rejected`)
-dan jejak audit (`authz.denied`) dapat diekspor ke SIEM/log alerting untuk
-deteksi insiden (lihat bagian insiden keamanan).
+### Cakupan alert pada template
+
+| Sinyal | Ambang awal | Alert |
+|---|---|---|
+| Backend /health atau /ready gagal | 2 menit | BackendProbeFailed (critical) |
+| Target scrape down | 2 menit | InstanceDown |
+| Host CPU tinggi | >85% selama 5 menit | HighHostCPU (warning) |
+| Container memory | >85% batas selama 5 menit | HighContainerMemory (warning) |
+| Host filesystem free | <15% selama 5 menit | HostDiskSpaceLow (warning) |
+| RabbitMQ scrape gagal | 2 menit | RabbitMQTargetDown |
+| simpeg.jobs messages ready | >100 selama 5 menit | RabbitMQQueueBacklog (warning) |
+| simpeg.jobs.dead messages ready | >0 selama 1 menit | RabbitMQDeadLetterNotEmpty (critical) |
+| Queue punya backlog tanpa consumer | 2 menit | RabbitMQJobsConsumerMissing (critical) |
+| External TCP dependency down | 2 menit | ExternalDependencyDown (warning) |
+
+Ambang tersebut masih nilai awal; sesuaikan berdasarkan load baseline dan kapasitas host. TCP blackbox probe hanya membuktikan port dapat dihubungi — bukan autentikasi SMTP, Redis, atau query SQL berhasil. Untuk SMTP harus tetap ada uji kirim end-to-end, dan untuk Supabase database lakukan probe query read-only yang diautentikasi secara terpisah.
+
+Redis Upstash bersifat cache opsional/non-authoritative dan tidak dipakai untuk sesi, payroll, atau status pembayaran. Uji TCP Redis TLS tidak membuktikan cache read/write sukses; perlu health check aplikasi/cache dan alert log cache_read_failed/cache_write_failed setelah metriknya diekspor. SMTP tidak punya exporter metrik native dalam template; kegagalan permanen saat ini tercatat di outbox FAILED dan perlu exporter agar Alertmanager menerima sinyal tersebut. Tidak ada S3 dependency; berkas SIMPEG menggunakan Cloudinary dan perlu pemantauan/quota/asset-availability terpisah bila layanan tersebut aktif.
+
+### Pemasangan dan bukti end-to-end
+
+Panduan pemasangan ada di observability/README.md; konfigurasi harus divalidasi dengan observability/validate.ps1. Urutan deployment satu host:
+1. Jalankan RabbitMQ agar jaringan simpeg-broker tersedia.
+2. Jalankan migration/backend/jobsched.
+3. Buat observability/.env dari observability/.env.example dan ganti password Grafana dengan secret kuat.
+4. Jalankan compose observability. Ports UI/metrics di-bind ke 127.0.0.1; jangan dibuka ke internet tanpa reverse proxy dan autentikasi.
+5. Verifikasi seluruh Prometheus target dan series yang diharapkan, buka dashboard Grafana, cari log dengan request_id, dan periksa alert rules yang loaded.
+6. Ganti webhook test sink di alertmanager.yml dengan penerima produksi yang disetujui; uji firing dan resolved alert, pastikan penerima menerima pesan, dan catat eskalasi/kronologi.
+
+Checklist penutupan produksi:
+- [ ] Host/container metrics dan disk usage terlihat pada dashboard host aktual.
+- [ ] Backend health/readiness probes UP; uji stop/start backend menghasilkan firing/resolved.
+- [ ] RabbitMQ per-queue metrics terlihat untuk simpeg.jobs dan simpeg.jobs.dead.
+- [ ] Simulasi dead-letter dan consumer absence memicu alert yang tepat.
+- [ ] SMTP/Supabase/Redis/Cloudinary dependency relevan diuji pada protokol aplikasinya, bukan hanya TCP.
+- [ ] Outbox backlog, FAILED notification, oldest age, dan SLO metrics diekspor melalui exporter internal aman.
+- [ ] Alertmanager memakai penerima produksi nyata dan uji tembak/eskalasi tercatat.
+- [ ] Tidak ada UI atau endpoint metrics yang terekspos tanpa autentikasi.
 
 ## 9A. Retensi dan operasi log produksi
 
-**Kebijakan (`DEC-065`, pemilik: adhitiad/admin):**
-
-- **Sumber:** log aplikasi JSON ke stdout (container Docker), dikumpulkan oleh
-  Promtail/Grafana Alloy ke Loki (atau stack log setara pada target).
-- **Retensi log agregasi:** awal **30 hari** (dapat diubah sesuai kapasitas;
-  nilai efektif wajib dicatat pada konfigurasi deployment). Retensi ini
-  terpisah dari retensi data di database.
-- **Retensi data terjadwal di database:** jejak audit `AUDIT_RETENTION_DAYS`
-  (bawaan 90 hari, pembersihan terjadwal) dan metrik SLO `SLO_RETENTION_DAYS`
-  (bawaan 30 hari).
-- **Akses:** dibatasi admin/operator yang berwenang sesuai kebijakan
-  organisasi; jangan menyalin log ke saluran publik.
-- **Isi & redaksi:** log tidak boleh memuat kredensial, body permintaan, atau
-  nilai query string; penelusuran insiden memakai `request_id`, `msg`, `path`,
-  `status`, dan metadata non-sensitif yang memang dicatat.
-- **Operasi:** pastikan label/field untuk korelasi (`request_id`, service/job)
-  konsisten, rotasi/retensi di-backend log aktif, dan prosedur pencarian
-  insiden diuji. **Konfigurasi agregasi/retensi/akses pada deployment target
-  masih harus dipasang dan diverifikasi.**
+**Kebijakan (DEC-065, pemilik: adhitiad/admin):**
+- **Sumber:** stdout JSON container; dikumpulkan oleh Grafana Alloy ke Loki. Promtail telah diganti karena EOL.
+- **Retensi Loki:** awal 720 jam / 30 hari melalui compactor. Retensi aktual harus diperiksa pada Loki config dan volume/storage host.
+- **Retensi Prometheus:** 15 hari pada konfigurasi template; ini retensi metrik, bukan log.
+- **Retensi database:** audit log AUDIT_RETENTION_DAYS (bawaan 90 hari) dan SLO_RETENTION_DAYS (bawaan 30 hari) tetap terpisah dari Loki.
+- **Label log:** level saja sebagai label dasar. request_id, msg, path, dan status diparse sebagai extracted fields; jangan jadikan request_id atau free-text message label berkardinalitas tinggi.
+- **Korelasi:** cari container log pada Loki dengan query LogQL {job="docker"} | json lalu filter request_id dari event.
+- **Akses:** Grafana/Loki hanya untuk operator berwenang; port lokal 127.0.0.1 adalah default template. Akses remote harus melalui private network/VPN atau reverse proxy yang diautentikasi.
+- **Redaksi:** kredensial, token, body request, query string, password, dan data PII tidak boleh dicatat. Jangan menaruh log backup/SQL dump di Loki.
+- **Operasi:** verifikasi volume Loki tidak melebihi kapasitas disk; retention compactor aktif; file Docker log rotation host dikonfigurasi; backup volume Grafana/Prometheus/Loki/Alloy ditinjau; pencarian request_id diuji.
+- **Status produksi:** pemasangan, retensi 30 hari, akses, dan korelasi pada deployment target tetap belum terverifikasi sampai checklist produksi dijalankan dan hasilnya dicatat.
 
 ## 10. Autentikasi dan Sesi
 

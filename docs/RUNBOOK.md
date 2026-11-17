@@ -577,11 +577,13 @@ Template self-hosted Docker ada di observability/:
 - blackbox-exporter: HTTP health/readiness backend serta TCP probe untuk dependency eksternal yang dipilih.
 - RabbitMQ rabbitmq_prometheus plugin: endpoint agregat 15692/metrics dan endpoint /metrics/detailed dengan family queue_coarse_metrics dan queue_consumer_count hanya untuk antrean SIMPEG.
 
-RabbitMQ detailed queue scrape difilter ke simpeg.jobs dan simpeg.jobs.dead. Dengan filter tersebut panel dan alert dapat melihat pesan ready, total queue depth/ unacked (jika diekspose family-nya), serta jumlah consumer per queue tanpa men-scrape seluruh object broker. Metrik penting yang digunakan:
+RabbitMQ detailed queue scrape difilter ke simpeg.jobs dan simpeg.jobs.dead. Family queue_coarse_metrics mencakup pesan ready, unacked, dan total queue depth. Family queue_metrics mencakup consumer count, head-message timestamp, dan metrik detail lainnya; family ini lebih mahal dihitung, tetapi regex membatasi scope ke dua antrean saja. Metrik penting yang digunakan:
 - rabbitmq_detailed_queue_messages_ready — pesan siap untuk consumer;
 - rabbitmq_detailed_queue_messages_unacked — pesan yang sudah dikirim tetapi belum di-ack;
 - rabbitmq_detailed_queue_messages — total ready + unacked;
-- rabbitmq_detailed_queue_consumers — jumlah consumer aktif.
+- rabbitmq_detailed_queue_consumers — jumlah consumer aktif;
+- rabbitmq_detailed_queue_head_message_timestamp — timestamp Unix pesan kepala antrean, bila tersedia.
+Backend SIMPEG memberi timestamp pada setiap AMQP publication. Metrik umur dihitung sebagai time() - rabbitmq_detailed_queue_head_message_timestamp; sampel dapat tidak ada bila antrean kosong atau timestamp belum tersedia/page-in. Karena itu umur pesan diperlakukan sebagai sinyal tambahan, bukan satu-satunya bukti keterlambatan.
 
 Uji broker harus memverifikasi plugin aktif, port 15692 dapat diakses melalui jaringan simpeg-broker, Prometheus job rabbitmq dan rabbitmq-queues UP, serta series untuk kedua queue benar-benar muncul. Job scrape UP saja belum cukup sebagai bukti metrik per-queue.
 
@@ -595,7 +597,9 @@ Uji broker harus memverifikasi plugin aktif, port 15692 dapat diakses melalui ja
 | Container memory | >85% batas selama 5 menit | HighContainerMemory (warning) |
 | Host filesystem free | <15% selama 5 menit | HostDiskSpaceLow (warning) |
 | RabbitMQ scrape gagal | 2 menit | RabbitMQTargetDown |
+| RabbitMQ detailed per-queue scrape gagal | 2 menit | RabbitMQQueueMetricsTargetDown (warning) |
 | simpeg.jobs messages ready | >100 selama 5 menit | RabbitMQQueueBacklog (warning) |
+| umur pesan tertua simpeg.jobs | >300 detik selama 5 menit | RabbitMQOldestJobMessageTooOld (warning) |
 | simpeg.jobs.dead messages ready | >0 selama 1 menit | RabbitMQDeadLetterNotEmpty (critical) |
 | Queue punya backlog tanpa consumer | 2 menit | RabbitMQJobsConsumerMissing (critical) |
 | External TCP dependency down | 2 menit | ExternalDependencyDown (warning) |

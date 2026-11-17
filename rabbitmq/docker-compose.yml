@@ -18,20 +18,27 @@
 
 name: simpeg-broker
 
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 services:
   rabbitmq:
     image: rabbitmq:4-management
     restart: unless-stopped
+    logging: *default-logging
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-simpeg}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-simpeg}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?Set RABBITMQ_USER in repository .env}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in repository .env}
     volumes:
       - ./rabbitmq.conf:/etc/rabbitmq/conf.d/10-simpeg.conf:ro
       - ./enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
       - rabbitmq-data:/var/lib/rabbitmq
     ports:
-      - "5672:5672" # AMQP; dibuka ke host untuk pengembangan native
-      - "15672:15672" # UI manajemen; jangan terekspos di production
+      - "127.0.0.1:${RABBITMQ_AMQP_HOST_PORT:-5672}:5672" # AMQP untuk pengembangan native; broker-to-backend tetap lewat jaringan internal
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_HOST_PORT:-15672}:15672" # UI manajemen loopback saja
     networks:
       - broker
     healthcheck:

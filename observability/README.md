@@ -26,7 +26,7 @@ Promtail **tidak digunakan**: Promtail telah mencapai EOL pada 2 Maret 2026 dan 
 
 - **Host/container:** CPU host, available memory, filesystem free, dan resource container melalui node-exporter/cAdvisor.
 - **Backend:** HTTP probe `/health` (liveness) dan `/ready` (readiness). Readiness backend saat ini memeriksa PostgreSQL wajib.
-- **RabbitMQ:** aggregate node/runtime metrics melalui `/metrics`; filtered per-queue metrics melalui `/metrics/detailed` untuk `simpeg.jobs` dan `simpeg.jobs.dead`. Queue depth, ready messages, dan consumer count memiliki alert awal.
+- **RabbitMQ:** aggregate node/runtime metrics melalui `/metrics`; filtered per-queue metrics melalui `/metrics/detailed` untuk hanya `simpeg.jobs` dan `simpeg.jobs.dead`. Family `queue_coarse_metrics` menyediakan ready, unacked, dan total depth; family `queue_metrics` menyediakan consumer count serta head-message timestamp. Family `queue_metrics` lebih mahal dihitung, tetapi regex queue membatasi cakupannya hanya pada dua antrean SIMPEG. Alert backlog, zero consumer, DLQ non-empty, detailed scrape down, dan umur pesan tertua aktif. Umur pesan dihitung dari timestamp Unix pesan yang dipublikasikan backend; nilainya dapat tidak tersedia jika pesan tidak memiliki timestamp atau tidak paged-in.
 - **External dependency (opsional):** SMTP submission, Supabase PostgreSQL, dan Upstash Redis TLS dapat diuji konektivitas TCP setelah host:port aktual ditambahkan ke `targets/external-tcp.yml`. TCP probe hanya membuktikan koneksi port, bukan autentikasi SMTP/Redis atau query database.
 - **Log aplikasi:** Docker stdout JSON → Alloy → Loki. Compose root, RabbitMQ, dan observability menetapkan driver json-file dengan rotasi maksimum 20 MB × 5 file per container. Ini spool lokal, bukan retensi 30 hari; Alloy perlu tetap berjalan agar log tersalin ke Loki. Gunakan LogQL `{job="docker"} | json | request_id="<id>"` untuk korelasi request; gunakan `level` sebagai label.
 - **Sinyal aplikasi yang belum otomatis discrape:** `GET /api/v1/admin/ops/status` dan `GET /api/v1/admin/slo/metrics` tetap dilindungi RBAC. Outbox pending/failed/oldest age serta agregat SLO **belum diekspor sebagai Prometheus metrics**. Jangan memasukkan token admin statis ke file konfigurasi Prometheus; tahap berikutnya adalah exporter internal dengan identitas khusus dan secret file.
@@ -57,7 +57,7 @@ RabbitMQ plugin `rabbitmq_prometheus` diaktifkan eksplisit dari `rabbitmq/enable
 
 - Backend `/health` atau `/ready` gagal 2 menit: critical.
 - Host CPU >85% selama 5 menit, container memory >85%, filesystem free <15% selama 5 menit: warning.
-- RabbitMQ jobs ready >100 selama 5 menit: warning.
+- RabbitMQ jobs ready >100 selama 5 menit: warning; umur pesan tertua >300 detik selama 5 menit: warning.
 - Dead-letter `simpeg.jobs.dead` berisi pesan selama 1 menit: critical.
 - Queue jobs memiliki backlog tetapi consumer count 0 selama 2 menit: critical.
 - TCP dependency eksternal gagal 2 menit: warning.

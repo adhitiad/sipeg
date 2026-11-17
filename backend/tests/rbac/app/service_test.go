@@ -269,7 +269,7 @@ func TestCanAccessScopedAssignmentCannotAuthorizeAnyScope(t *testing.T) {
 		t.Fatalf("assignment scoped tidak boleh mengizinkan cakupan lintas organisasi, decision = %+v", decision)
 	}
 
-	decision, err = service.CanAccess(context.Background(), auth.Principal{UserID: "operator-any", RoleName: "OPERATOR"}, "payroll", "read", "homebase")
+	decision, err = service.CanAccess(context.Background(), auth.Principal{UserID: "operator-any", RoleName: "OPERATOR", HomebaseID: unit}, "payroll", "read", "homebase")
 	if err != nil {
 		t.Fatalf("canaccess: %v", err)
 	}
@@ -300,6 +300,101 @@ func TestCanAccessUnscopedAssignmentAuthorizesAnyScope(t *testing.T) {
 	}
 	if !decision.Allowed || !decision.Authoritative {
 		t.Fatalf("assignment tanpa cakupan harus mengizinkan cakupan lintas organisasi, decision = %+v", decision)
+	}
+}
+
+func TestCanAccessUnitAssignmentMustMatchPrincipalHomebase(t *testing.T) {
+	assignedUnit := "20000000-0000-0000-0000-000000000011"
+	otherUnit := "20000000-0000-0000-0000-000000000012"
+	store := &fakeStore{
+		assignments: []models.RbacUserRoleScope{{UserID: "scoped-user", RoleID: 11, UnitID: &assignedUnit}},
+		permissions: []models.RbacPermission{{ID: 101, Module: "payroll", Action: "read"}},
+		rolePerms:   []models.RbacRolePermission{{RoleID: 11, PermissionID: 101}},
+		roles:       []models.RbacRole{{ID: 11, Code: "UNIT_ADMIN", Name: "Unit Admin", TierLevel: 4}},
+	}
+	service := rbacapp.NewService(store)
+
+	decision, err := service.CanAccess(context.Background(), auth.Principal{
+		UserID: "scoped-user", HomebaseID: otherUnit,
+	}, "payroll", "read", "homebase")
+	if err != nil {
+		t.Fatalf("CanAccess: %v", err)
+	}
+	if decision.Allowed || !decision.Authoritative {
+		t.Fatalf("assignment unit mismatch must be denied authoritatively, got %+v", decision)
+	}
+
+	decision, err = service.CanAccess(context.Background(), auth.Principal{
+		UserID: "scoped-user", HomebaseID: assignedUnit,
+	}, "payroll", "read", "homebase")
+	if err != nil {
+		t.Fatalf("CanAccess matching unit: %v", err)
+	}
+	if !decision.Allowed || !decision.Authoritative {
+		t.Fatalf("matching unit assignment should allow homebase scope, got %+v", decision)
+	}
+}
+
+func TestCanAccessUnsupportedOrganizationScopesFailClosed(t *testing.T) {
+	facultyID := "20000000-0000-0000-0000-000000000021"
+	store := &fakeStore{
+		assignments: []models.RbacUserRoleScope{{UserID: "faculty-user", RoleID: 12, FakultasID: &facultyID}},
+		permissions: []models.RbacPermission{{ID: 102, Module: "payroll", Action: "read"}},
+		rolePerms:   []models.RbacRolePermission{{RoleID: 12, PermissionID: 102}},
+		roles:       []models.RbacRole{{ID: 12, Code: "FACULTY_ADMIN", Name: "Faculty Admin", TierLevel: 4}},
+	}
+	decision, err := rbacapp.NewService(store).CanAccess(context.Background(), auth.Principal{
+		UserID: "faculty-user", HomebaseID: facultyID,
+	}, "payroll", "read", "homebase")
+	if err != nil {
+		t.Fatalf("CanAccess: %v", err)
+	}
+	if decision.Allowed || !decision.Authoritative {
+		t.Fatalf("unsupported faculty scope must fail closed, got %+v", decision)
+	}
+}
+
+func TestMalformedBlacklistFailsClosed(t *testing.T) {
+	unit := "20000000-0000-0000-0000-000000000031"
+	store := &fakeStore{
+		assignments: []models.RbacUserRoleScope{{UserID: "bad-blacklist", RoleID: 13, UnitID: &unit, DeniedPermissions: []byte("{invalid")}},
+		permissions: []models.RbacPermission{{ID: 103, Module: "payroll", Action: "manage"}},
+		rolePerms:   []models.RbacRolePermission{{RoleID: 13, PermissionID: 103}},
+		roles:       []models.RbacRole{{ID: 13, Code: "UNIT_OPERATOR", Name: "Unit Operator", TierLevel: 4}},
+	}
+	decision, err := rbacapp.NewService(store).CanAccess(context.Background(), auth.Principal{
+		UserID: "bad-blacklist", HomebaseID: unit,
+	}, "payroll", "manage", "homebase")
+	if err != nil {
+		t.Fatalf("CanAccess: %v", err)
+	}
+	if decision.Allowed {
+		t.Fatalf("malformed blacklist must deny access, got %+v", decision)
+	}
+}
+
+func TestBlacklistFromAnyNonSuperadminAssignmentOverridesOtherGrant(t *testing.T) {
+	unit := "20000000-0000-0000-0000-000000000041"
+	store := &fakeStore{
+		assignments: []models.RbacUserRoleScope{
+			{UserID: "multi-role", RoleID: 14, UnitID: &unit},
+			{UserID: "multi-role", RoleID: 15, UnitID: &unit, DeniedPermissions: []byte(`["payroll:manage"]`)},
+		},
+		permissions: []models.RbacPermission{{ID: 104, Module: "payroll", Action: "manage"}},
+		rolePerms:   []models.RbacRolePermission{{RoleID: 14, PermissionID: 104}, {RoleID: 15, PermissionID: 104}},
+		roles: []models.RbacRole{
+			{ID: 14, Code: "UNIT_OPERATOR_A", Name: "Unit Operator A", TierLevel: 4},
+			{ID: 15, Code: "UNIT_OPERATOR_B", Name: "Unit Operator B", TierLevel: 4},
+		},
+	}
+	decision, err := rbacapp.NewService(store).CanAccess(context.Background(), auth.Principal{
+		UserID: "multi-role", HomebaseID: unit,
+	}, "payroll", "manage", "homebase")
+	if err != nil {
+		t.Fatalf("CanAccess: %v", err)
+	}
+	if decision.Allowed {
+		t.Fatalf("explicit deny on one active assignment must override another grant, got %+v", decision)
 	}
 }
 

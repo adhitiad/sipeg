@@ -33,7 +33,7 @@ func TestPolicyAdapterFailsClosedWhenRBACCannotBeRead(t *testing.T) {
 	adapter := NewPolicyAdapter(static, service)
 
 	allowed := adapter.AllowsScoped(context.Background(), auth.Principal{
-		UserID: "00000000-0000-4000-8000-000000000001",
+		UserID:   "00000000-0000-4000-8000-000000000001",
 		RoleName: "admin",
 	}, "rbac:read")
 	if allowed {

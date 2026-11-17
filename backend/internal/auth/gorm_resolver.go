@@ -30,12 +30,25 @@ func (r GormSessionResolver) ResolvePrincipal(ctx context.Context, token string)
 	if err != nil {
 		return Principal{}, fmt.Errorf("resolve session: %w", err)
 	}
+	return r.ResolveUserPrincipal(ctx, session.UserId)
+}
+
+// ResolveUserPrincipal memuat ulang status akun, role, dan homebase dari
+// PostgreSQL. Klaim JWT hanya boleh menyumbang userId; klaim otorisasi dalam
+// token tidak menjadi sumber kebenaran.
+func (r GormSessionResolver) ResolveUserPrincipal(ctx context.Context, userID string) (Principal, error) {
+	if r.DB == nil || strings.TrimSpace(userID) == "" {
+		return Principal{}, ErrInvalidSession
+	}
 
 	var user models.User
-	if err := r.DB.WithContext(ctx).First(&user, "id = ?", session.UserId).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return Principal{}, ErrInvalidSession
-		}
+	err := r.DB.WithContext(ctx).
+		Select("id", "email", "aktif", "roleId", "homebaseId").
+		First(&user, "id = ?", userID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return Principal{}, ErrInvalidSession
+	}
+	if err != nil {
 		return Principal{}, fmt.Errorf("resolve session user: %w", err)
 	}
 	if !user.Aktif {

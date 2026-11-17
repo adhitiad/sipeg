@@ -7,8 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
-	"sync"
-	"time"
 
 	"simpeg/backend/internal/auth"
 	"simpeg/backend/internal/models"
@@ -19,14 +17,6 @@ import (
 // Service menjalankan evaluasi akses RBAC.
 type Service struct {
 	repo repository.Store
-
-	// cache data RBAC (permissions, rolePermissions, roles) dan assignment
-	// per user dengan TTL singkat untuk menghindari query berulang pada setiap
-	// permintaan (DEC-097). RBAC berubah jarang; TTL 60 detik cukup.
-	mu         sync.Mutex
-	dataCache  *rbacCachedData
-	dataExpiry time.Time
-	userCache  map[string]userCacheEntry
 }
 
 type rbacCachedData struct {
@@ -35,14 +25,9 @@ type rbacCachedData struct {
 	roles           []models.RbacRole
 }
 
-type userCacheEntry struct {
-	assignments []models.RbacUserRoleScope
-	expiry      time.Time
-}
-
 // NewService membuat Service.
 func NewService(repo repository.Store) *Service {
-	return &Service{repo: repo, userCache: make(map[string]userCacheEntry)}
+	return &Service{repo: repo}
 }
 
 // CanAccess menilai apakah principal dapat melakukan modul:aksi pada
@@ -60,14 +45,17 @@ func (s *Service) CanAccess(ctx context.Context, principal auth.Principal, modul
 	key := base + ":" + string(scopePerm)
 	eff := domain.NormalizePermission(module, action, scopePerm)
 
-	assignments, err := s.cachedUserRoleScopes(ctx, principal.UserID)
+	if s.repo == nil || strings.TrimSpace(principal.UserID) == "" {
+		return domain.Deny("principal atau repository RBAC tidak valid"), nil
+	}
+	assignments, err := s.repo.ListUserRoleScopes(ctx, principal.UserID)
 	if err != nil {
 		return domain.Deny("gagal memuat assignment"), err
 	}
 	if len(assignments) == 0 {
 		return domain.NoAssignment(), nil
 	}
-	data, err := s.cachedRBACData(ctx)
+	data, err := s.loadRBACData(ctx)
 	if err != nil {
 		return domain.Deny("gagal memuat data RBAC"), err
 	}
@@ -100,11 +88,12 @@ func (s *Service) CanAccess(ctx context.Context, principal auth.Principal, modul
 		rolesByID[role.ID] = role
 	}
 
+	superadmin := false
+	operatorInduk := false
+	granted := false
+
 	for _, assignment := range assignments {
-		if scopePerm == domain.ScopeAny && isScopedAssignment(assignment) {
-			// Assignment yang terbatas pada scope tertentu (unit/fakultas/
-			// jurusan/biro) tidak pernah mengizinkan permintaan lintas
-			// organisasi — kendati role-nya punya grant `:any` di matriks.
+		if !assignmentMatchesRequestedScope(assignment, scopePerm, principal.HomebaseID) {
 			continue
 		}
 		role, ok := rolesByID[assignment.RoleID]
@@ -114,30 +103,33 @@ func (s *Service) CanAccess(ctx context.Context, principal auth.Principal, modul
 		tier := domain.TierRole(role.TierLevel)
 
 		if tier == domain.TierSuperadmin {
-			return domain.Allow(), nil
+			// Superadmin adalah satu-satunya tier yang secara eksplisit
+			// melewati blacklist. Scope assignment tetap harus cocok.
+			superadmin = true
+			continue
 		}
 		if isBlacklisted(assignment.DeniedPermissions, eff.Value, base, key) {
 			return domain.Deny(domain.ErrBlacklisted.Error()), nil
 		}
 		if tier == domain.TierOperatorInduk {
-			return domain.Allow(), nil
+			operatorInduk = true
+			continue
 		}
 		if allowed := permissionsByRole[assignment.RoleID]; allowed != nil && allowed[key] {
-			return domain.Allow(), nil
+			granted = true
 		}
 	}
 
+	if superadmin || operatorInduk || granted {
+		return domain.Allow(), nil
+	}
 	return domain.Deny(domain.ErrForbidden.Error()), nil
 }
 
-// cachedRBACData mengembalikan permissions, rolePermissions, roles dengan cache
-// TTL 60 detik (DEC-097).
-func (s *Service) cachedRBACData(ctx context.Context) (*rbacCachedData, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.dataCache != nil && time.Now().Before(s.dataExpiry) {
-		return s.dataCache, nil
-	}
+// loadRBACData membaca matriks dan role langsung dari database. Keputusan
+// authorization tidak di-cache agar pencabutan izin berlaku pada request
+// berikutnya, bukan tertunda oleh TTL.
+func (s *Service) loadRBACData(ctx context.Context) (*rbacCachedData, error) {
 	permissions, err := s.repo.ListPermissions(ctx)
 	if err != nil {
 		return nil, err
@@ -150,28 +142,38 @@ func (s *Service) cachedRBACData(ctx context.Context) (*rbacCachedData, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.dataCache = &rbacCachedData{
+	return &rbacCachedData{
 		permissions:     permissions,
 		rolePermissions: rolePermissions,
 		roles:           roles,
-	}
-	s.dataExpiry = time.Now().Add(60 * time.Second)
-	return s.dataCache, nil
+	}, nil
 }
 
-// cachedUserRoleScopes mengembalikan assignment user dengan cache TTL 60 detik.
-func (s *Service) cachedUserRoleScopes(ctx context.Context, userID string) ([]models.RbacUserRoleScope, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if entry, ok := s.userCache[userID]; ok && time.Now().Before(entry.expiry) {
-		return entry.assignments, nil
+// assignmentMatchesRequestedScope memastikan assignment RBAC benar-benar
+// sejalan dengan scope yang dapat ditegakkan oleh resolver data saat ini.
+// Scope fakultas/jurusan/biro belum dapat dipetakan aman ke seluruh repository,
+// sehingga ditolak daripada diperluas menjadi akses homebase.
+func assignmentMatchesRequestedScope(assignment models.RbacUserRoleScope, requested domain.ScopePermission, principalHomebaseID string) bool {
+	if !isScopedAssignment(assignment) {
+		return true
 	}
-	assignments, err := s.repo.ListUserRoleScopes(ctx, userID)
-	if err != nil {
-		return nil, err
+
+	switch requested {
+	case domain.ScopeAny:
+		return false
+	case domain.ScopeSelf:
+		return true
+	case domain.ScopeHomebase:
+		if assignment.FakultasID != nil || assignment.JurusanID != nil || assignment.BiroCode != nil {
+			return false
+		}
+		if assignment.UnitID == nil || strings.TrimSpace(*assignment.UnitID) == "" || strings.TrimSpace(principalHomebaseID) == "" {
+			return false
+		}
+		return strings.EqualFold(strings.TrimSpace(*assignment.UnitID), strings.TrimSpace(principalHomebaseID))
+	default:
+		return false
 	}
-	s.userCache[userID] = userCacheEntry{assignments: assignments, expiry: time.Now().Add(60 * time.Second)}
-	return assignments, nil
 }
 
 // isScopedAssignment melaporkan apakah assignment dibatasi pada scope tertentu.
@@ -187,7 +189,11 @@ func isBlacklisted(denied []byte, values ...string) bool {
 		return false
 	}
 	var list []string
-	if err := json.Unmarshal(denied, &list); err != nil || len(list) == 0 {
+	if err := json.Unmarshal(denied, &list); err != nil {
+		// JSON blacklist yang rusak tidak boleh berubah menjadi allow.
+		return true
+	}
+	if len(list) == 0 {
 		return false
 	}
 	for _, candidate := range list {

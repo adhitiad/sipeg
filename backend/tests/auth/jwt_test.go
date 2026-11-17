@@ -14,7 +14,7 @@ import (
 func TestJWTVerifierAcceptsValidToken(t *testing.T) {
 	verifier := NewJWTVerifier("secret-123")
 	tokenString := signJWT(t, "secret-123", BetterAuthClaims{
-		UserID:     "user-1",
+		UserID:     "00000000-0000-4000-8000-000000000001",
 		Email:      "person@example.test",
 		RoleName:   "operator",
 		HomebaseID: "unit-a",
@@ -27,7 +27,7 @@ func TestJWTVerifierAcceptsValidToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected valid token, got error: %v", err)
 	}
-	if claims.UserID != "user-1" || claims.RoleName != "operator" || claims.HomebaseID != "unit-a" {
+	if claims.UserID != "00000000-0000-4000-8000-000000000001" || claims.RoleName != "operator" || claims.HomebaseID != "unit-a" {
 		t.Fatalf("unexpected claims: %+v", claims)
 	}
 }
@@ -35,7 +35,7 @@ func TestJWTVerifierAcceptsValidToken(t *testing.T) {
 func TestJWTVerifierRejectsExpiredToken(t *testing.T) {
 	verifier := NewJWTVerifier("secret-123")
 	tokenString := signJWT(t, "secret-123", BetterAuthClaims{
-		UserID: "user-1",
+		UserID: "00000000-0000-4000-8000-000000000001",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(-1 * time.Hour)),
 		},
@@ -50,7 +50,7 @@ func TestJWTVerifierRejectsExpiredToken(t *testing.T) {
 func TestJWTVerifierRejectsWrongSecret(t *testing.T) {
 	verifier := NewJWTVerifier("secret-123")
 	tokenString := signJWT(t, "wrong-secret", BetterAuthClaims{
-		UserID: "user-1",
+		UserID: "00000000-0000-4000-8000-000000000001",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
 		},
@@ -62,25 +62,40 @@ func TestJWTVerifierRejectsWrongSecret(t *testing.T) {
 	}
 }
 
-func TestJWTAuthenticateMiddleware(t *testing.T) {
+type fakeJWTPrincipalResolver struct {
+	principal Principal
+	err       error
+}
+
+func (r fakeJWTPrincipalResolver) ResolveUserPrincipal(context.Context, string) (Principal, error) {
+	return r.principal, r.err
+}
+
+func TestJWTAuthenticateMiddlewareUsesDatabasePrincipal(t *testing.T) {
 	verifier := NewJWTVerifier("secret-123")
 	tokenString := signJWT(t, "secret-123", BetterAuthClaims{
-		UserID:     "user-1",
-		Email:      "person@example.test",
-		RoleName:   "operator",
-		HomebaseID: "unit-a",
+		UserID:     "00000000-0000-4000-8000-000000000001",
+		Email:      "stale@example.test",
+		RoleName:   "admin",
+		HomebaseID: "stale-unit",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
 		},
 	})
 
-	handler := JWTAuthenticate(verifier, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	resolved := Principal{
+		UserID: "00000000-0000-4000-8000-000000000001",
+		Email: "person@example.test",
+		RoleName: "pegawai",
+		HomebaseID: "unit-db",
+	}
+	handler := JWTAuthenticateWithResolver(verifier, fakeJWTPrincipalResolver{principal: resolved}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := PrincipalFromContext(r.Context())
 		if !ok {
 			t.Fatal("principal not set in context")
 		}
-		if principal.UserID != "user-1" || principal.RoleName != "operator" {
-			t.Fatalf("unexpected principal: %+v", principal)
+		if principal != resolved {
+			t.Fatalf("resolver principal must override stale JWT claims: got %+v want %+v", principal, resolved)
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -95,6 +110,25 @@ func TestJWTAuthenticateMiddleware(t *testing.T) {
 	}
 }
 
+func TestJWTAuthenticateFailsClosedWithoutDatabaseResolver(t *testing.T) {
+	verifier := NewJWTVerifier("secret-123")
+	tokenString := signJWT(t, "secret-123", BetterAuthClaims{
+		UserID: "00000000-0000-4000-8000-000000000001",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
+		},
+	})
+	handler := JWTAuthenticate(verifier, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("handler must not run without an authoritative principal resolver")
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenString)
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+	if res.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 without resolver, got %d", res.Code)
+	}
+}
 func TestJWTAuthenticateRejectsMissingToken(t *testing.T) {
 	verifier := NewJWTVerifier("secret-123")
 	handler := JWTAuthenticate(verifier, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -110,7 +144,7 @@ func TestJWTAuthenticateRejectsMissingToken(t *testing.T) {
 
 func TestRequireAnyPermissionAllowsAnyMatched(t *testing.T) {
 	policy := StaticPolicy{"operator": {"employee:read:homebase": true}}
-	principal := Principal{UserID: "user-1", RoleName: "operator"}
+	principal := Principal{UserID: "00000000-0000-4000-8000-000000000001", RoleName: "operator"}
 	nextCalled := false
 	handler := RequireAnyPermission(policy, []Permission{"employee:read:any", "employee:read:homebase"}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		nextCalled = true
@@ -130,7 +164,7 @@ func TestRequireAnyPermissionAllowsAnyMatched(t *testing.T) {
 
 func TestRequireAnyPermissionDeniesWhenNoneMatch(t *testing.T) {
 	policy := StaticPolicy{"operator": {"employee:read:homebase": true}}
-	principal := Principal{UserID: "user-1", RoleName: "operator"}
+	principal := Principal{UserID: "00000000-0000-4000-8000-000000000001", RoleName: "operator"}
 	handler := RequireAnyPermission(policy, []Permission{"employee:read:any", "employee:create"}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("handler must not run when no permission matches")
 	}))
@@ -153,11 +187,11 @@ func signJWT(t *testing.T, secret string, claims BetterAuthClaims) string {
 	return tokenString
 }
 
-func TestCombinedSessionResolverJWTFirst(t *testing.T) {
+func TestCombinedSessionResolverRequiresDatabaseBackedJWTPrincipal(t *testing.T) {
 	verifier := NewJWTVerifier("secret-123")
 	tokenString := signJWT(t, "secret-123", BetterAuthClaims{
-		UserID:     "user-jwt",
-		RoleName:   "admin",
+		UserID: "00000000-0000-4000-8000-000000000002",
+		RoleName: "admin",
 		HomebaseID: "unit-jwt",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
@@ -165,12 +199,9 @@ func TestCombinedSessionResolverJWTFirst(t *testing.T) {
 	})
 	resolver := NewCombinedSessionResolver(verifier, nil)
 
-	principal, err := resolver.ResolvePrincipal(context.TODO(), tokenString)
-	if err != nil {
-		t.Fatalf("expected valid principal from JWT, got error: %v", err)
-	}
-	if principal.UserID != "user-jwt" || principal.RoleName != "admin" {
-		t.Fatalf("unexpected principal: %+v", principal)
+	_, err := resolver.ResolvePrincipal(context.TODO(), tokenString)
+	if err != ErrInvalidSession {
+		t.Fatalf("JWT without authoritative database principal must be rejected, got: %v", err)
 	}
 }
 

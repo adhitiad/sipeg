@@ -40,15 +40,40 @@ scrape_configs:
       - target_label: __address__
         replacement: blackbox-exporter:9115
 
-  # RabbitMQ self-hosted (stack rabbitmq/). Aktifkan plugin rabbitmq_prometheus pada broker
-  # (image rabbitmq:*-management biasanya sudah menyertakannya; verifikasi: rabbitmq-plugins list).
-  # Port Prometheus bawaan: 15692. Pastikan stack observability bergabung ke jaringan simpeg-broker.
+  # Aggregate RabbitMQ node/runtime metrics.
   - job_name: rabbitmq
     static_configs:
       - targets: ["rabbitmq:15692"]
 
-  # Endpoint admin aplikasi (/api/v1/admin/ops/status, /api/v1/admin/slo/metrics) butuh bearer token
-  # + permission (ops:read/slo:read). Untuk scraping otomatis gunakan exporter/proxy internal yang
-  # menyuntikkan token dari secret host; JANGAN menaruh token/kredensial di repo. Alternatif $0:
-  # polling terjadwal (cron) yang menyimpan hasil ke file/Pushgateway internal, atau dasbor Grafana
-  # yang membaca via datasource aman. Supabase (tier Free): gunakan metrik yang tersedia di dashboard/project.
+  # Narrow per-queue scrape: only SIMPEG jobs and dead-letter queues.
+  # Detailed endpoint is preferable to enabling all per-object metrics globally.
+  - job_name: rabbitmq-queues
+    metrics_path: /metrics/detailed
+    params:
+      family: [queue_coarse_metrics, queue_consumer_count]
+      queue: ["^simpeg\\.jobs(\\.dead)?$"]
+    static_configs:
+      - targets: ["rabbitmq:15692"]
+
+  # Optional TCP checks for SMTP submission, Supabase Postgres and Upstash Redis TLS.
+  # Add real host:port targets to targets/external-tcp.yml; do not put credentials there.
+  - job_name: blackbox-external
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/targets/*.yml
+        refresh_interval: 30s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # /api/v1/admin/ops/status and /api/v1/admin/slo/metrics still require RBAC.
+  # Their outbox/SLO aggregates are not scraped by Prometheus yet. Do not place
+  # admin bearer tokens in prometheus.yml; add a dedicated internal exporter
+  # with a short-lived/service identity before wiring those application metrics.

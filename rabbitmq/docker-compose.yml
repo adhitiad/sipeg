@@ -4,12 +4,13 @@
 # Mode pengembangan (broker saja, backend dijalankan native):
 #   docker compose up -d
 #   # lalu di backend/:
-#   RABBITMQ_URL=amqp://simpeg:simpeg@localhost:5672/ go run ./cmd/server
-#   RABBITMQ_URL=amqp://simpeg:simpeg@localhost:5672/ go run ./cmd/jobsched
+#   RABBITMQ_URL="amqp://$RABBITMQ_USER:$RABBITMQ_PASSWORD@localhost:5672/" go run ./cmd/server
+#   RABBITMQ_URL="amqp://$RABBITMQ_USER:$RABBITMQ_PASSWORD@localhost:5672/" go run ./cmd/jobsched
 #
 # Deployment satu server: jalankan stack ini lebih dahulu karena ia membuat
 # jaringan simpeg-broker yang dipakai stack backend (root) sebagai
 # jaringan eksternal; di matikan paling akhir.
+#   # Jalankan dari root repo setelah mengisi .env (RABBITMQ_USER/PASSWORD):
 #   docker compose -f rabbitmq/docker-compose.yml up -d
 #   docker compose -f docker-compose.yml up -d --build
 #

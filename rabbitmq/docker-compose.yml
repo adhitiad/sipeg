@@ -27,6 +27,7 @@ services:
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-simpeg}
     volumes:
       - ./rabbitmq.conf:/etc/rabbitmq/conf.d/10-simpeg.conf:ro
+      - ./enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
       - rabbitmq-data:/var/lib/rabbitmq
     ports:
       - "5672:5672" # AMQP; dibuka ke host untuk pengembangan native

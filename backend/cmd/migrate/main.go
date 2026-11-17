@@ -40,7 +40,13 @@ func run(ctx context.Context, args []string) error {
 	}
 	dsn := strings.TrimSpace(os.Getenv("DATABASE_URL"))
 	if dsn == "" {
-		return fmt.Errorf("DATABASE_URL wajib diisi")
+		return fmt.Errorf("DATABASE_URL wajib diisi (periksa secret environment pada GitHub)")
+	}
+	// goose/sql.Open (pgx) tidak memahami parameter khusus pooler seperti
+	// default_query_exec_mode. Hapus query string agar koneksi tetap sah;
+	// parameter tersebut hanya relevan untuk backend GORM.
+	if idx := strings.Index(dsn, "?"); idx >= 0 {
+		dsn = strings.TrimSpace(dsn[:idx])
 	}
 	if command != "up" && command != "status" {
 		return fmt.Errorf("perintah tidak dikenal %q (gunakan up atau status)", command)

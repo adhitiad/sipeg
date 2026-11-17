@@ -64,7 +64,13 @@ jobs:
       - name: Status migrasi sebelum diterapkan
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: go run ./cmd/migrate status
+        run: |
+          if [ -z "${DATABASE_URL}" ]; then
+            echo "DATABASE_URL kosong di environment ini"
+            exit 1
+          fi
+          echo "DATABASE_URL terisi (panjang: ${#DATABASE_URL} karakter)"
+          go run ./cmd/migrate status
 
       - name: Terapkan migrasi tertunda
         env:

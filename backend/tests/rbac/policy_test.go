@@ -7,6 +7,7 @@ import (
 
 	"simpeg/backend/internal/auth"
 	"simpeg/backend/internal/models"
+	rbacpkg "simpeg/backend/internal/rbac"
 	rbacapp "simpeg/backend/internal/rbac/app"
 	"simpeg/backend/internal/rbac/repository"
 )
@@ -30,7 +31,7 @@ func (noAssignmentStore) ListUserRoleScopes(context.Context, string) ([]models.R
 func TestPolicyAdapterFailsClosedWhenRBACCannotBeRead(t *testing.T) {
 	static := auth.StaticPolicy{"admin": {"rbac:read": true}}
 	service := rbacapp.NewService(failingAssignmentStore{})
-	adapter := NewPolicyAdapter(static, service)
+	adapter := rbacpkg.NewPolicyAdapter(static, service)
 
 	allowed := adapter.AllowsScoped(context.Background(), auth.Principal{
 		UserID:   "00000000-0000-4000-8000-000000000001",
@@ -44,7 +45,7 @@ func TestPolicyAdapterFailsClosedWhenRBACCannotBeRead(t *testing.T) {
 func TestPolicyAdapterUsesStaticFallbackOnlyForExplicitNoAssignment(t *testing.T) {
 	static := auth.StaticPolicy{"admin": {"rbac:read": true}}
 	service := rbacapp.NewService(noAssignmentStore{})
-	adapter := NewPolicyAdapter(static, service)
+	adapter := rbacpkg.NewPolicyAdapter(static, service)
 
 	allowed := adapter.AllowsScoped(context.Background(), auth.Principal{
 		UserID:   "00000000-0000-4000-8000-000000000001",

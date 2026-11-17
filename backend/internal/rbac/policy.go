@@ -59,12 +59,17 @@ func (a *PolicyAdapter) AllowsScoped(ctx context.Context, principal auth.Princip
 	if a.RBAC != nil {
 		module, action, scope := domain.ParsePermission(string(permission))
 		decision, err := a.RBAC.CanAccess(ctx, principal, module, action, string(scope))
-		if err == nil {
-			if decision.Authoritative {
-				return decision.Allowed
-			}
+		if err != nil {
+			// Error membaca assignment/matriks RBAC bukan berarti belum ada
+			// assignment. Tolak akses; fallback statis hanya sah untuk
+			// keputusan NoAssignment yang eksplisit.
+			return false
+		}
+		if decision.Authoritative {
+			return decision.Allowed
 		}
 	}
+
 	if a.Static == nil {
 		return false
 	}

@@ -83,7 +83,7 @@ groups:
           description: "Filesystem {{ $labels.mountpoint }} pada {{ $labels.instance }} tersisa kurang dari 15%."
 
       - alert: ExternalDependencyDown
-        expr: up{job="blackbox-external"} == 0
+        expr: probe_success{job="blackbox-external"} == 0 or up{job="blackbox-external"} == 0
         for: 2m
         labels:
           severity: warning

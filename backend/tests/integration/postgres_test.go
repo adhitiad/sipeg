@@ -332,10 +332,13 @@ func seedFixture(ctx context.Context, db *gorm.DB) (fixture, error) {
 		return f, err
 	}
 	childEmployee, err := createUser("pegawai", "Employee Child", f.ChildUnitID, false)
-	if err != nil { return f, err }
+	if err != nil {
+		return f, err
+	}
 	remoteEmployee, err := createUser("pegawai", "Employee Remote", f.RemoteUnitID, false)
-	if err != nil { return f, err }
+	if err != nil {
+		return f, err
+	}
 	f.RootEmployee, f.ChildEmployee, f.RemoteEmployee = rootEmployee.ID, childEmployee.ID, remoteEmployee.ID
 	return f, nil
 }
-

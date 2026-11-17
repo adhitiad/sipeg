@@ -24,7 +24,7 @@ jobs:
 
       - name: Validate Compose manifests
         run: |
-          docker compose -f rabbitmq/docker-compose.yml config --quiet
+          docker compose --env-file .env.example -f rabbitmq/docker-compose.yml config --quiet
           docker compose --env-file observability/.env.example -f observability/docker-compose.yml config --quiet
 
       - name: Validate Grafana Alloy configuration

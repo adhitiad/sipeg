@@ -466,6 +466,13 @@ func TestRBACAssignmentsAreAuthoritativeAndRevokedImmediately(t *testing.T) {
 
 func TestJWTClaimsCannotOverrideDatabaseRoleOrAccountStatus(t *testing.T) {
 	operator := testData.Actors["operator"]
+	var originalRoleID string
+	if err := testDB.Raw(`SELECT "roleId"::text FROM "user" WHERE "id" = ?`, operator.ID).Scan(&originalRoleID).Error; err != nil {
+		t.Fatalf("read original operator role: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = testDB.Exec(`UPDATE "user" SET "aktif" = TRUE, "roleId" = ? WHERE "id" = ?`, originalRoleID, operator.ID).Error
+	})
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, auth.BetterAuthClaims{
 		UserID: operator.ID,
 		Email: operator.Email,
@@ -513,6 +520,13 @@ func TestJWTClaimsCannotOverrideDatabaseRoleOrAccountStatus(t *testing.T) {
 
 func TestOpaqueSessionRevocationAndExpiryAreEnforced(t *testing.T) {
 	admin := testData.Actors["admin"]
+	var originalExpiry time.Time
+	if err := testDB.Raw(`SELECT "expiresAt" FROM "session" WHERE "token" = ?`, admin.Token).Scan(&originalExpiry).Error; err != nil {
+		t.Fatalf("read original session expiry: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = testDB.Exec(`UPDATE "session" SET "expiresAt" = ? WHERE "token" = ?`, originalExpiry, admin.Token).Error
+	})
 	if err := testDB.Exec(
 		`UPDATE "session" SET "expiresAt" = ? WHERE "token" = ?`,
 		time.Now().UTC().Add(-time.Minute), admin.Token,

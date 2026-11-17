@@ -52,3 +52,51 @@ jobs:
             echo "A database connection string with a password was found in the repository."
             exit 1
           fi
+
+  backend-postgres-integration:
+    name: Backend Integration (PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: simpeg_integration
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d simpeg_integration"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Download and verify dependencies
+        working-directory: backend
+        run: |
+          go mod download
+          go mod verify
+      - name: Run mandatory PostgreSQL integration tests
+        working-directory: backend
+        env:
+          SIMPEG_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/simpeg_integration?sslmode=disable
+        run: |
+          set -o pipefail
+          go test -tags=integration -count=1 -v ./tests/integration 2>&1 | tee ../postgres-integration.log
+          if ! grep -q "INTEGRATION_STATUS=PASS" ../postgres-integration.log; then
+            echo "::error::PostgreSQL integration suite did not report explicit PASS."
+            exit 1
+          fi
+      - name: Upload PostgreSQL integration log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-integration-log
+          path: postgres-integration.log
+          if-no-files-found: ignore
+          retention-days: 7

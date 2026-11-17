@@ -7,6 +7,12 @@
 
 name: simpeg-observability
 
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 services:
   prometheus:
     image: prom/prometheus:v3.16.0

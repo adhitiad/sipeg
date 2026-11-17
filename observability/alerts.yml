@@ -64,6 +64,24 @@ groups:
           summary: "Dead-letter RabbitMQ berisi pesan"
           description: "Periksa antrean simpeg.jobs.dead; pesan gagal tidak boleh dibiarkan tanpa triase."
 
+      - alert: RabbitMQQueueMetricsTargetDown
+        expr: up{job="rabbitmq-queues"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Scrape metrik antrean RabbitMQ gagal"
+          description: "Endpoint detailed queue metrics tidak tersedia; periksa plugin, filter, dan jaringan."
+
+      - alert: RabbitMQOldestJobMessageTooOld
+        expr: (time() - rabbitmq_detailed_queue_head_message_timestamp{queue="simpeg.jobs"}) > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pesan pekerjaan tertua menunggu terlalu lama"
+          description: "Timestamp kepala antrean menunjukkan umur lebih dari 5 menit; cek consumer, unacked, dan error job."
+
       - alert: RabbitMQJobsConsumerMissing
         expr: (rabbitmq_detailed_queue_messages_ready{queue="simpeg.jobs"} > 0) and (rabbitmq_detailed_queue_consumers{queue="simpeg.jobs"} == 0)
         for: 2m

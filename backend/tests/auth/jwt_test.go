@@ -84,9 +84,9 @@ func TestJWTAuthenticateMiddlewareUsesDatabasePrincipal(t *testing.T) {
 	})
 
 	resolved := Principal{
-		UserID: "00000000-0000-4000-8000-000000000001",
-		Email: "person@example.test",
-		RoleName: "pegawai",
+		UserID:     "00000000-0000-4000-8000-000000000001",
+		Email:      "person@example.test",
+		RoleName:   "pegawai",
 		HomebaseID: "unit-db",
 	}
 	handler := JWTAuthenticateWithResolver(verifier, fakeJWTPrincipalResolver{principal: resolved}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -190,8 +190,8 @@ func signJWT(t *testing.T, secret string, claims BetterAuthClaims) string {
 func TestCombinedSessionResolverRequiresDatabaseBackedJWTPrincipal(t *testing.T) {
 	verifier := NewJWTVerifier("secret-123")
 	tokenString := signJWT(t, "secret-123", BetterAuthClaims{
-		UserID: "00000000-0000-4000-8000-000000000002",
-		RoleName: "admin",
+		UserID:     "00000000-0000-4000-8000-000000000002",
+		RoleName:   "admin",
 		HomebaseID: "unit-jwt",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),

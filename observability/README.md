@@ -1,44 +1,88 @@
 # Observability stack (self-hosted, $0) — SIMPEG
 
-Stack observability untuk target: **Docker** (backend service `backend:8080`), **RabbitMQ self-hosted** (stack `rabbitmq/`, jaringan `simpeg-broker`), log aplikasi **JSON ke stdout**, dan **Supabase Free**. Pemilik: **adhitiad (admin)**. Rujukan: `docs/DECISIONS.md` `DEC-065`, `docs/RUNBOOK.md` §9/§9A.
+Stack observability untuk target Docker + RabbitMQ self-hosted (`simpeg-broker`), stdout JSON, dan Supabase Free. Pemilik: **adhitiad (admin)**. Rujukan: `docs/DECISIONS.md` DEC-065, `docs/RUNBOOK.md` §8E/§9/§9A.
 
-> **Biaya: $0.** Seluruh komponen open-source dan berjalan lokal/self-hosted. Jangan menambahkan layanan berbayar (Grafana Cloud berbayar, SaaS APM berbayar, PITR Supabase berbayar, dsb.).  
-> **Status:** templat siap-disesuaikan; wiring, penerima alert nyata, dan verifikasi end-to-end di target **tetap wajib dibuktikan**.
+> **Biaya software: $0.** Semua komponen open-source dan dijalankan self-hosted. Biaya host, disk, backup off-site, domain, dan konektivitas tetap mengikuti infrastruktur.
+>
+> **Status:** template dan validasi konfigurasi tersedia. Instalasi pada host target, penerima alert nyata, dan backup/restore project Supabase aktual **belum dibuktikan oleh repo/CI**.
 
-## Komponen & berkas
+## Komponen
 
-| Komponen          | Peran                                | Berkas                                 |
-| ----------------- | ------------------------------------ | -------------------------------------- |
-| Prometheus        | Pengumpulan metrik + evaluasi aturan | `prometheus.yml`, `alerts.yml`         |
-| Alertmanager      | Routing/notifikasi alert             | `alertmanager.yml`                     |
-| Grafana           | Dasbor metrik & log                  | `docker-compose.yml`                   |
-| Loki              | Agregasi log (retensi 30 hari)       | `loki-config.yml`                      |
-| Promtail          | Koleksi log Docker stdout JSON       | `promtail-config.yml`                  |
-| node-exporter     | Saturasi host                        | `docker-compose.yml`                   |
-| cAdvisor          | Saturasi container                   | `docker-compose.yml`                   |
-| blackbox-exporter | Probe `/health`, `/ready`            | `docker-compose.yml`, `prometheus.yml` |
+| Komponen | Fungsi | Konfigurasi |
+|---|---|---|
+| Prometheus 3.16 | Scrape metrics dan evaluasi alert | `prometheus.yml`, `alerts.yml` |
+| Alertmanager 0.35 | Routing notifikasi | `alertmanager.yml` |
+| Grafana 13.3 | Dashboard yang diprovisikan | `grafana/` |
+| Loki 3.6 | Penyimpanan log dengan retensi 30 hari | `loki-config.yml` |
+| Grafana Alloy 1.21 | Koleksi Docker JSON logs | `alloy-config.alloy` |
+| node-exporter | CPU, RAM, filesystem, jaringan host | Compose |
+| cAdvisor | CPU/RAM container | Compose |
+| blackbox-exporter | HTTP probe backend dan TCP probe dependency | `blackbox.yml` |
+| RabbitMQ Prometheus plugin | Metrics broker dan queue tertentu | `rabbitmq/enabled_plugins` |
 
-## Target & sumber sinyal (disesuaikan ke stack)
+Promtail **tidak digunakan**: Promtail telah mencapai EOL pada 2 Maret 2026 dan digantikan Grafana Alloy. Alloy membaca Docker JSON log files dari `/var/lib/docker/containers` read-only; ia tidak memerlukan Docker socket. Sesuaikan mount path bila Docker menggunakan `data-root` non-default. Alloy hanya memberi label `level`; `request_id` tetap berada di isi log agar kardinalitas Loki tidak meledak.
 
-- **Backend:** probe `http://backend:8080/health` dan `http://backend:8080/ready` via jaringan `simpeg-broker` (stack utama `docker-compose.yml`).
-- **RabbitMQ:** scrape `rabbitmq:15692` (plugin `rabbitmq_prometheus`; verifikasi plugin aktif pada broker/port terjangkau).
-- **Log:** Promtail membaca Docker stdout JSON; field `request_id`, `level`, `msg`, `path`, `status` diparse (lihat `promtail-config.yml`). Retensi agregasi awal **30 hari** (`loki-config.yml`).
-- **Sinyal admin aplikasi (butuh auth):** `GET /api/v1/admin/slo/metrics` (`slo:read`, butuh `SLO_ENABLED=true` untuk data) dan `GET /api/v1/admin/ops/status` (`ops:read`) — agregat outbox/backlog & kegagalan notifikasi. Untuk otomasi $0 gunakan proxy/exporter internal yang menyuntikkan token dari secret host, atau polling terjadwal aman; **jangan** menaruh token di repo.
-- **Supabase (Free):** gunakan metrik yang tersedia di dashboard/project; PITR umumnya tidak tersedia — verifikasi kemampuan tier/project.
+## Sinyal yang dikumpulkan
 
-## Cara pakai ($0)
+- **Host/container:** CPU host, available memory, filesystem free, dan resource container melalui node-exporter/cAdvisor.
+- **Backend:** HTTP probe `/health` (liveness) dan `/ready` (readiness). Readiness backend saat ini memeriksa PostgreSQL wajib.
+- **RabbitMQ:** aggregate node/runtime metrics melalui `/metrics`; filtered per-queue metrics melalui `/metrics/detailed` untuk `simpeg.jobs` dan `simpeg.jobs.dead`. Queue depth, ready messages, dan consumer count memiliki alert awal.
+- **External dependency (opsional):** SMTP submission, Supabase PostgreSQL, dan Upstash Redis TLS dapat diuji konektivitas TCP setelah host:port aktual ditambahkan ke `targets/external-tcp.yml`. TCP probe hanya membuktikan koneksi port, bukan autentikasi SMTP/Redis atau query database.
+- **Log aplikasi:** Docker stdout JSON → Alloy → Loki. Gunakan LogQL `{job="docker"} | json | request_id="<id>"` untuk korelasi request; gunakan `level` sebagai label.
+- **Sinyal aplikasi yang belum otomatis discrape:** `GET /api/v1/admin/ops/status` dan `GET /api/v1/admin/slo/metrics` tetap dilindungi RBAC. Outbox pending/failed/oldest age serta agregat SLO **belum diekspor sebagai Prometheus metrics**. Jangan memasukkan token admin statis ke file konfigurasi Prometheus; tahap berikutnya adalah exporter internal dengan identitas khusus dan secret file.
 
-1. **Prasyarat:** stack `rabbitmq/` dan stack utama sudah berjalan (jaringan `simpeg-broker` ada). Docker & Docker Compose terpasang.
-2. **Konfigurasi:** salin `observability/.env.example` ke `observability/.env` (lokal, jangan commit) dan ganti kata sandi Grafana. Isi penerima nyata di `alertmanager.yml` (webhook internal/email SMTP yang tersedia) lalu rencanakan uji tembak.
-3. **Sesuaikan (jika perlu):** nama service/port backend atau RabbitMQ jika berbeda, port host (`PROMETHEUS_PORT`/`GRAFANA_PORT`/`LOKI_PORT`), dan aturan alert (`alerts.yml`) sesuai baseline.
-4. **Jalankan:** `cd observability && docker compose up -d`
-5. **Verifikasi:** Prometheus targets `UP` (termasuk blackbox/rabbitmq bila aktif), Grafana dapat query Prometheus & Loki, log container tampil, probe backend sehat, dan alert uji tembak diterima penerima.
+RabbitMQ plugin `rabbitmq_prometheus` diaktifkan eksplisit dari `rabbitmq/enabled_plugins`. Jangan mengandalkan plugin bawaan image. Queue-level scrape sengaja difilter agar tidak mengambil metrik per-object seluruh broker.
 
-## Checklist penutupan (harus dibuktikan di target)
+## Pemasangan
 
-- [ ] Pengumpulan metrik/log & dasbor end-to-end aktif (saturasi host/container, health backend/RabbitMQ, sinyal aplikasi yang relevan).
-- [ ] Aturan alert aktif di Alertmanager/Prometheus dan **uji tembak** terkirim ke penerima/eskalasi yang ditetapkan.
-- [ ] Retensi/akses log agregasi (30 hari awal) aktif dan penelusuran `request_id` terverifikasi.
-- [ ] Backup/restore (dan batas PITR sesuai tier Supabase Free) diuji pada target terpisah/representatif; hasil dicatat (`docs/backup-restore-drill.md`).
+1. Salin `observability/.env.example` menjadi `observability/.env`. Tetapkan `GRAFANA_ADMIN_PASSWORD` yang kuat dan unik. Jangan commit file `.env`.
+2. Ganti webhook test sink di `alertmanager.yml` dengan penerima produksi yang disetujui. Alamat `host.docker.internal:9999` adalah endpoint sink uji lokal, **bukan penerima produksi**.
+3. Bila perlu pantau SMTP/Supabase/Upstash, tambahkan host:port aktual ke `targets/external-tcp.yml`. Jangan menulis password, API key, atau token di file target.
+4. Jalankan broker dahulu agar jaringan `simpeg-broker` tersedia, lalu backend dan observability:
+   ```bash
+   docker compose -f rabbitmq/docker-compose.yml up -d
+   docker compose up -d --build
+   cd observability
+   docker compose --env-file .env up -d
+   ```
+5. Validasi file sebelum start:
+   ```powershell
+   .\validate.ps1
+   ```
+6. Verifikasi Prometheus Targets: `blackbox`, `rabbitmq`, `rabbitmq-queues`, `node-exporter`, `cadvisor`, dan `prometheus` harus `UP`; job `blackbox-external` baru memiliki target setelah target TCP diisi. Grafana otomatis mendapat datasource Prometheus/Loki dan dashboard **SIMPEG — Infrastructure & Queue**.
+7. Lakukan uji tembak alert ke penerima aktual, kemudian catat waktu firing/resolved, identitas penerima, dan eskalasi pada runbook. Jangan menandai alert produksi aktif berdasarkan sink lokal.
 
-> UI/metrik jangan diekspos ke publik tanpa proteksi. Kredensial/token hanya di env/secret host, tidak di repo.
+## Alert awal
+
+- Backend `/health` atau `/ready` gagal 2 menit: critical.
+- Host CPU >85% selama 5 menit, container memory >85%, filesystem free <15% selama 5 menit: warning.
+- RabbitMQ jobs ready >100 selama 5 menit: warning.
+- Dead-letter `simpeg.jobs.dead` berisi pesan selama 1 menit: critical.
+- Queue jobs memiliki backlog tetapi consumer count 0 selama 2 menit: critical.
+- TCP dependency eksternal gagal 2 menit: warning.
+
+Threshold wajib disesuaikan memakai baseline produksi. Aturan outbox/SLO belum aktif karena aggregator aplikasi masih berupa endpoint admin yang terproteksi.
+
+## Retensi dan keamanan log
+
+- Loki retensi awal **720 jam / 30 hari**, diaktifkan oleh compactor. Prometheus retensi **15 hari**; retensi metrics berbeda dari retensi log.
+- Log agregasi terpisah dari audit DB `AUDIT_RETENTION_DAYS` dan `SLO_RETENTION_DAYS`.
+- Grafana, Prometheus, Alertmanager, Loki, dan blackbox host ports di-bind ke `127.0.0.1`. Jangan expose UI/metrics ke internet tanpa reverse proxy + autentikasi.
+- Alloy hanya memiliki akses read-only ke Docker log files. cAdvisor memerlukan `privileged` dan akses Docker host untuk mengukur container; evaluasi kembali bila host memakai security policy yang lebih ketat.
+- Jangan jadikan `request_id`, pesan bebas, alamat email, atau ID pegawai sebagai label Loki/Prometheus berkardinalitas tinggi.
+
+## Backup Supabase Free
+
+Supabase Free **tidak menyediakan automatic daily database backups maupun PITR**. Lakukan ekspor terjadwal menggunakan Supabase CLI `db dump`/pg_dump dan simpan salinan off-site yang terenkripsi. Restore drill harus menuju project/database disposable terpisah; file dalam Supabase Storage API dan berkas Cloudinary memerlukan strategi backup objek terpisah. Rinciannya ada di `docs/RUNBOOK.md` §8E dan `docs/backup-restore-drill.md`.
+
+## Checklist bukti pada infrastruktur target
+
+- [ ] Semua scrape targets yang dipakai deployment `UP`; dashboard menunjukkan data nyata.
+- [ ] Queue backlog, consumer count, dan dead-letter RabbitMQ terlihat; simulasi pesan gagal menghasilkan alert.
+- [ ] Dependency SMTP/Supabase/Redis yang relevan diisi ke file target dan diuji sesuai protokol aplikasinya.
+- [ ] Outbox/SLO metrics diekspor melalui exporter internal aman (belum tersedia).
+- [ ] Alertmanager memakai penerima produksi yang benar dan uji tembak + eskalasi direkam.
+- [ ] Penelusuran `request_id` dan retensi 30 hari diverifikasi setelah log melewati masa retensi.
+- [ ] Backup Free terjadwal, off-site, dan restore ke project disposable diuji; RPO/RTO aktual dicatat.
+
+> Templat ini bukan bukti deployment. Status checklist produksi hanya dapat diubah setelah bukti dari host dan project Supabase target dilampirkan.

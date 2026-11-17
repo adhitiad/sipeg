@@ -211,10 +211,10 @@ Jalur SMTP diverifikasi sampai tahap autentikasi terhadap server sungguhan (`smt
 | Tahap                    | Hasil                                                                     |
 | ------------------------ | ------------------------------------------------------------------------- |
 | Koneksi + TLS (STARTTLS) | Berhasil — handshake selesai, kredensial terkirim lewat TLS               |
-| Autentikasi              | **Gagal**, server membalas `535 5.7.8 Username and Password not accepted` |
-| Pengiriman pesan         | Tidak terjadi — 100 dari 100 operasi berhenti pada autentikasi            |
+| Autentikasi              | **Gagal** (2026-11-12), server membalas `535 5.7.8 Username and Password not accepted` |
+| Pengiriman pesan         | **Berhasil (2026-11-17)** — app password terpasang di `SMTP_PASS`; uji 1/1, gagal 0, latensi 3,52 s ke `adhitiadwima@gmail.com` (lihat `DEC-014`) |
 
-Artinya jalur kodenya benar sampai autentikasi, tetapi kredensial pada `.env` ditolak oleh Google Workspace. Google Workspace menuntut _app password_ untuk SMTP; sandi akun biasa ditolak. Tanpa kredensial yang valid, beban pengiriman email sungguhan tidak dapat diukur sampai ke kotak masuk.
+Artinya jalur kodenya benar, dan dengan app password yang terpasang (2026-11-17) pengiriman nyata berhasil (1/1, gagal 0, latensi 3,52 s). Google Workspace menuntut _app password_ untuk SMTP; sandi akun biasa ditolak (`535 5.7.8` / `534 5.7.9`).
 
 SMTP berada pada **nilai bawaan produksi yang salah** sebelum diperbaiki. `SMTP_SECURE` bernilai kosong dan `SMTP_PORT=587` membuat backend memakai TLS langsung pada porta submission. Kombinasi itu gagal dengan `tls: first record does not look like a TLS handshake` pada setiap percobaan, sehingga tidak ada satu pun email yang pernah terkirim. Perbaikannya dijelaskan di bagian 8.
 
@@ -490,7 +490,7 @@ Target SLO p95 bawaan yang dipakai job pemeriksaan adalah **800 ms** dengan tole
 - Tidak mencakup latensi jaringan antara frontend dan backend; semua pengukuran dilakukan dari mesin developers.
 - Uji beban import/ekspor pegawai ada pada §8B, tetapi terbatas pada berkas CSV (bukan parser .xlsx) dan pada PostgreSQL 16 disposable lokal; belum diukur pada staging/produksi representatif maupun lewat pooler Supabase.
 - Uji beban UI sudah dijalankan secara lokal dengan dataset sintetis (`docs/UI-LOAD-TEST.md`); belum divalidasi pada lingkungan staging/produksi representatif.
-- Uji beban SMTP berhenti pada autentikasi karena kredensial pada `.env` ditolak oleh Google Workspace; jalur kode terverifikasi sampai autentikasi, tetapi pengiriman nyata ke kotak masuk belum terukur.
+- ~~Uji beban SMTP berhenti pada autentikasi karena kredensial pada `.env` ditolak oleh Google Workspace~~ — terverifikasi 2026-11-17: app password terpasang, pengiriman uji 1/1 berhasil (latensi 3,52 s). Ukuran beban penuh ke kotak masuk tetap belum dilakukan; pengiriman nyata hanya melalui notifikasi pasca-konfirmasi pembayaran.
 - Skala data pengukuran (5.000 pegawai) masih kecil dibanding kapasitas produksi. Kesimpulan tentang indeks (`Seq Scan` pada `aktif`, `nama`, dan `homebaseId`) berdasarkan plan pada 5.000 baris dan harus diulang pada skala lebih besar.
 - Semua angka berasal dari satu mesin developers, satu proyek Supabase, dan satu region. Angka belum merupakan bukti lintas lingkungan.
 - `count(*)` pada tabel besar masih berjalan penuh (10 ms pada 50.000 baris jejak audit) dan belum dioptimalkan.
@@ -503,7 +503,7 @@ Target SLO p95 bawaan yang dipakai job pemeriksaan adalah **800 ms** dengan tole
 2. Turunkan jumlah statement pada daftar slip gaji dari lima menjadi satu atau dua, karena jalur itu paling lambat.
 3. Optimasikan `count(*)` pada daftar dengan penghitungan estimasi atau berversi.
 4. Jalankan backend di region yang sama dengan database Supabase, lalu ulangi seluruh pengukuran.
-5. Sediakan _app password_ Google Workspace yang valid, lalu ulangi uji beban SMTP sampai ke kotak masuk.
+5. Ulangi uji beban SMTP dengan app password yang valid sampai ke kotak masuk (aplikasi uji telah berhasil 1/1 pada 2026-11-17; beban banyak belum diukur).
 6. ~~Uji beban import/ekspor Excel dengan data sintetis.~~ Selesai secara lokal (§8B); tersisa validasi pada lingkungan staging/produksi representatif dan berkas .xlsx asli hasil tulis Excel.
 7. Verifikasi job terjadwal RabbitMQ berjalan otomatis pada jadwal cron (`jobsched` → antrean `simpeg.jobs`): `audit.cleanup` dan `slo.evaluate`; QStash tidak dipakai (`DEC-102`).
 8. Tinjau batas `pool_size` pooler sesi dan pertimbangkan pooler transaksi untuk toleransi koneksi lebih tinggi.

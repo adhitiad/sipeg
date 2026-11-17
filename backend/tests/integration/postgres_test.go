@@ -24,7 +24,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/golang-jwt/jwt/v5"
 	_ "github.com/jackc/pgx/v5/stdlib"
+
+	"simpeg/backend/internal/auth"
 	"github.com/pressly/goose/v3"
 	"gorm.io/gorm"
 
@@ -378,6 +381,147 @@ func TestPostgresMigrationsAndAllRoleAuthorization(t *testing.T) {
 				t.Fatalf("role %s payroll list status=%d body=%s; want %d", tc.role, status, body, tc.payrollReadStatus)
 			}
 		})
+	}
+}
+
+func TestRBACAssignmentsAreAuthoritativeAndRevokedImmediately(t *testing.T) {
+	pegawai := testData.Actors["pegawai"]
+	status, body := apiRequest(t, pegawai, http.MethodGet, "/api/v1/admin/rbac/roles", nil)
+	if status != http.StatusForbidden {
+		t.Fatalf("pegawai without RBAC assignment must not read RBAC catalog: status=%d body=%s", status, body)
+	}
+
+	var roleID, permissionID int64
+	if err := testDB.Raw(
+		`INSERT INTO "rbac_roles" ("code", "name", "tier_level") VALUES (?, ?, ?) RETURNING "id"`,
+		"IT_INTEGRATION_"+strings.ReplaceAll(uuid.NewString(), "-", "")[:10], "Integration RBAC Reader", 4,
+	).Scan(&roleID).Error; err != nil {
+		t.Fatalf("create RBAC role: %v", err)
+	}
+	if err := testDB.Raw(
+		`INSERT INTO "rbac_permissions" ("module", "action") VALUES (?, ?) RETURNING "id"`,
+		"rbac", "read",
+	).Scan(&permissionID).Error; err != nil {
+		t.Fatalf("create RBAC permission: %v", err)
+	}
+	if err := testDB.Exec(
+		`INSERT INTO "rbac_role_permissions" ("role_id", "permission_id") VALUES (?, ?)`,
+		roleID, permissionID,
+	).Error; err != nil {
+		t.Fatalf("grant RBAC permission: %v", err)
+	}
+
+	var assignmentID int64
+	if err := testDB.Raw(
+		`INSERT INTO "rbac_user_role_scopes" ("user_id", "role_id", "denied_permissions")
+		 VALUES (?, ?, '[]'::jsonb) RETURNING "id"`,
+		pegawai.ID, roleID,
+	).Scan(&assignmentID).Error; err != nil {
+		t.Fatalf("create RBAC user assignment: %v", err)
+	}
+
+	status, body = apiRequest(t, pegawai, http.MethodGet, "/api/v1/admin/rbac/roles", nil)
+	if status != http.StatusOK {
+		t.Fatalf("active RBAC assignment with permission must grant access: status=%d body=%s", status, body)
+	}
+
+	if err := testDB.Exec(
+		`UPDATE "rbac_user_role_scopes" SET "denied_permissions" = '["rbac:read"]'::jsonb WHERE "id" = ?`,
+		assignmentID,
+	).Error; err != nil {
+		t.Fatalf("apply RBAC permission blacklist: %v", err)
+	}
+	status, body = apiRequest(t, pegawai, http.MethodGet, "/api/v1/admin/rbac/roles", nil)
+	if status != http.StatusForbidden {
+		t.Fatalf("RBAC blacklist must override granted permission on next request: status=%d body=%s", status, body)
+	}
+
+	if err := testDB.Exec(
+		`UPDATE "rbac_user_role_scopes" SET "denied_permissions" = '[]'::jsonb WHERE "id" = ?`,
+		assignmentID,
+	).Error; err != nil {
+		t.Fatalf("clear RBAC blacklist: %v", err)
+	}
+	if err := testDB.Exec(
+		`DELETE FROM "rbac_role_permissions" WHERE "role_id" = ? AND "permission_id" = ?`,
+		roleID, permissionID,
+	).Error; err != nil {
+		t.Fatalf("revoke RBAC permission: %v", err)
+	}
+	status, body = apiRequest(t, pegawai, http.MethodGet, "/api/v1/admin/rbac/roles", nil)
+	if status != http.StatusForbidden {
+		t.Fatalf("revoked RBAC grant must be denied on the next request without cache delay: status=%d body=%s", status, body)
+	}
+
+	if err := testDB.Exec(`DELETE FROM "rbac_user_role_scopes" WHERE "id" = ?`, assignmentID).Error; err != nil {
+		t.Fatalf("remove integration RBAC assignment: %v", err)
+	}
+	if err := testDB.Exec(`DELETE FROM "rbac_roles" WHERE "id" = ?`, roleID).Error; err != nil {
+		t.Fatalf("remove integration RBAC role: %v", err)
+	}
+	if err := testDB.Exec(`DELETE FROM "rbac_permissions" WHERE "id" = ?`, permissionID).Error; err != nil {
+		t.Fatalf("remove integration RBAC permission: %v", err)
+	}
+}
+
+func TestJWTClaimsCannotOverrideDatabaseRoleOrAccountStatus(t *testing.T) {
+	operator := testData.Actors["operator"]
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, auth.BetterAuthClaims{
+		UserID: operator.ID,
+		Email: operator.Email,
+		RoleName: "admin",
+		HomebaseID: testData.RemoteUnitID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		},
+	}).SignedString([]byte(integrationSecret))
+	if err != nil {
+		t.Fatalf("sign stale-role integration JWT: %v", err)
+	}
+	jwtActor := operator
+	jwtActor.Token = token
+
+	status, body := apiRequest(t, jwtActor, http.MethodGet, "/api/v1/admin/rbac/roles", nil)
+	if status != http.StatusForbidden {
+		t.Fatalf("stale admin JWT claim must use DB role operator and be denied: status=%d body=%s", status, body)
+	}
+
+	adminRoleID := testData.Actors["admin"]
+	var adminRole string
+	if err := testDB.Raw(`SELECT "roleId"::text FROM "user" WHERE "id" = ?`, adminRoleID.ID).Scan(&adminRole).Error; err != nil {
+		t.Fatalf("read DB admin role ID: %v", err)
+	}
+	if err := testDB.Exec(`UPDATE "user" SET "roleId" = ? WHERE "id" = ?`, adminRole, operator.ID).Error; err != nil {
+		t.Fatalf("promote integration operator in database: %v", err)
+	}
+	status, body = apiRequest(t, jwtActor, http.MethodGet, "/api/v1/admin/rbac/roles", nil)
+	if status != http.StatusOK {
+		t.Fatalf("JWT principal must reflect latest DB role after promotion: status=%d body=%s", status, body)
+	}
+
+	if err := testDB.Exec(`UPDATE "user" SET "aktif" = FALSE WHERE "id" = ?`, operator.ID).Error; err != nil {
+		t.Fatalf("deactivate integration account: %v", err)
+	}
+	status, body = apiRequest(t, jwtActor, http.MethodGet, "/api/v1/admin/rbac/roles", nil)
+	if status != http.StatusUnauthorized {
+		t.Fatalf("inactive account JWT must be rejected: status=%d body=%s", status, body)
+	}
+	if err := testDB.Exec(`UPDATE "user" SET "aktif" = TRUE WHERE "id" = ?`, operator.ID).Error; err != nil {
+		t.Fatalf("restore integration account: %v", err)
+	}
+}
+
+func TestOpaqueSessionRevocationAndExpiryAreEnforced(t *testing.T) {
+	admin := testData.Actors["admin"]
+	if err := testDB.Exec(
+		`UPDATE "session" SET "expiresAt" = ? WHERE "token" = ?`,
+		time.Now().UTC().Add(-time.Minute), admin.Token,
+	).Error; err != nil {
+		t.Fatalf("expire integration session: %v", err)
+	}
+	status, body := apiRequest(t, admin, http.MethodGet, "/api/v1/employees", nil)
+	if status != http.StatusUnauthorized {
+		t.Fatalf("expired opaque session must be rejected: status=%d body=%s", status, body)
 	}
 }
 

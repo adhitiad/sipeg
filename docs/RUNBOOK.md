@@ -481,71 +481,76 @@ breaker saat integrasi tersebut dipakai pada produksi.
 
 ## 8E. Uji backup dan restore database
 
-**Gejala:** tidak ada bukti bahwa backup dapat dipulihkan dalam waktu yang
-ditentukan.
+**Status backup Supabase Free harus dipahami dengan benar:** project Free tidak mendapat backup database harian otomatis dan tidak mendapat PITR. Dokumentasi Supabase menyarankan project Free mengekspor data secara berkala melalui Supabase CLI `db dump` dan menyimpan salinan off-site. Backup harian otomatis tersedia pada plan Pro/Team/Enterprise; PITR merupakan add-on plan berbayar dengan persyaratan compute tersendiri. Jangan menulis "backup platform harian aktif" atau "PITR tersedia" pada SIMPEG Free.
 
-**Diagnosis:**
+**Target awal:** `RPO_HOURS=24`, `RTO_HOURS=4` (nilai kebijakan, belum terbukti pada project produksi). Pada tier Free, RPO 24 jam hanya mungkin didekati bila ekspor database berhasil dijalankan sekurang-kurangnya setiap 24 jam, artefak disimpan terenkripsi di lokasi terpisah, dan kegagalan job terdeteksi. Tidak ada jaminan PITR per detik.
 
-- `RPO_HOURS` (bawaan 24 jam) dan `RTO_HOURS` (bawaan 4 jam) dikonfigurasi
-  melalui `.env` dan divalidasi `config.Load()`. Nilai awal diratifikasi
-  24 jam / 4 jam pada 13 November 2026 (`DEC-050`); keduanya belum diukur
-  terhadap produksi.
-- Backup dan PITR (point-in-time recovery) dijalankan melalui tier/fitur
-  Supabase project target, bukan melalui skrip backend. **Kemampuan PITR dan
-  opsi restore bergantung pada tier/fitur project aktual; tier Free umumnya
-  menyediakan backup harian/pemulihan terbatas dan tidak setara PITR penuh.**
-  Wajib verifikasi kemampuan yang tersedia pada project Supabase target
-  sebelum menyatakan RPO/RTO terpenuhi.
+**Bukti drill terbaru (2026-11-16, `DEC-100`):** staging/disposable, bukan project Supabase produksi:
+- Dump `pg_dump` sekitar 59 detik, 2.555.361 byte.
+- Restore ke `postgres:16-alpine` sekitar 5 detik; empat galat terkait `supabase_vault`/`transaction_timeout` dicatat sebagai komponen khusus Supabase, bukan dianggap otomatis aman untuk seluruh lingkungan.
+- Verifikasi dibanding sumber: 89 tabel, 89 RLS, Goose 33, `user`=102 (100 sintetis + 2 pilot), `gaji`=301, `session`=30, `account`=2, `auditLog`=50.161.
+- Artefak sementara dibersihkan.
+- **Belum diuji:** ekspor terjadwal berulang dari project Free aktual, restore ke project disposable Supabase dengan konfigurasi target, verifikasi akses aplikasi pascapulih, serta RPO/RTO produksi.
 
-**Bukti drill (13 November 2026, `DEC-050`):** drill dijalankan terhadap
-database disposable lokal `simpeg-verify-pg` (postgres:16-alpine), **bukan**
-Supabase production:
+### Ekspor yang benar untuk Supabase Free
 
-- `pg_dump` dari `postgres`: 134.982 byte, 0,35 detik;
-- restore ke database baru `simpeg_restore_drill`: 1,36 detik, tanpa galat
-  (`ON_ERROR_STOP=1`);
-- perbandingan sumber vs hasil identik: Goose 20 versi, 69 tabel, 181
-  indeks, 167 constraint, 68 tabel dengan RLS aktif, `user`=4, `session`=8,
-  `account`=4, `auditLog`=8;
-- database `simpeg_restore_drill` dihapus setelah verifikasi;
-- **belum diuji:** PITR, restore pada tier Supabase berbayar/target, dan
-  restore pada database target produksi. Uji di lingkungan terpisah tetap
-  wajib dilakukan sebelum klaim RTO/RPO dianggap terpenuhi untuk produksi.
+Supabase CLI `db dump` default menghasilkan schema dump saja; tidak menyertakan row data atau custom roles. Untuk backup yang berguna, siapkan minimal tiga artefak:
 
-**Prosedur uji backup/restore (operasional, pemilik: adhitiad/admin, `DEC-065`):**
+1. `schema.sql` — schema aplikasi.
+2. `data.sql` — seluruh row data yang perlu dipulihkan.
+3. `roles.sql` — custom roles tingkat cluster bila project memang memilikinya.
 
-1. **Verifikasi kemampuan:** catat tier, region, dan fitur backup/restore/PITR
-   project Supabase target (dashboard/dokumentasi resmi project). Jika PITR
-   tidak tersedia (mis. tier Free), gunakan backup harian/ekspor yang tersedia
-   dan/atau `pg_dump` konsisten; nyatakan batasan titik pemulihan secara
-   eksplisit.
-2. **Siapkan target uji terpisah:** database disposable/non-produksi yang
-   disetujui (jangan menimpa database produksi). Catat waktu mulai.
-3. **Ambil/ambil-alih cadangan:** gunakan mekanisme tier (restore/backup yang
-   tersedia) atau `pg_dump` dari sumber yang sah; simpan artefak sementara di
-   lokasi aman, hapus setelah verifikasi.
-4. **Pulihkan:** restore ke target uji; catat durasi hingga database siap.
-5. **Verifikasi pascapulih:** cek `GET /ready`, `goose_db_version`/status
-   migrasi, jumlah tabel/indeks/RLS penting, hitungan baris kunci (mis.
-   `user`, `session`, `auditLog`, tabel domain relevan), dan sampel baca API
-   read-only bila perlu.
-6. **Ukur & catat:** bandingkan titik data yang dipulihkan dengan RPO target
-   dan durasi pulih dengan RTO target; catat tanggal, metode, durasi, titik
-   data, temuan, dan tindak lanjut pada catatan operasi/runbook. Database uji
-   dihapus setelah verifikasi.
-7. **Keamanan data:** jangan menggunakan/menyebarkan data pegawai produksi di
-   luar prosedur yang disetujui; gunakan data sintetis bila memungkinkan.
+CLI saat ini memakai `--remote=<project-ref>`. Flag `--linked` masih didukung pada CLI v3, tetapi sudah deprecated dan dihapus pada CLI v4. Perintah berikut membutuhkan Supabase CLI dan Docker yang tersedia di mesin backup, serta hak akses yang sah:
 
-**Dokumen pendukung:** formulir hasil dan checklist drill ada di
-`docs/backup-restore-drill.md`; helper PowerShell
-`scripts/backup-restore-drill.ps1` menjalankan dump, restore, dan verifikasi ke
-target disposable dengan kredensial yang dibaca hanya dari environment
-(`SOURCE_DATABASE_URL`/`TARGET_DATABASE_URL`). Helper membantu langkah 2–6,
-namun tidak menggantikan verifikasi pascapulih manual pada formulir.
+```powershell
+# Project ref bukan password. Login lewat `supabase login` atau credential store CLI.
+$ProjectRef = "<SUPABASE_PROJECT_REF>"
+$BackupDir = "D:\simpeg-backups\$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+New-Item -ItemType Directory -Force -Path $BackupDir | Out-Null
 
-**Tindakan:** jadwalkan uji berkala pada database target/representatif dan
-perbarui bukti setiap kali topologi, tier, atau skema berubah secara
-signifikan.
+supabase db dump "--remote=$ProjectRef" --file (Join-Path $BackupDir "schema.sql")
+if ($LASTEXITCODE -ne 0) { throw "Schema dump gagal" }
+
+supabase db dump "--remote=$ProjectRef" --data-only --file (Join-Path $BackupDir "data.sql")
+if ($LASTEXITCODE -ne 0) { throw "Data dump gagal" }
+
+supabase db dump "--remote=$ProjectRef" --role-only --file (Join-Path $BackupDir "roles.sql")
+if ($LASTEXITCODE -ne 0) { throw "Role dump gagal" }
+
+Get-ChildItem $BackupDir -File | Get-FileHash -Algorithm SHA256 |
+  Format-Table Path, Hash
+```
+
+Perhatikan batas cakupan:
+- CLI mengecualikan schema Supabase yang dikelola platform, termasuk `auth`, `storage`, dan schema yang dibuat extension. Periksa dengan teliti bila ada fitur aplikasi yang bergantung pada schema tersebut.
+- File yang disimpan melalui Supabase Storage API tidak ikut dipulihkan oleh database dump karena database hanya menyimpan metadata objek. SIMPEG menggunakan Cloudinary untuk berkas dokumen; inventaris, akses, dan pemulihan objek Cloudinary harus memiliki prosedur/provider drill tersendiri.
+- Data dump berisi data pegawai/keuangan. Lokasi backup harus terenkripsi, aksesnya terbatas, checksum diverifikasi, dan salinannya disimpan off-site. Jangan simpan artefak di repository atau lampirkan ke issue/chat.
+- Sebelum restore ke project baru, audit default privileges target. Dokumentasi Supabase memperingatkan tabel dapat mewarisi privilege default target; privilege `anon`/`authenticated` harus diselaraskan dengan model keamanan aplikasi sebelum data dibuka.
+
+### Prosedur restore drill
+
+1. **Verifikasi project sumber:** catat project ref, tier, region, waktu snapshot/ekspor, versi CLI, dan konfigurasi compute. Jangan menyimpan URL koneksi atau password di formulir.
+2. **Siapkan target terpisah:** gunakan project/database disposable yang disetujui. Jangan restore dengan `--clean` ke database produksi.
+3. **Ambil artefak:** unduh set schema/data/roles dari lokasi off-site, verifikasi checksum dan hasil decrypt pada host yang berwenang.
+4. **Tinjau SQL sebelum eksekusi:** identifikasi owner, grant/default privileges, extension, dan objek yang tidak termasuk dump. Pastikan perbedaan tier/extension tidak mengubah kebijakan akses.
+5. **Restore roles, schema, lalu data** (sesuaikan dengan isi hasil dump dan hak akses target):
+   ```powershell
+   psql "$env:TARGET_DATABASE_URL" -v ON_ERROR_STOP=1 -f ".\roles.sql"
+   psql "$env:TARGET_DATABASE_URL" -v ON_ERROR_STOP=1 -f ".\schema.sql"
+   psql "$env:TARGET_DATABASE_URL" -v ON_ERROR_STOP=1 -f ".\data.sql"
+   ```
+   Jika project tidak menggunakan custom roles, `roles.sql` boleh kosong/tidak diaplikasikan. Periksa dokumentasi SQL hasil dump; jangan mengasumsikan urutan tersebut menggantikan review dependensi role/owner.
+6. **Verifikasi teknis:** cek koneksi, status seluruh migrasi Goose, jumlah tabel/index/constraint/RLS, jumlah row tabel penting, integrity constraints, dan sampel query read-only. Jalankan binary backend dengan konfigurasi target uji dan pastikan `GET /ready` = 200. Uji login/authorization tanpa membuka data pilot ke pengguna.
+7. **Ukur RPO/RTO:** catat timestamp data terakhir pada sumber, timestamp artefak, waktu mulai restore, waktu DB siap, dan waktu API siap. RPO = jarak antara insiden/snapshot titik data dan data terakhir yang berhasil dipulihkan; RTO = durasi sampai layanan siap digunakan, bukan sekadar sampai `psql` selesai.
+8. **Bersihkan:** hapus project disposable dan artefak plaintext setelah verifikasi; simpan hanya laporan/checksum tanpa PII atau rahasia.
+
+**Formulir dan helper:** `docs/backup-restore-drill.md`, `scripts/backup-restore-drill.ps1` (pg_dump/pg_restore generik), dan `scripts/supabase-free-backup.ps1` (ekspor schema/data/roles khusus project Free). Helper tidak melakukan backup otomatis/off-site, tidak mengaktifkan PITR, dan tidak menggantikan restore drill.
+
+**Kriteria penutupan produksi:** setidaknya beberapa siklus ekspor terjadwal sukses; kegagalan backup menghasilkan alert; salinan terenkripsi berada di lokasi off-site yang terpisah dari project Supabase; restore drill ke project disposable berhasil dan hasil RPO/RTO aktual dicatat. Sampai bukti itu ada, item backup produksi tetap belum selesai.
+
+Referensi resmi:
+- Supabase Database Backups: https://supabase.com/docs/guides/platform/backups
+- Supabase CLI `db dump`: https://supabase.com/docs/reference/cli/supabase-issue-feature
 
 ## 9. Dashboard, monitoring, dan alert
 

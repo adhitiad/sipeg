@@ -147,9 +147,9 @@ func TestJWTClaimsCannotOverrideDatabaseRoleOrAccountStatus(t *testing.T) {
 		_ = testDB.Exec(`UPDATE "user" SET "aktif" = TRUE, "roleId" = ? WHERE "id" = ?`, originalRoleID, operator.ID).Error
 	})
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, auth.BetterAuthClaims{
-		UserID: operator.ID,
-		Email: operator.Email,
-		RoleName: "admin",
+		UserID:     operator.ID,
+		Email:      operator.Email,
+		RoleName:   "admin",
 		HomebaseID: testData.RemoteUnitID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
@@ -239,12 +239,18 @@ func TestEmployeeListAndDetailEnforceUnitAndSelfScope(t *testing.T) {
 				t.Fatalf("decode employee page: %v; body=%s", err, body)
 			}
 			visible := map[string]bool{}
-			for _, item := range page.Items { visible[item.ID] = true }
+			for _, item := range page.Items {
+				visible[item.ID] = true
+			}
 			for _, id := range tc.mustSee {
-				if !visible[id] { t.Errorf("role %s must see %s; visible=%v", tc.role, id, keys(visible)) }
+				if !visible[id] {
+					t.Errorf("role %s must see %s; visible=%v", tc.role, id, keys(visible))
+				}
 			}
 			for _, id := range tc.mustNotSee {
-				if visible[id] { t.Errorf("role %s must not see %s", tc.role, id) }
+				if visible[id] {
+					t.Errorf("role %s must not see %s", tc.role, id)
+				}
 			}
 		})
 	}
@@ -264,6 +270,8 @@ func TestEmployeeListAndDetailEnforceUnitAndSelfScope(t *testing.T) {
 
 func keys(values map[string]bool) []string {
 	result := make([]string, 0, len(values))
-	for key := range values { result = append(result, key) }
+	for key := range values {
+		result = append(result, key)
+	}
 	return result
 }

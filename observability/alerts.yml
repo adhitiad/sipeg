@@ -46,10 +46,53 @@ groups:
           summary: "Metrik RabbitMQ tidak tersedia"
           description: "Scrape RabbitMQ gagal; verifikasi plugin rabbitmq_prometheus (port 15692) dan jaringan simpeg-broker."
 
-  # Tambahan (aktifkan bila metrik tersedia di target, $0/self-hosted):
-  # - outbox FAILED/backlog & usia pesan tertua: dari polling aman ke /api/v1/admin/ops/status (ops:read)
-  #   atau query PostgreSQL terjadwal ke tabel outboxMessage.
-  # - dead-letter RabbitMQ (simpeg.jobs.dead): dari metrik rabbitmq_prometheus/antrian.
-  # - error rate/latensi API: dari sloMetric (/api/v1/admin/slo/metrics, slo:read, SLO_ENABLED) atau log agregasi.
-  # - Supabase Free: pantau metrik yang tersedia di dashboard/project; PITR umumnya tidak tersedia.
+      - alert: RabbitMQQueueBacklog
+        expr: rabbitmq_detailed_queue_messages_ready{queue="simpeg.jobs"} > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Backlog antrean pekerjaan SIMPEG meningkat"
+          description: "Antrean simpeg.jobs memiliki lebih dari 100 pesan siap selama 5 menit."
+
+      - alert: RabbitMQDeadLetterNotEmpty
+        expr: rabbitmq_detailed_queue_messages_ready{queue="simpeg.jobs.dead"} > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Dead-letter RabbitMQ berisi pesan"
+          description: "Periksa antrean simpeg.jobs.dead; pesan gagal tidak boleh dibiarkan tanpa triase."
+
+      - alert: RabbitMQJobsConsumerMissing
+        expr: (rabbitmq_detailed_queue_messages_ready{queue="simpeg.jobs"} > 0) and (rabbitmq_detailed_queue_consumers{queue="simpeg.jobs"} == 0)
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Antrean SIMPEG memiliki backlog tanpa consumer"
+          description: "Ada pesan di simpeg.jobs tetapi tidak ada consumer aktif; periksa service backend."
+
+      - alert: HostDiskSpaceLow
+        expr: (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"}) < 0.15
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Ruang filesystem host hampir habis"
+          description: "Filesystem {{ $labels.mountpoint }} pada {{ $labels.instance }} tersisa kurang dari 15%."
+
+      - alert: ExternalDependencyDown
+        expr: up{job="blackbox-external"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Dependency eksternal tidak dapat diprobe"
+          description: "Target {{ $labels.dependency }} / {{ $labels.instance }} gagal dihubungi melalui TCP."
+
+  # Belum diekspor ke Prometheus: outbox FAILED/PENDING/usia tertua dan agregat SLO aplikasi.
+  # Endpoint admin masih memakai RBAC; jangan menanam bearer token admin di konfigurasi scrape.
+  # Tambahkan exporter internal dengan identitas khusus sebelum membuat alert outbox/SLO di sini.
+  # External TCP targets hanya membuktikan konektivitas, bukan autentikasi SMTP/Redis atau query DB.
   # Lihat docs/RUNBOOK.md §9.

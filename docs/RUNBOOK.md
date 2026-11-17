@@ -594,6 +594,7 @@ Uji broker harus memverifikasi plugin aktif, port 15692 dapat diakses melalui ja
 | Backend /health atau /ready gagal | 2 menit | BackendProbeFailed (critical) |
 | Target scrape down | 2 menit | InstanceDown |
 | Host CPU tinggi | >85% selama 5 menit | HighHostCPU (warning) |
+| Host available memory | <10% selama 5 menit | HighHostMemory (warning) |
 | Container memory | >85% batas selama 5 menit | HighContainerMemory (warning) |
 | Host filesystem free | <15% selama 5 menit | HostDiskSpaceLow (warning) |
 | RabbitMQ scrape gagal | 2 menit | RabbitMQTargetDown |

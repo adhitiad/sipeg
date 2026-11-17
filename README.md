@@ -264,3 +264,16 @@ Simpan nilai lokal di `.env` (diabaikan Git) atau secret manager. **Jangan** mem
 - Teks yang menghadap pengguna dan dokumentasi ditulis dalam Bahasa Indonesia; identifier kode dalam bahasa Inggris.
 - Jangan commit kredensial, token, atau data pribadi nyata. Gunakan data sintetis untuk pengembangan dan pengujian.
 - Batas ukuran source file yang ditulis tangan mengikuti aturan proyek (lihat `AGENTS.md`).
+
+---
+
+## Tindakan prioritas (prioritas aksi)
+
+Berikut adalah tindakan yang perlu dilakukan untuk mendekatkan proyek ke kesiapan produksi. Tindakan ditandai berdasarkan prioritas dan berlaku pada umumnya untuk seluruh tim pengembangan dan operasi.
+
+| Prioritas | Tindakan | Penanggung Jawab |
+|-----------|----------|------------------|
+| P0 | Konfigurasikan `PII_ENCRYPTION_KEY` di production environment | Admin / Ops |
+| P0 | Terapkan migrasi `000024`–`000033` ke staging, verifikasi `perfbench schema`, lalu produksi dengan persetujuan pemilik | Admin / Pemilik produk |
+
+> Detail rencana kerja dan gerbang rilis lengkap ada di `docs/IMPLEMENTATION-PLAN.md` dan `docs/STAGING-RELEASE-CHECKLIST.md`. Jangan pernah menerapkan migrasi atau seed RBAC pada produksi tanpa persetujuan pemilik dan verifikasi `perfbench schema`/`goose_db_version` pada staging terlebih dahulu.
